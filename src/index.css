@@ -1,0 +1,138 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    /* Core System Colors */
+    --background: 0 0% 100%; /* Pure white background */
+    --foreground: 210 10% 23%; /* Dark gray text */
+
+    --card: 0 0% 100%; /* Pure white cards */
+    --card-foreground: 210 10% 23%; /* Dark gray text */
+
+    --popover: 0 0% 100%; /* Pure white popovers */
+    --popover-foreground: 210 10% 23%; /* Dark gray text */
+
+    /* Airbnb-inspired Brand Colors */
+    --primary: 4 80% 58%; /* Rausch - Airbnb's signature pink-orange */
+    --primary-foreground: 0 0% 100%;
+    --primary-hover: 4 80% 52%;
+
+    --secondary: 210 10% 97%; /* Light cool gray */
+    --secondary-foreground: 210 10% 23%;
+
+    --muted: 210 10% 97%; /* Light cool gray */
+    --muted-foreground: 210 8% 46%;
+
+    --accent: 162 65% 50%; /* Airbnb teal-green for success states */
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 210 15% 88%; /* Light cool gray borders */
+    --input: 210 15% 88%; /* Light cool gray inputs */
+    --ring: 4 80% 58%; /* Rausch focus ring */
+
+    --radius: 0.5rem;
+
+    /* Airbnb-style Sidebar */
+    --sidebar-background: 0 0% 100%; /* Pure white sidebar */
+    --sidebar-foreground: 210 10% 23%; /* Dark gray text */
+    --sidebar-primary: 4 80% 58%; /* Rausch for active state */
+    --sidebar-primary-foreground: 0 0% 100%; /* White text on active */
+    --sidebar-accent: 210 10% 97%; /* Light gray hover */
+    --sidebar-accent-foreground: 210 10% 23%; /* Dark gray on hover */
+    --sidebar-border: 210 15% 88%; /* Light border */
+    --sidebar-ring: 4 80% 58%; /* Rausch ring */
+
+    /* Additional Status Colors */
+    --success: 162 65% 50%; /* Airbnb teal-green */
+    --success-foreground: 0 0% 100%;
+    --warning: 36 100% 50%; /* Warm yellow/orange */
+    --warning-foreground: 210 10% 23%;
+    --info: 210 100% 66%; /* Cool blue */
+    --info-foreground: 0 0% 100%;
+
+    /* Airbnb-style Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(4 80% 58%), hsl(4 80% 52%));
+    --gradient-subtle: linear-gradient(180deg, hsl(0 0% 100%), hsl(210 10% 98%));
+    
+    /* Shadows */
+    --shadow-soft: 0 2px 8px hsl(240 10% 5% / 0.06);
+    --shadow-medium: 0 4px 16px hsl(240 10% 5% / 0.12);
+    --shadow-strong: 0 8px 32px hsl(240 10% 5% / 0.18);
+    
+    /* Animation */
+    --transition-smooth: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Little Boy Blue scrollbar */
+.scrollbar-littleboy::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scrollbar-littleboy::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-littleboy::-webkit-scrollbar-thumb {
+  background: hsla(207, 62%, 67%, 0.35);
+  border-radius: 3px;
+}
+.scrollbar-littleboy::-webkit-scrollbar-thumb:hover {
+  background: hsla(207, 62%, 67%, 0.55);
+}
