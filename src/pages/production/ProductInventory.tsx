@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useEffect, CSSProperties, Fragment, useMemo, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -110,12 +110,115 @@ const categories = [
   { key: "defective", label: "สินค้ามีตำหนิ" },
 ];
 
-const subcategoryMap: Record<string, string[]> = {
-  ถ้วยรางวัลสำเร็จ: ["ถ้วยรางวัลโลหะอิตาลี", "ถ้วยรางวัลโลหะจีน", "ถ้วยรางวัลพลาสติกอิตาลี", "ถ้วยรางวัลพลาสติกไทย", "ถ้วยรางวัลฟิกเกอร์", "ถ้วยรางวัลเบญจรงค์"],
-  เหรียญรางวัล: ["เหรียญพลาสติก", "เหรียญโลหะ"],
-  โล่รางวัล: ["โล่คริสตัล", "โล่ไม้"],
-  เสื้อพิมพ์ลายและผ้า: ["เสื้อโปโล", "เสื้อยืด"],
-  ชิ้นส่วนถ้วยรางวัล: ["ฐานถ้วย", "ตัวถ้วย", "ฝาครอบ"],
+// Master Subcategories with their parent category (IDs match API subcategoryId)
+const SUBCATEGORY_MAP: Record<string, { id: string; name: string }> = {
+  // ถ้วยรางวัลสำเร็จ
+  "1": { id: "1", name: "ถ้วยรางวัลโลหะอิตาลี" },
+  "2": { id: "2", name: "ถ้วยรางวัลโลหะจีน" },
+  "3": { id: "3", name: "ถ้วยรางวัลพลาสติกอิตาลี" },
+  "4": { id: "4", name: "ถ้วยรางวัลพลาสติกไทย" },
+  "5": { id: "5", name: "ถ้วยรางวัลพิวเตอร์" },
+  "6": { id: "6", name: "ถ้วยรางวัลเบญจรงค์" },
+  // เหรียญรางวัล
+  "7": { id: "7", name: "เหรียญรางวัลสำเร็จรูป" },
+  "8": { id: "8", name: "เหรียญรางวัลซิงค์อัลลอย" },
+  "9": { id: "9", name: "เหรียญรางวัลอะคริลิก" },
+  "10": { id: "10", name: "เหรียญรางวัลอื่นๆ" },
+  // โล่รางวัล
+  "11": { id: "11", name: "โล่รางวัลอะคริลิก(สำเร็จ)" },
+  "12": { id: "12", name: "โล่รางวัลอะคริลิก (สั่งผลิต)" },
+  "13": { id: "13", name: "โล่รางวัลคริสตัล" },
+  "14": { id: "14", name: "โล่รางวัลไม้" },
+  "15": { id: "15", name: "โล่รางวัลเรซิน" },
+  // เสื้อพิมพ์ลายและผ้า
+  "16": { id: "16", name: "เสื้อคอปก" },
+  "17": { id: "17", name: "เสื้อคอกลม" },
+  "18": { id: "18", name: "เสื้อแขนยาว" },
+  // ชิ้นส่วนถ้วยรางวัล
+  "19": { id: "19", name: "หัวป้ายพลาสติก" },
+  "20": { id: "20", name: "หัวป้ายตุ๊กตาพลาสติก" },
+  "21": { id: "21", name: "เหรียญรางวัลอะคริลิก" },
+};
+
+// Helper: get subcategories for a main category
+const getSubcategoriesForCategory = (category: string): { id: string; name: string }[] => {
+  switch (category) {
+    case "ถ้วยรางวัลสำเร็จ":
+      return Object.values(SUBCATEGORY_MAP).filter((sub) => ["1", "2", "3", "4", "5", "6"].includes(sub.id));
+    case "เหรียญรางวัล":
+      return Object.values(SUBCATEGORY_MAP).filter((sub) => ["7", "8", "9", "10"].includes(sub.id));
+    case "โล่รางวัล":
+      return Object.values(SUBCATEGORY_MAP).filter((sub) => ["11", "12", "13", "14", "15"].includes(sub.id));
+    case "เสื้อพิมพ์ลายและผ้า":
+      return Object.values(SUBCATEGORY_MAP).filter((sub) => ["16", "17", "18"].includes(sub.id));
+    case "ชิ้นส่วนถ้วยรางวัล":
+      return Object.values(SUBCATEGORY_MAP).filter((sub) => ["19", "20", "21"].includes(sub.id));
+    default:
+      return [];
+  }
+};
+
+// Helper: get main category from subcategoryId
+const getCategoryFromSubcategoryId = (subcategoryId: string): string => {
+  const id = parseInt(subcategoryId);
+  if (id >= 1 && id <= 6) return "ถ้วยรางวัลสำเร็จ";
+  if (id >= 7 && id <= 10) return "เหรียญรางวัล";
+  if (id >= 11 && id <= 15) return "โล่รางวัล";
+  if (id >= 16 && id <= 18) return "เสื้อพิมพ์ลายและผ้า";
+  if (id >= 19 && id <= 21) return "ชิ้นส่วนถ้วยรางวัล";
+  return "";
+};
+
+// Master size options
+const MASTER_SIZES = [
+  { value: "A", label: "A" }, { value: "A+", label: "A+" },
+  { value: "B", label: "B" }, { value: "C", label: "C" }, { value: "D", label: "D" },
+  { value: "90X2.5 CM", label: "90X2.5 CM" }, { value: "90X2 CM", label: "90X2 CM" },
+];
+
+// Coin size options for เหรียญรางวัล category
+const COIN_SIZES = [
+  { value: "6", label: "6 ซม." }, { value: "6.5", label: "6.5 ซม." },
+  { value: "7", label: "7 ซม." }, { value: "7.5", label: "7.5 ซม." },
+  { value: "8", label: "8 ซม." },
+];
+
+// Master color options
+const MASTER_COLORS = [
+  { value: "ดำ", label: "ดำ", image: "/colors/black.png" },
+  { value: "ทอง", label: "ทอง", image: "/colors/gold.png" },
+  { value: "ทองแดง", label: "ทองแดง", image: "/colors/bronze.png" },
+  { value: "ทอง-แดง", label: "ทอง-แดง", image: "/colors/gold-bronze.png" },
+  { value: "เงิน", label: "เงิน", image: "/colors/silver.png" },
+  { value: "ขาว", label: "ขาว", image: "/colors/white.png" },
+  { value: "แดง", label: "แดง", image: "/colors/red.png" },
+  { value: "น้ำเงิน", label: "น้ำเงิน", image: "/colors/blue.png" },
+  { value: "เขียว", label: "เขียว", image: "/colors/green.png" },
+  { value: "ม่วง", label: "ม่วง", image: "/colors/purple.png" },
+  { value: "ชมพู", label: "ชมพู", image: "/colors/pink.png" },
+  { value: "ฟ้า", label: "ฟ้า", image: "/colors/sky.png" },
+  { value: "เหลือง", label: "เหลือง", image: "/colors/yellow.png" },
+  { value: "แสด", label: "แสด", image: "/colors/orange.png" },
+  { value: "เทา", label: "เทา", image: "/colors/gray.png" },
+];
+
+// Special color options for Zinc Alloy Medals (เหรียญรางวัลซิงค์อัลลอย)
+const ZINC_ALLOY_MEDAL_COLORS = [
+  { value: "shinny_gold", label: "สีทองเงา (Shinny Gold)", image: "/colors/shinny-gold.png" },
+  { value: "shinny_silver", label: "สีเงินเงา (Shinny Silver)", image: "/colors/shinny-silver.png" },
+  { value: "shinny_copper", label: "สีทองแดงเงา (Shinny Copper)", image: "/colors/shinny-copper.png" },
+  { value: "antique_gold", label: "สีทองรมดำ (Antique Gold)", image: "/colors/antique-gold.png" },
+  { value: "antique_silver", label: "สีเงินรมดำ (Antique Silver)", image: "/colors/antique-silver.png" },
+  { value: "antique_copper", label: "สีทองแดงรมดำ (Antique Copper)", image: "/colors/antique-copper.png" },
+  { value: "misty_gold", label: "สีทองด้าน (Misty Gold)", image: "/colors/misty-gold.png" },
+  { value: "misty_silver", label: "สีเงินด้าน (Misty Silver)", image: "/colors/misty-silver.png" },
+  { value: "misty_copper", label: "สีทองแดงด้าน (Misty Copper)", image: "/colors/misty-copper.png" },
+];
+
+// Helper: get color list based on product type and subcategory
+const getColorList = (_productType?: string, _category?: string, subcategoryId?: string) => {
+  if (subcategoryId === "8") return ZINC_ALLOY_MEDAL_COLORS;
+  return MASTER_COLORS;
 };
 
 const optionsList = [
@@ -136,124 +239,62 @@ const emptyProcurementCost: ProcurementCost = {
   meas: 0, gw: 0, tgw: 0,
 };
 
-const initialProducts: ProductItem[] = [
-  {
-    id: "1", code: "TC-001", name: "ถ้วยรางวัลสีทอง", image: "/placeholder.svg",
-    additionalImages: [], productType: "ถ้วยรางวัลสำเร็จ",
-    category: "ถ้วยรางวัลสำเร็จ", subcategory: "ถ้วยรางวัลโลหะอิตาลี",
-    color: ["ทอง"], size: ["A", "B", "C", "N/A"], tags: "ถ้วยรางวัล",
-    description: "ถ้วยรางวัลโลหะอิตาลีสีทอง คุณภาพสูง",
-    currentStock: 500, minimumStock: 100, unit: "ชิ้น", model: "911_S_W_D",
-    productionTime: [{ value: 7, unit: "วัน" }],
-    options: ["ทำป้ายจารึก", "ทำโบว์", "กล่องกำมะหยี่"],
-    prices: [{ model: "911_S_W_D", retailPrice: 1500, moldCost: 200, specialPrice: 1200 }],
-    lastUpdated: "2025-02-10", status: "in_stock",
-    procurementCost: { manufact: "BC", mtl: "PLASTIC", noted: "", priceYuan: 3.00, priceTHB: 15.60, amountRMB: 1200, totalTHB: 6240, pcsCtn: 200, ctn: 2, boxSize: "B2", boxSizeNum: 0.035, shippingCost: 105, shippingPerPiece: 0.53, totalShipping: 16.13, meas: 0.07, gw: 6.5, tgw: 13 },
-    bom: [
-      { id: "CP-001", name: "ตัวถ้วยโลหะอิตาลี", qty: 1, unit: "ชิ้น" },
-      { id: "CP-002", name: "ฐานหินอ่อน", qty: 1, unit: "ชิ้น" },
-    ],
-    movementHistory: [
-      { id: "M1", date: "2025-02-10 14:30", type: "รับเข้า", qty: 100, by: "สมชาย", note: "รับจากซัพพลายเออร์" },
-      { id: "M2", date: "2025-02-08 10:00", type: "จ่ายออก", qty: 20, by: "วิชัย", note: "เบิกใช้ ORD-015" },
-    ],
-  },
-  {
-    id: "2", code: "TC-002", name: "ถ้วยรางวัลสีเงิน", image: "/placeholder.svg",
-    additionalImages: [], productType: "ถ้วยรางวัลสำเร็จ",
-    category: "ถ้วยรางวัลสำเร็จ", subcategory: "ถ้วยรางวัลโลหะอิตาลี",
-    color: ["เงิน"], size: ["A", "B", "C", "D"], tags: "ถ้วยรางวัล",
-    description: "ถ้วยรางวัลโลหะอิตาลีสีเงิน",
-    currentStock: 30, minimumStock: 50, unit: "ชิ้น", model: "912_S_W_D",
-    productionTime: [{ value: 7, unit: "วัน" }],
-    options: ["ทำป้ายจารึก", "ทำโบว์"],
-    prices: [{ model: "912_S_W_D", retailPrice: 1500, moldCost: 200, specialPrice: 1200 }],
-    lastUpdated: "2025-02-05", status: "low_stock",
-    movementHistory: [
-      { id: "M3", date: "2025-02-05 11:00", type: "จ่ายออก", qty: 15, by: "วิชัย", note: "เบิกใช้ ORD-010" },
-    ],
-  },
-  {
-    id: "3", code: "MD-001", name: "เหรียญพลาสติกรู้แพ้รู้ชนะ", image: "/placeholder.svg",
-    additionalImages: [], productType: "เหรียญรางวัล",
-    category: "เหรียญรางวัล", subcategory: "เหรียญพลาสติก",
-    color: ["ทอง", "เงิน", "ทองแดง"], size: ["มาตรฐาน"], tags: "เหรียญ",
-    description: "เหรียญพลาสติกสำหรับงานกีฬา",
-    currentStock: 1200, minimumStock: 200, unit: "ชิ้น", model: "Standard",
-    productionTime: [{ value: 3, unit: "วัน" }],
-    options: ["สกรีน 1 สี", "สติ๊กเกอร์"],
-    prices: [{ model: "Standard", retailPrice: 25, moldCost: 0, specialPrice: 18 }],
-    lastUpdated: "2025-02-10", status: "in_stock",
-  },
-  {
-    id: "4", code: "MD-002", name: "เหรียญโลหะซิงค์สำเร็จรูป", image: "/placeholder.svg",
-    additionalImages: [], productType: "เหรียญรางวัล",
-    category: "เหรียญรางวัล", subcategory: "เหรียญโลหะ",
-    color: ["เงา", "รมดำ"], size: ["5cm"], tags: "เหรียญ, premium",
-    description: "เหรียญโลหะซิงค์คุณภาพสูง",
-    currentStock: 45, minimumStock: 50, unit: "ชิ้น", model: "Premium",
-    productionTime: [{ value: 2, unit: "สัปดาห์" }],
-    options: ["ทำป้ายจารึก", "สติ๊กเกอร์"],
-    prices: [{ model: "Premium", retailPrice: 120, moldCost: 50, specialPrice: 90 }],
-    lastUpdated: "2025-02-09", status: "low_stock",
-  },
-  {
-    id: "5", code: "PL-001", name: "โล่คริสตัลพรีเมียม", image: "/placeholder.svg",
-    additionalImages: [], productType: "โล่รางวัล",
-    category: "โล่รางวัล", subcategory: "โล่คริสตัล",
-    color: ["ใส"], size: ["8 นิ้ว"], tags: "โล่, คริสตัล",
-    description: "โล่คริสตัลงานพรีเมียม",
-    currentStock: 80, minimumStock: 30, unit: "ชิ้น", model: "Crystal-8",
-    productionTime: [{ value: 5, unit: "วัน" }],
-    options: ["เลเซอร์มาสี"],
-    prices: [{ model: "Crystal-8", retailPrice: 850, moldCost: 0, specialPrice: 700 }],
-    lastUpdated: "2025-02-10", status: "in_stock",
-  },
-  {
-    id: "6", code: "CP-002", name: "ฐานหินอ่อน", image: "/placeholder.svg",
-    additionalImages: [], productType: "ชิ้นส่วนถ้วยรางวัล",
-    category: "ชิ้นส่วนถ้วยรางวัล", subcategory: "ฐานถ้วย",
-    color: ["ดำ", "ขาว"], size: ["4x4 นิ้ว"], tags: "ชิ้นส่วน, ฐาน",
-    description: "ฐานหินอ่อนสำหรับถ้วยรางวัล",
-    currentStock: 350, minimumStock: 100, unit: "ชิ้น", model: "BASE-M01",
-    productionTime: [], options: [],
-    prices: [{ model: "BASE-M01", retailPrice: 150, moldCost: 0, specialPrice: 120 }],
-    lastUpdated: "2025-02-10", status: "in_stock",
-  },
-  {
-    id: "7", code: "CP-003", name: "ฝาครอบพลาสติก", image: "/placeholder.svg",
-    additionalImages: [], productType: "ชิ้นส่วนถ้วยรางวัล",
-    category: "ชิ้นส่วนถ้วยรางวัล", subcategory: "ฝาครอบ",
-    color: ["ใส"], size: ["มาตรฐาน"], tags: "ชิ้นส่วน",
-    description: "ฝาครอบพลาสติกใส",
-    currentStock: 0, minimumStock: 50, unit: "ชิ้น", model: "LID-P01",
-    productionTime: [], options: [],
-    prices: [{ model: "LID-P01", retailPrice: 30, moldCost: 0, specialPrice: 25 }],
-    lastUpdated: "2025-02-08", status: "out_of_stock",
-  },
-  {
-    id: "8", code: "TC-008", name: "ถ้วยรางวัลสีทอง (ตำหนิ)", image: "/placeholder.svg",
-    additionalImages: [], productType: "ถ้วยรางวัลสำเร็จ",
-    category: "ถ้วยรางวัลสำเร็จ", subcategory: "ถ้วยรางวัลโลหะอิตาลี",
-    color: ["ทอง"], size: ["A"], tags: "ถ้วยรางวัล,ตำหนิ",
-    description: "ถ้วยรางวัลโลหะสีทอง มีรอยขีดข่วน",
-    currentStock: 5, minimumStock: 0, unit: "ชิ้น", model: "911_S_W_D",
-    productionTime: [], options: [],
-    prices: [{ model: "911_S_W_D", retailPrice: 800, moldCost: 100, specialPrice: 600 }],
-    lastUpdated: "2025-02-12", status: "defective",
-  },
-  {
-    id: "9", code: "MD-005", name: "เหรียญโลหะ (ตำหนิ)", image: "/placeholder.svg",
-    additionalImages: [], productType: "เหรียญรางวัล",
-    category: "เหรียญรางวัล", subcategory: "เหรียญโลหะ",
-    color: ["เงิน"], size: ["มาตรฐาน"], tags: "เหรียญ,ตำหนิ",
-    description: "เหรียญโลหะสีเงิน สีไม่สม่ำเสมอ",
-    currentStock: 10, minimumStock: 0, unit: "ชิ้น", model: "MED-M01",
-    productionTime: [], options: [],
-    prices: [{ model: "MED-M01", retailPrice: 150, moldCost: 30, specialPrice: 100 }],
-    lastUpdated: "2025-02-11", status: "defective",
-  },
-];
+const API_PRODUCT_URL = "https://finfinphone.com/api-lucky/portal/getProduct.php";
+const BASE_IMAGE_URL = "https://finfinphone.com/api-lucky/";
+
+// Helper: map API product -> ProductItem
+function mapApiProduct(p: any): ProductItem {
+  const stock = typeof p.inventory === "number" ? p.inventory : parseInt(p.inventory) || 0;
+  const imageUrl = p.image ? `${BASE_IMAGE_URL}${p.image}` : "";
+  const additionalImages: string[] = (p.images || []).map((img: string) => `${BASE_IMAGE_URL}${img}`);
+  const colors: string[] = (p.colors || []).map((c: any) => c.color).filter(Boolean);
+  const sizes: string[] = (p.sizes || [])
+    .map((s: any) => s.size)
+    .filter((s: string) => s && s.trim() !== "");
+  const prices: PriceEntry[] = (p.prices || []).map((pr: any) => ({
+    model: p.modelName || p.name,
+    retailPrice: pr.retail_price || 0,
+    moldCost: 0,
+    specialPrice: pr.special_price || 0,
+  }));
+  if (prices.length === 0 && p.price > 0) {
+    prices.push({ model: p.modelName || p.name, retailPrice: p.price, moldCost: 0, specialPrice: 0 });
+  }
+  const productionTimes: ProductionTime[] = (p.productionTimes || []).map((pt: any) => ({
+    value: parseInt(pt.duration) || 0,
+    unit: pt.unit === "months" ? "สัปดาห์" : "วัน",
+  }));
+  const rawTags: string[] = (p.tags || []).filter((t: string) => t !== "[]" && t.trim() !== "");
+  const tagsStr = rawTags.join(", ");
+  // Derive main category and subcategory name from subcategoryId
+  const subId = p.subcategoryId || "0";
+  const mainCategory = getCategoryFromSubcategoryId(subId) || p.category || "";
+  const subcategoryName = SUBCATEGORY_MAP[subId]?.name || p.category || "";
+  return {
+    id: String(p.id),
+    code: `PROD-${p.id}`,
+    name: p.name,
+    image: imageUrl,
+    additionalImages,
+    productType: mainCategory || "สินค้าทั่วไป",
+    category: mainCategory || "สินค้าทั่วไป",
+    subcategory: subcategoryName,
+    color: colors,
+    size: sizes,
+    tags: tagsStr,
+    description: p.description || "",
+    currentStock: stock,
+    minimumStock: 0,
+    unit: "ชิ้น",
+    model: p.modelName || "",
+    productionTime: productionTimes,
+    options: [],
+    prices,
+    lastUpdated: new Date().toISOString().split("T")[0],
+    status: stock <= 0 ? "out_of_stock" : "in_stock",
+    movementHistory: [],
+  };
+}
 
 // --- Empty form state ---
 const emptyForm: Omit<ProductItem, "id" | "status" | "lastUpdated" | "movementHistory"> = {
@@ -271,11 +312,28 @@ interface ProductInventoryProps {
 
 export default function ProductInventory({ isSalesMode = false, isProcurementMode = false }: ProductInventoryProps) {
   const isReadOnlyMode = isSalesMode || isProcurementMode;
-  const [products, setProducts] = useState<ProductItem[]>(initialProducts);
+  const [products, setProducts] = useState<ProductItem[]>([]);
+  const [apiLoading, setApiLoading] = useState(true);
+  const [apiError, setApiError] = useState("");
+
+  useEffect(() => {
+    setApiLoading(true);
+    fetch(API_PRODUCT_URL)
+      .then(res => res.json())
+      .then(json => {
+        if (json.status === "success" && Array.isArray(json.data)) {
+          setProducts(json.data.map(mapApiProduct));
+        } else {
+          setApiError("ไม่สามารถโหลดข้อมูลสินค้าได้");
+        }
+      })
+      .catch(() => setApiError("เชื่อมต่อ API ไม่ได้"))
+      .finally(() => setApiLoading(false));
+  }, []);
   const [searchTerm, setSearchTerm] = useState("");
   const [viewMode, setViewMode] = useState<"card" | "table">("card");
   const [selectedCategory, setSelectedCategory] = useState("all");
-  const [selectedSubcategory, setSelectedSubcategory] = useState("all");
+  const [selectedSubcategoryId, setSelectedSubcategoryId] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [activeTab, setActiveTab] = useState("products");
 
@@ -293,6 +351,51 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
   const [adjustType, setAdjustType] = useState<"รับเข้า" | "จ่ายออก">("รับเข้า");
   const [adjustQty, setAdjustQty] = useState("");
   const [adjustNote, setAdjustNote] = useState("");
+
+  // New Edit Modal state
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editProduct, setEditProduct] = useState<any>(null);
+  const [productionTimes, setProductionTimes] = useState<{ duration: string; unit: string }[]>([]);
+
+  const openEditModal = (item: ProductItem) => {
+    const apiProduct: any = {
+      id: item.id,
+      name: item.name,
+      modelName: item.model,
+      description: item.description,
+      category: item.category,
+      subcategoryId: "",
+      productType: item.productType === "สินค้าทั่วไป" ? "" : "1",
+      image: item.image,
+      images: item.additionalImages || [],
+      colors: item.color.map((c, i) => ({ id: i, color: c, image_path: "" })),
+      sizes: item.size.map((s, i) => ({ id: i, size: s, width: 0, height: 0, weight: 0 })),
+      tags: item.tags ? item.tags.split(", ").filter(Boolean) : [],
+      options: item.options.map((o, i) => ({ id: i, product_id: item.id, option_id: i + 1 })),
+      prices: item.prices.map((p, i) => ({ id: i, retail_price: p.retailPrice, wholesale_price: p.moldCost, special_price: p.specialPrice })),
+      parts: [],
+    };
+    for (const [id, sub] of Object.entries(SUBCATEGORY_MAP)) {
+      if (sub.name === item.subcategory) {
+        apiProduct.subcategoryId = id;
+        break;
+      }
+    }
+    setEditProduct(apiProduct);
+    setProductionTimes(item.productionTime.map(pt => ({ duration: String(pt.value), unit: pt.unit === "สัปดาห์" ? "months" : "days" })));
+    setIsEditModalOpen(true);
+  };
+
+  const handleEditClose = () => {
+    setIsEditModalOpen(false);
+    setEditProduct(null);
+    setProductionTimes([]);
+  };
+
+  const handleEditSave = () => {
+    if (!editProduct) return;
+    handleEditClose();
+  };
 
   // Inline editing state
   const [inlineEditId, setInlineEditId] = useState<string | null>(null);
@@ -354,7 +457,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
     });
   };
 
-  const subcategories = subcategoryMap[selectedCategory] || [];
+  const subcategories = getSubcategoriesForCategory(selectedCategory);
 
   // Excel import state
   const [showImportDialog, setShowImportDialog] = useState(false);
@@ -421,10 +524,10 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
   const filteredItems = useMemo(() => {
     return products.filter((item) => {
       const term = searchTerm.toLowerCase();
-      const matchesSearch = !term || item.name.toLowerCase().includes(term) || item.code.toLowerCase().includes(term) || item.tags.toLowerCase().includes(term);
+      const matchesSearch = !term || item.name.toLowerCase().includes(term) || item.code.toLowerCase().includes(term) || item.model.toLowerCase().includes(term) || item.tags.toLowerCase().includes(term);
       const isDefectiveCategory = selectedCategory === "defective";
       const matchesCategory = selectedCategory === "all" || isDefectiveCategory || item.category === selectedCategory;
-      const matchesSubcategory = selectedSubcategory === "all" || item.subcategory === selectedSubcategory;
+      const matchesSubcategory = selectedSubcategoryId === "" || item.subcategory === (getSubcategoriesForCategory(selectedCategory).find(s => s.id === selectedSubcategoryId)?.name || "");
       let matchesStatus = true;
       if (isDefectiveCategory) matchesStatus = item.status === "defective";
       else if (statusFilter === "in_stock") matchesStatus = item.status === "in_stock";
@@ -433,7 +536,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
       else if (statusFilter === "defective") matchesStatus = item.status === "defective";
       return matchesSearch && matchesCategory && matchesSubcategory && matchesStatus;
     });
-  }, [searchTerm, selectedCategory, selectedSubcategory, statusFilter, products]);
+  }, [searchTerm, selectedCategory, selectedSubcategoryId, statusFilter, products]);
 
   const computeStatus = (stock: number, min: number): ProductItem["status"] => {
     if (stock <= 0) return "out_of_stock";
@@ -454,20 +557,6 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
   const openAddModal = () => {
     setEditingProduct(null);
     setForm({ ...emptyForm, prices: [{ model: "", retailPrice: 0, moldCost: 0, specialPrice: 0 }] });
-    setShowModal(true);
-  };
-
-  const openEditModal = (item: ProductItem) => {
-    setEditingProduct(item);
-    setForm({
-      code: item.code, name: item.name, image: item.image, additionalImages: [...item.additionalImages],
-      productType: item.productType, category: item.category, subcategory: item.subcategory,
-      color: [...item.color], size: [...item.size], tags: item.tags, description: item.description,
-      currentStock: item.currentStock, minimumStock: item.minimumStock, unit: item.unit, model: item.model,
-      productionTime: [...item.productionTime], options: [...item.options],
-      prices: item.prices.length > 0 ? [...item.prices] : [{ model: "", retailPrice: 0, moldCost: 0, specialPrice: 0 }],
-      procurementCost: item.procurementCost ? { ...item.procurementCost } : { ...emptyProcurementCost },
-    });
     setShowModal(true);
   };
 
@@ -669,7 +758,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                       )}
                     </TableCell>
                     <TableCell className="font-medium">
-                      {isEditing ? <Input className="h-7 text-xs w-24" value={ed.code || ""} onChange={(e) => setInlineEditData(prev => ({ ...prev, code: e.target.value }))} /> : item.code}
+                      {isEditing ? <Input className="h-7 text-xs w-24" value={ed.model || ""} onChange={(e) => setInlineEditData(prev => ({ ...prev, model: e.target.value }))} /> : item.model}
                     </TableCell>
                     <TableCell className="font-medium text-red-600">
                       {isEditing ? <Input className="h-7 text-xs w-36" value={ed.name || ""} onChange={(e) => setInlineEditData(prev => ({ ...prev, name: e.target.value }))} /> : item.name}
@@ -830,6 +919,29 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
     </Card>
   );
 
+  if (apiLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary mx-auto mb-4" />
+          <p className="text-muted-foreground">กำลังโหลดข้อมูลสินค้า...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (apiError) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <AlertTriangle className="w-10 h-10 text-destructive mx-auto mb-3" />
+          <p className="font-medium text-destructive">{apiError}</p>
+          <Button className="mt-4" onClick={() => window.location.reload()}>ลองใหม่</Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -970,7 +1082,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
               <div className="flex flex-wrap gap-2">
                 {categories.map((cat) => (
                   <Button key={cat.key} variant={selectedCategory === cat.key ? "default" : "outline"} size="sm"
-                    onClick={() => { setSelectedCategory(cat.key); setSelectedSubcategory("all"); }}
+                    onClick={() => { setSelectedCategory(cat.key); setSelectedSubcategoryId(""); }}
                     className={selectedCategory === cat.key ? "bg-red-500 hover:bg-red-600 text-white" : ""}>
                     {cat.label}
                   </Button>
@@ -980,16 +1092,16 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                 <div>
                   <p className="text-xs text-muted-foreground mb-2">หมวดหมู่ย่อย</p>
                   <div className="flex flex-wrap gap-2">
-                    <Button variant={selectedSubcategory === "all" ? "default" : "outline"} size="sm"
-                      onClick={() => setSelectedSubcategory("all")}
-                      className={selectedSubcategory === "all" ? "bg-red-500 hover:bg-red-600 text-white" : ""}>
+                    <Button variant={selectedSubcategoryId === "" ? "default" : "outline"} size="sm"
+                      onClick={() => setSelectedSubcategoryId("")}
+                      className={selectedSubcategoryId === "" ? "bg-red-500 hover:bg-red-600 text-white" : ""}>
                       ทั้งหมด
                     </Button>
-                    {subcategories.map((sub) => (
-                      <Button key={sub} variant={selectedSubcategory === sub ? "default" : "outline"} size="sm"
-                        onClick={() => setSelectedSubcategory(sub)}
-                        className={selectedSubcategory === sub ? "bg-red-500 hover:bg-red-600 text-white" : ""}>
-                        {sub}
+                    {subcategories.map((subcategory) => (
+                      <Button key={subcategory.id} variant={selectedSubcategoryId === subcategory.id ? "default" : "outline"} size="sm"
+                        onClick={() => setSelectedSubcategoryId(subcategory.id)}
+                        className={selectedSubcategoryId === subcategory.id ? "bg-red-500 hover:bg-red-600 text-white" : ""}>
+                        {subcategory.name}
                       </Button>
                     ))}
                   </div>
@@ -1083,8 +1195,8 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                       <TableCell>{mov.date}</TableCell>
                       <TableCell>
                         {mov.type === "รับเข้า" ? <Badge className="bg-green-100 text-green-700"><ArrowDownCircle className="w-3 h-3 mr-1" />{mov.type}</Badge> :
-                         mov.type === "จ่ายออก" ? <Badge className="bg-red-100 text-red-700"><ArrowUpCircle className="w-3 h-3 mr-1" />{mov.type}</Badge> :
-                         <Badge className="bg-blue-100 text-blue-700">{mov.type}</Badge>}
+                          mov.type === "จ่ายออก" ? <Badge className="bg-red-100 text-red-700"><ArrowUpCircle className="w-3 h-3 mr-1" />{mov.type}</Badge> :
+                            <Badge className="bg-blue-100 text-blue-700">{mov.type}</Badge>}
                       </TableCell>
                       <TableCell>{mov.item}</TableCell>
                       <TableCell className={mov.qty > 0 ? "text-green-600" : "text-red-600"}>
@@ -1108,386 +1220,1655 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
           </TabsContent>
         )}
       </Tabs>
-
-      {/* ===== Add/Edit Product Modal ===== */}
-      <Dialog open={showModal} onOpenChange={setShowModal}>
-        <DialogContent className="sm:max-w-[900px] max-h-[90vh] overflow-y-auto">
+      {/* Edit Product Modal */}
+      <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
+        <DialogContent className="bg-white rounded-lg shadow-xl max-w-5xl w-full p-4 sm:p-6 mx-2 sm:mx-0 max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingProduct ? "แก้ไขสินค้า" : "เพิ่มสินค้า"}</DialogTitle>
+            <DialogTitle
+              className="text-lg font-semibold text-gray-900 mb-4"
+              style={{
+                fontFamily: "Sukhumvit Set, sans-serif" as CSSProperties["fontFamily"],
+              }}
+            >
+              แก้ไขสินค้า
+            </DialogTitle>
           </DialogHeader>
-          <div className="grid grid-cols-1 md:grid-cols-[280px_1fr] gap-6">
-            {/* Left: Images */}
-            <div className="space-y-4">
-              <div className="border-2 border-dashed rounded-lg p-6 flex flex-col items-center justify-center bg-muted/20 min-h-[200px]">
-                {form.image ? (
-                  <img src={form.image} alt="Product" className="w-full h-40 object-contain mb-2" />
-                ) : (
-                  <div className="flex flex-col items-center gap-2 text-muted-foreground">
-                    <ImageIcon className="w-12 h-12 opacity-40" />
-                    <span className="text-sm">รูปภาพหลัก</span>
+
+          <div className="flex flex-col lg:flex-row gap-6">
+            {/* Left Column - Image Upload */}
+            <div className="w-full lg:w-1/3 space-y-4">
+              {/* Main image preview */}
+              <div className="w-full">
+                {editProduct?.image?.length > 0 && (
+                  <div className="relative h-40 md:h-48 lg:h-60 w-full overflow-hidden rounded-lg border border-gray-200">
+                    <img
+                      src={
+                        editProduct.image?.startsWith("data:")
+                          ? editProduct.image
+                          : `${editProduct.image}`
+                      }
+                      alt="Main product image"
+                      className="h-full w-full object-contain"
+                    />
                   </div>
                 )}
-                <Button size="sm" variant="destructive" className="mt-2" onClick={handleMainImageUpload}>
-                  <Upload className="w-3 h-3 mr-1" /> อัพโหลดรูปภาพ
-                </Button>
               </div>
-              <div>
-                <p className="text-xs text-muted-foreground mb-2">รูปภาพเพิ่มเติม</p>
-                <div className="border-2 border-dashed rounded-lg p-4 flex items-center justify-center bg-muted/20 cursor-pointer hover:bg-muted/30"
-                  onClick={() => { toast.info("เพิ่มรูปภาพ (ระบบจำลอง)"); }}>
-                  <div className="flex flex-col items-center gap-1 text-muted-foreground">
-                    <ImageIcon className="w-6 h-6 opacity-40" />
-                    <span className="text-xs">เพิ่มรูปภาพ</span>
+
+              {/* Additional Images */}
+              <div className="mt-4">
+                <label
+                  className="block text-sm font-medium text-gray-900 mb-2"
+                  style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
+                >
+                  รูปภาพเพิ่มเติม
+                </label>
+                <div>
+                  {/* Main image preview */}
+
+                  {/* Scrollable gallery */}
+                  <div className="w-full overflow-x-auto pb-4 mb-4 hide-scrollbar">
+                    <div className="flex space-x-4">
+                      {/* Existing images preview */}
+                      {editProduct?.images?.map((img, index) => (
+                        <div
+                          key={index}
+                          className="relative h-20 w-20 flex-shrink-0 group"
+                        >
+                          <img
+                            src={
+                              img.startsWith("data:")
+                                ? img
+                                : `${img}`
+                            }
+                            alt={`Product image ${index}`}
+                            className="h-full w-full object-cover rounded-md border border-gray-200 cursor-pointer hover:opacity-75 transition-opacity"
+                            onClick={() => {
+                              if (editProduct && editProduct.images) {
+                                // Move this image to the first position (main image)
+                                const newImages = [...editProduct.images];
+                                const selectedImg = newImages.splice(
+                                  index,
+                                  1
+                                )[0];
+                                newImages.unshift(selectedImg);
+                                setEditProduct((prev) => ({
+                                  ...prev!,
+                                  images: newImages,
+                                }));
+                              }
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (editProduct) {
+                                const newImages = [...editProduct.images];
+                                newImages.splice(index, 1);
+                                setEditProduct((prev) => ({
+                                  ...prev!,
+                                  images: newImages,
+                                }));
+                              }
+                            }}
+                            className="absolute top-0 right-0 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                          >
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              className="h-3 w-3"
+                              viewBox="0 0 20 20"
+                              fill="currentColor"
+                            >
+                              <path
+                                fillRule="evenodd"
+                                d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                                clipRule="evenodd"
+                              />
+                            </svg>
+                          </button>
+                        </div>
+                      ))}
+
+                      {/* Add more images button */}
+                      <label className="h-20 w-20 flex-shrink-0 border-2 border-dashed border-gray-300 rounded-md flex items-center justify-center cursor-pointer hover:bg-gray-50">
+                        <div className="flex flex-col items-center">
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            className="h-6 w-6 text-gray-400"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M12 4v16m8-8H4"
+                            />
+                          </svg>
+                          <span className="text-sm text-gray-500 mt-1">
+                            เพิ่มรูป
+                          </span>
+                        </div>
+                        <input
+                          type="file"
+                          className="hidden"
+                          accept="image/*"
+                          multiple
+                          onChange={(e) => {
+                            if (
+                              e.target.files &&
+                              e.target.files.length > 0 &&
+                              editProduct
+                            ) {
+                              // สร้าง array สำหรับเก็บรูปภาพใหม่
+                              const newImages = [
+                                ...(editProduct.images || []),
+                              ];
+
+                              // สร้างตัวแปรเพื่อติดตามจำนวนไฟล์ที่อ่านเสร็จแล้ว
+                              let filesProcessed = 0;
+                              const totalFiles = e.target.files.length;
+
+                              // วนลูปผ่านไฟล์ทั้งหมดที่เลือก
+                              Array.from(e.target.files).forEach((file) => {
+                                const reader = new FileReader();
+                                reader.onload = (event) => {
+                                  if (event.target?.result) {
+                                    newImages.push(
+                                      event.target.result as string
+                                    );
+                                    filesProcessed++;
+
+                                    // อัปเดตรูปภาพเมื่ออ่านไฟล์ทั้งหมดเสร็จแล้ว
+                                    if (filesProcessed === totalFiles) {
+                                      setEditProduct((prev) => ({
+                                        ...prev!,
+                                        images: [...newImages],
+                                      }));
+                                    }
+                                  }
+                                };
+                                reader.readAsDataURL(file);
+                              });
+                            }
+                          }}
+                        />
+                      </label>
+                    </div>
                   </div>
+
+                  {/* Helper text */}
+                  {/* <p className="text-xs text-gray-500 mb-2">คลิกที่รูปเพื่อตั้งเป็นรูปหลัก (รูปแรกจะถูกใช้เป็นรูปหลัก)</p> */}
                 </div>
               </div>
             </div>
 
-            {/* Right: Form fields */}
-            <div className="space-y-4">
-              {/* Product Type */}
-              <div className="space-y-1.5">
-                <Label>ประเภทสินค้า</Label>
-                <Select value={form.productType} onValueChange={(v) => setForm(prev => ({ ...prev, productType: v, category: v, subcategory: "" }))}>
-                  <SelectTrigger><SelectValue placeholder="เลือกประเภทสินค้า" /></SelectTrigger>
-                  <SelectContent>
-                    {productTypes.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+            {/* Right Column - Product Details */}
+            <div className="w-full lg:w-2/3 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="md:col-span-2">
+                <label
+                  className="block text-sm font-medium text-gray-900 mb-2"
+                  style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
+                >
+                  ประเภทสินค้า
+                </label>
+                <select
+                  value={editProduct?.productType || ""}
+                  onChange={(e) =>
+                    setEditProduct({
+                      ...editProduct!,
+                      productType: e.target.value as
+                        | "ready"
+                        | "preorder"
+                        | "",
+                    })
+                  }
+                  className="w-full px-4 py-2.5 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                >
+                  <option value="">เลือกประเภทสินค้า</option>
+                  <option value="1">สินค้าสำเร็จรูป</option>
+                  <option value="2">สินค้าพรีออเดอร์</option>
+                  <option value="3">opton</option>
+                </select>
+              </div>
+              <div className="md:col-span-2">
+                <label
+                  className="block text-sm font-medium text-gray-900 mb-2"
+                  style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
+                >
+                  ชื่อสินค้า (สำหรับแสดงลูกค้า)
+                </label>
+                <input
+                  type="text"
+                  value={editProduct?.name || ""}
+                  onChange={(e) => {
+                    const newName = e.target.value;
+                    setEditProduct((prev) => ({
+                      ...prev!,
+                      name: newName,
+                    }));
+                  }}
+                  className="w-full px-4 py-2.5 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  placeholder="ชื่อสินค้า"
+                />
               </div>
 
-              {/* Name */}
-              <div className="space-y-1.5">
-                <Label>ชื่อสินค้า (สำหรับแสดงลูกค้า)</Label>
-                <Input value={form.name} onChange={(e) => setForm(prev => ({ ...prev, name: e.target.value }))} placeholder="ชื่อสินค้า" />
+              <div className="md:col-span-2">
+                <label
+                  className="block text-sm font-medium text-gray-900 mb-2"
+                  style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
+                >
+                  รหัสสินค้า
+                </label>
+                <input
+                  type="text"
+                  value={editProduct?.modelName || ""}
+                  onChange={(e) => {
+                    const newModelName = e.target.value;
+                    setEditProduct((prev) => ({
+                      ...prev!,
+                      modelName: newModelName,
+                    }));
+                  }}
+                  className="w-full px-4 py-2.5 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  placeholder="ชื่อรุ่น"
+                />
               </div>
 
-              {/* Code */}
-              <div className="space-y-1.5">
-                <Label>รหัสสินค้า</Label>
-                <Input value={form.code} onChange={(e) => setForm(prev => ({ ...prev, code: e.target.value }))} placeholder="รหัสสินค้า" />
+              <div className="md:col-span-2">
+                <label
+                  className="block text-sm font-medium text-gray-900 mb-2"
+                  style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
+                >
+                  รายละเอียดสินค้า
+                </label>
+                <textarea
+                  value={editProduct?.description || ""}
+                  onChange={(e) => {
+                    const newDescription = e.target.value;
+                    setEditProduct((prev) => ({
+                      ...prev!,
+                      description: newDescription,
+                    }));
+                  }}
+                  className="w-full px-4 py-2.5 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  rows={3}
+                  placeholder="รายละเอียดสินค้า"
+                />
               </div>
 
-              {/* Description */}
-              <div className="space-y-1.5">
-                <Label>รายละเอียด</Label>
-                <Textarea value={form.description} onChange={(e) => setForm(prev => ({ ...prev, description: e.target.value }))} placeholder="รายละเอียดสินค้า" rows={3} />
-              </div>
+              <div>
+                <label
+                  className="block text-sm font-medium text-gray-900 mb-2"
+                  style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
+                >
+                  Tags
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={editProduct?.tags?.join(" ") || ""}
+                    onChange={(e) => {
+                      // Split by spaces and add # to each tag
+                      const tags = e.target.value
+                        .split(" ")
+                        .map((tag) => tag.trim())
+                        .filter((tag) => tag.length > 0)
+                        .map((tag) =>
+                          tag.startsWith("#") ? tag : `#${tag}`
+                        );
 
-              {/* Category & Subcategory */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label>หมวดหมู่</Label>
-                  <Select value={form.category} onValueChange={(v) => setForm(prev => ({ ...prev, category: v, subcategory: "" }))}>
-                    <SelectTrigger><SelectValue placeholder="เลือกหมวดหมู่" /></SelectTrigger>
-                    <SelectContent>
-                      {productTypes.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>หมวดหมู่ย่อย</Label>
-                  <Select value={form.subcategory} onValueChange={(v) => setForm(prev => ({ ...prev, subcategory: v }))}>
-                    <SelectTrigger><SelectValue placeholder="เลือกหมวดหมู่ย่อย" /></SelectTrigger>
-                    <SelectContent>
-                      {(subcategoryMap[form.category] || []).map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              {/* Color & Tags */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label>สี</Label>
-                  <div className="flex flex-wrap gap-1.5">
-                    {colorOptions.map(c => (
-                      <Badge key={c} variant={form.color.includes(c) ? "default" : "outline"}
-                        className={`cursor-pointer text-xs ${form.color.includes(c) ? "bg-red-500 text-white" : ""}`}
-                        onClick={() => setForm(prev => ({
-                          ...prev,
-                          color: prev.color.includes(c) ? prev.color.filter(x => x !== c) : [...prev.color, c],
-                        }))}>
-                        {c}
-                      </Badge>
-                    ))}
+                      setEditProduct((prev) => ({
+                        ...prev!,
+                        tags: tags,
+                      }));
+                    }}
+                    className="w-full px-4 py-2.5 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                    placeholder="ป้อน tags แยกด้วยช่องว่าง"
+                  />
+                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400">
+                    <span className="text-sm">#Tags</span>
                   </div>
-                  {form.color.length > 0 && (
-                    <Button variant="link" size="sm" className="text-red-500 h-auto p-0 text-xs"
-                      onClick={() => setForm(prev => ({ ...prev, color: [] }))}>
-                      ล้างสีทั้งหมด
-                    </Button>
-                  )}
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Tags</Label>
-                  <Input value={form.tags} onChange={(e) => setForm(prev => ({ ...prev, tags: e.target.value }))} placeholder="#Tags" />
                 </div>
               </div>
 
-              {/* Production Time */}
-              <div className="space-y-1.5">
-                <Label>ระยะเวลาการผลิต</Label>
-                {form.productionTime.map((pt, idx) => (
-                  <div key={idx} className="flex items-center gap-2">
-                    <Input type="number" className="w-20" value={pt.value || ""} onChange={(e) => {
-                      const updated = [...form.productionTime];
-                      updated[idx] = { ...updated[idx], value: parseInt(e.target.value) || 0 };
-                      setForm(prev => ({ ...prev, productionTime: updated }));
-                    }} />
-                    <Select value={pt.unit} onValueChange={(v) => {
-                      const updated = [...form.productionTime];
-                      updated[idx] = { ...updated[idx], unit: v as "วัน" | "สัปดาห์" };
-                      setForm(prev => ({ ...prev, productionTime: updated }));
-                    }}>
-                      <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="วัน">วัน</SelectItem>
-                        <SelectItem value="สัปดาห์">สัปดาห์</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive"
-                      onClick={() => setForm(prev => ({ ...prev, productionTime: prev.productionTime.filter((_, i) => i !== idx) }))}>
-                      <X className="w-4 h-4" />
-                    </Button>
-                  </div>
-                ))}
-                <Button variant="destructive" size="sm"
-                  onClick={() => setForm(prev => ({ ...prev, productionTime: [...prev.productionTime, { value: 0, unit: "วัน" }] }))}>
-                  + เพิ่มระยะเวลาการผลิต
-                </Button>
-              </div>
-
-              {/* Size */}
-              <div className="space-y-1.5">
-                <Label>ขนาด</Label>
-                <div className="flex flex-wrap gap-1.5">
-                  {sizeOptions.map(s => (
-                    <Badge key={s} variant={form.size.includes(s) ? "default" : "outline"}
-                      className={`cursor-pointer text-xs ${form.size.includes(s) ? "bg-blue-500 text-white" : ""}`}
-                      onClick={() => setForm(prev => ({
-                        ...prev,
-                        size: prev.size.includes(s) ? prev.size.filter(x => x !== s) : [...prev.size, s],
-                      }))}>
-                      {s}
-                    </Badge>
-                  ))}
-                </div>
-                {form.size.length > 0 && (
-                  <Button variant="link" size="sm" className="text-blue-500 h-auto p-0 text-xs"
-                    onClick={() => setForm(prev => ({ ...prev, size: [] }))}>
-                    ล้างขนาดทั้งหมด
-                  </Button>
-                )}
-                <div className="flex gap-2">
-                  <Input placeholder="เพิ่มขนาดอื่นๆ" value={newSize} onChange={(e) => setNewSize(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter" && newSize.trim()) { setForm(prev => ({ ...prev, size: [...prev.size, newSize.trim()] })); setNewSize(""); } }} />
-                  <Button variant="outline" size="sm" onClick={() => { if (newSize.trim()) { setForm(prev => ({ ...prev, size: [...prev.size, newSize.trim()] })); setNewSize(""); } }}>
-                    เพิ่ม
-                  </Button>
-                </div>
-              </div>
-
-              {/* Options */}
-              <div className="space-y-1.5">
-                <Label>Options</Label>
-                <div className="border rounded-lg divide-y">
-                  {optionsList.map(opt => (
-                    <label key={opt} className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/30 cursor-pointer">
-                      <Checkbox
-                        checked={form.options.includes(opt)}
-                        onCheckedChange={(checked) => setForm(prev => ({
-                          ...prev,
-                          options: checked ? [...prev.options, opt] : prev.options.filter(o => o !== opt),
-                        }))} />
-                      <span className="text-sm">{opt}</span>
+              {/* <div>
+                    <label className="block text-sm font-medium text-gray-900 mb-2" style={{ fontFamily: 'Sukhumvit Set, sans-serif' }}>
+                      ราคา
                     </label>
-                  ))}
-                </div>
+                    <input
+                      type="text"
+                      value={editProduct?.price || 0}
+                      onChange={(e) => {
+                        const newPrice = parseFloat(e.target.value);
+                        setEditProduct(prev => ({
+                          ...prev!,
+                          price: newPrice
+                        }));
+                      }}
+                      className="w-full px-4 py-2.5 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                      placeholder="0"
+                      min="0"
+                    />
+                  </div> */}
+
+              <div>
+                <label
+                  className="block text-sm font-medium text-gray-900 mb-2"
+                  style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
+                >
+                  หมวดหมู่
+                </label>
+                <select
+                  value={editProduct?.category || ""}
+                  onChange={(e) => {
+                    const newCategory = e.target.value;
+                    console.log("Selected category:", newCategory);
+
+                    // อัพเดต state ทันที
+                    setEditProduct((prev) => {
+                      if (!prev) return prev;
+
+                      // ล้างการเลือกหมวดหมู่ย่อยเมื่อเปลี่ยนหมวดหมู่หลัก
+                      const updatedProduct = {
+                        ...prev,
+                        category: newCategory,
+                        subcategoryId: "", // รีเซ็ตค่าหมวดหมู่ย่อย
+                      };
+
+                      console.log("Updated product state:", updatedProduct);
+                      return updatedProduct;
+                    });
+                  }}
+                  className="w-full px-4 py-2.5 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                >
+                  <option value="">เลือกหมวดหมู่</option>
+                  {categories.map((category) => (<option key={category.key} value={category.key}>{category.label}</option>))}
+                </select>
               </div>
 
-              {/* Prices */}
-              <div className="space-y-1.5">
-                <Label>ราคา</Label>
-                <Button variant="destructive" size="sm" className="mb-2"
-                  onClick={() => setForm(prev => ({ ...prev, prices: [...prev.prices, { model: "", retailPrice: 0, moldCost: 0, specialPrice: 0 }] }))}>
-                  + เพิ่มราคา
-                </Button>
-                {form.prices.map((price, idx) => (
-                  <div key={idx} className="grid grid-cols-[1fr_1fr_1fr_1fr_auto] gap-2 items-end">
-                    <div className="space-y-1">
-                      {idx === 0 && <Label className="text-xs">รหัสสินค้า (Model)</Label>}
-                      <Input value={price.model} onChange={(e) => {
-                        const updated = [...form.prices]; updated[idx] = { ...updated[idx], model: e.target.value };
-                        setForm(prev => ({ ...prev, prices: updated }));
-                      }} placeholder="Model" />
-                    </div>
-                    <div className="space-y-1">
-                      {idx === 0 && <Label className="text-xs">ราคาปลีก</Label>}
-                      <Input type="number" value={price.retailPrice || ""} onChange={(e) => {
-                        const updated = [...form.prices]; updated[idx] = { ...updated[idx], retailPrice: parseFloat(e.target.value) || 0 };
-                        setForm(prev => ({ ...prev, prices: updated }));
-                      }} placeholder="0" />
-                    </div>
-                    <div className="space-y-1">
-                      {idx === 0 && <Label className="text-xs">{isSalesMode ? "ราคาส่ง" : "ค่าโมล"}</Label>}
-                      <Input type="number" value={price.moldCost || ""} onChange={(e) => {
-                        const updated = [...form.prices]; updated[idx] = { ...updated[idx], moldCost: parseFloat(e.target.value) || 0 };
-                        setForm(prev => ({ ...prev, prices: updated }));
-                      }} placeholder="0" />
-                    </div>
-                    <div className="space-y-1">
-                      {idx === 0 && <Label className="text-xs">ราคาพิเศษ</Label>}
-                      <Input type="number" value={price.specialPrice || ""} onChange={(e) => {
-                        const updated = [...form.prices]; updated[idx] = { ...updated[idx], specialPrice: parseFloat(e.target.value) || 0 };
-                        setForm(prev => ({ ...prev, prices: updated }));
-                      }} placeholder="0" />
-                    </div>
-                    <Button size="icon" variant="ghost" className="h-9 w-9 text-destructive"
-                      onClick={() => setForm(prev => ({ ...prev, prices: prev.prices.filter((_, i) => i !== idx) }))}>
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
-                ))}
+              <div>
+                <label
+                  className="block text-sm font-medium text-gray-900 mb-2"
+                  style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
+                >
+                  หมวดหมู่ย่อย
+                </label>
+                <select
+                  value={editProduct?.subcategoryId || ""}
+                  onChange={(e) => {
+                    const newSubcategoryId = e.target.value;
+                    console.log(
+                      "Selected subcategoryId:",
+                      newSubcategoryId
+                    );
+                    setEditProduct((prev) => ({
+                      ...prev!,
+                      subcategoryId: newSubcategoryId,
+                    }));
+                  }}
+                  className="w-full px-4 py-2.5 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                >
+                  <option value="">เลือกหมวดหมู่ย่อย</option>
+                  {editProduct?.category
+                    ? // ถ้ามีการเลือกหมวดหมู่หลัก แสดงเฉพาะหมวดหมู่ย่อยที่เกี่ยวข้อง
+                    getSubcategoriesForCategory(editProduct.category).map(
+                      (subcategory) => (
+                        <option
+                          key={subcategory.id}
+                          value={subcategory.id}
+                        >
+                          {subcategory.name}
+                        </option>
+                      )
+                    )
+                    : // ถ้าไม่มีการเลือกหมวดหมู่หลัก แสดงทั้งหมด
+                    Object.entries(SUBCATEGORY_MAP).map(
+                      ([id, subcategory]) => (
+                        <option key={id} value={id}>
+                          {subcategory.name}
+                        </option>
+                      )
+                    )}
+                </select>
               </div>
-
-              {/* Procurement Cost Fields */}
-              {isProcurementMode && (
-                <div className="space-y-4 border-t pt-4 mt-4">
-                  <Label className="text-base font-bold">ข้อมูลต้นทุนจัดซื้อ</Label>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="space-y-1">
-                      <Label className="text-xs">MANUFACT (โรงงาน)</Label>
-                      <Select value={form.procurementCost?.manufact || ""} onValueChange={(v) => setForm(prev => ({ ...prev, procurementCost: { ...(prev.procurementCost || emptyProcurementCost), manufact: v } }))}>
-                        <SelectTrigger className="h-9"><SelectValue placeholder="เลือกโรงงาน" /></SelectTrigger>
-                        <SelectContent>{manufactOptions.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">MTL (วัสดุ)</Label>
-                      <div className="flex flex-wrap gap-1 border rounded-md p-2 min-h-[36px]">
-                        {mtlOptions.map(m => {
-                          const currentMtl = (form.procurementCost?.mtl || "").split(",").map(s => s.trim()).filter(Boolean);
-                          const isActive = currentMtl.includes(m);
-                          return (
-                            <Badge key={m} variant={isActive ? "default" : "outline"}
-                              className={`cursor-pointer text-xs ${isActive ? "bg-orange-500 text-white" : ""}`}
-                              onClick={() => {
-                                const arr = isActive ? currentMtl.filter(x => x !== m) : [...currentMtl, m];
-                                setForm(prev => ({ ...prev, procurementCost: { ...(prev.procurementCost || emptyProcurementCost), mtl: arr.join(", ") } }));
-                              }}>
-                              {m}
-                            </Badge>
-                          );
-                        })}
+              <div>
+                <label
+                  className="block text-sm font-medium text-gray-900 mb-2"
+                  style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
+                >
+                  สี
+                </label>
+                <div className="space-y-2">
+                  {editProduct?.colors?.map((color, index) => (
+                    <div
+                      key={color.id || index}
+                      className="bg-white p-4 rounded-lg shadow-sm border"
+                    >
+                      <div className="flex items-center gap-4 mb-4">
+                        <div className="flex-shrink-0 w-12 h-12 rounded-md overflow-hidden">
+                          <img
+                            src={
+                              color.image_path
+                                ? color.image_path.startsWith("http") ||
+                                  color.image_path.startsWith("data:")
+                                  ? color.image_path
+                                  : `${BASE_IMAGE_URL}/${color.image_path.replace(
+                                    /^\/+/,
+                                    ""
+                                  )}`
+                                : "/default-color.png"
+                            }
+                            alt={color.color}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <span
+                            className="text-sm text-gray-700"
+                            style={{
+                              fontFamily: "Sukhumvit Set, sans-serif",
+                            }}
+                          >
+                            {color.color}
+                          </span>
+                          <div className="mt-2 space-y-2">
+                            {color.image_path && (
+                              <div className="relative w-20 h-20 rounded-md overflow-hidden mb-2">
+                                <img
+                                  src={
+                                    color.image_path.startsWith("http") ||
+                                      color.image_path.startsWith("data:")
+                                      ? color.image_path
+                                      : `${BASE_IMAGE_URL}/${color.image_path.replace(
+                                        /^\/+/,
+                                        ""
+                                      )}`
+                                  }
+                                  alt={`Color ${color.color}`}
+                                  className="w-full h-full object-cover"
+                                />
+                              </div>
+                            )}
+                            <div>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={(e) => {
+                                  if (e.target.files && e.target.files[0]) {
+                                    const file = e.target.files[0];
+                                    const reader = new FileReader();
+                                    reader.onloadend = () => {
+                                      if (editProduct) {
+                                        const updatedColors = [
+                                          ...(editProduct.colors || []),
+                                        ];
+                                        updatedColors[index] = {
+                                          ...updatedColors[index],
+                                          image_path:
+                                            reader.result as string,
+                                        };
+                                        setEditProduct({
+                                          ...editProduct,
+                                          colors: updatedColors,
+                                        });
+                                      }
+                                    };
+                                    reader.readAsDataURL(file);
+                                  }
+                                }}
+                                className="hidden"
+                                id={`edit-color-image-${color.id || index}`}
+                              />
+                              <label
+                                htmlFor={`edit-color-image-${color.id || index
+                                  }`}
+                                className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 cursor-pointer"
+                              >
+                                <svg
+                                  className="mr-2 h-4 w-4"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                                  />
+                                </svg>
+                                {color.image_path
+                                  ? "เปลี่ยนรูปภาพ"
+                                  : "อัพโหลดรูปภาพ"}
+                              </label>
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (editProduct) {
+                              const updatedColors = [
+                                ...(editProduct.colors || []),
+                              ];
+                              updatedColors.splice(index, 1);
+                              setEditProduct({
+                                ...editProduct,
+                                colors: updatedColors,
+                              });
+                            }
+                          }}
+                          className="p-2 text-red-600 hover:text-[#ec4a4c]"
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            className="h-5 w-5"
+                            viewBox="0 0 20 20"
+                            fill="currentColor"
+                          >
+                            <path
+                              fillRule="evenodd"
+                              d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                              clipRule="evenodd"
+                            />
+                          </svg>
+                        </button>
                       </div>
                     </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Noted</Label>
-                      <Input value={form.procurementCost?.noted || ""} onChange={(e) => setForm(prev => ({ ...prev, procurementCost: { ...(prev.procurementCost || emptyProcurementCost), noted: e.target.value } }))} placeholder="หมายเหตุ" />
-                    </div>
+                  ))}
+                  <div className="flex items-center gap-2">
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        const selectedColor = e.target.value;
+                        if (selectedColor) {
+                          const colorList = getColorList(
+                            editProduct?.productType,
+                            editProduct?.category,
+                            editProduct?.subcategoryId
+                          );
+                          const selectedColorData = colorList.find(
+                            (c) => c.value === selectedColor
+                          );
+                          setEditProduct({
+                            ...editProduct,
+                            colors: [
+                              ...(editProduct.colors || []),
+                              {
+                                color: selectedColor,
+                                image_path: selectedColorData?.image || "",
+                              },
+                            ],
+                          });
+                        }
+                      }}
+                      className="flex-1 mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-sm"
+                    >
+                      <option value="">เลือกสี</option>
+                      {getColorList(
+                        editProduct?.productType,
+                        editProduct?.category,
+                        editProduct?.subcategoryId
+                      ).map((color) => (
+                        <option key={color.value} value={color.value}>
+                          {color.label}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditProduct({ ...editProduct, colors: [] });
+                      }}
+                      className="px-3 py-1 text-sm text-white bg-red-600 rounded-md hover:bg-red-700"
+                    >
+                      ล้างสีทั้งหมด
+                    </button>
                   </div>
-                  <div className="grid grid-cols-4 gap-3">
-                    <div className="space-y-1">
-                      <Label className="text-xs">PRICE (¥)</Label>
-                      <Input type="number" value={form.procurementCost?.priceYuan || ""} onChange={(e) => setForm(prev => ({ ...prev, procurementCost: { ...(prev.procurementCost || emptyProcurementCost), priceYuan: parseFloat(e.target.value) || 0 } }))} placeholder="0" />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">บาท (THB)</Label>
-                      <Input type="number" value={form.procurementCost?.priceTHB || ""} onChange={(e) => setForm(prev => ({ ...prev, procurementCost: { ...(prev.procurementCost || emptyProcurementCost), priceTHB: parseFloat(e.target.value) || 0 } }))} placeholder="0" />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">AMOUNT RMB</Label>
-                      <Input type="number" value={form.procurementCost?.amountRMB || ""} onChange={(e) => setForm(prev => ({ ...prev, procurementCost: { ...(prev.procurementCost || emptyProcurementCost), amountRMB: parseFloat(e.target.value) || 0 } }))} placeholder="0" />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">ราคารวม THB</Label>
-                      <Input type="number" value={form.procurementCost?.totalTHB || ""} onChange={(e) => setForm(prev => ({ ...prev, procurementCost: { ...(prev.procurementCost || emptyProcurementCost), totalTHB: parseFloat(e.target.value) || 0 } }))} placeholder="0" />
-                    </div>
+                </div>
+              </div>
+              <div>
+                <label
+                  className="block text-sm font-medium text-gray-900 mb-2"
+                  style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
+                >
+                  Tags
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={editProduct?.tags?.join(" ") || ""}
+                    onChange={(e) => {
+                      // Split by spaces and add # to each tag
+                      const tags = e.target.value
+                        .split(" ")
+                        .map((tag) => tag.trim())
+                        .filter((tag) => tag.length > 0)
+                        .map((tag) =>
+                          tag.startsWith("#") ? tag : `#${tag}`
+                        );
+
+                      if (editProduct) {
+                        setEditProduct({ ...editProduct, tags: tags });
+                      }
+                    }}
+                    className="w-full px-4 py-2.5 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                    placeholder="ป้อน tags แยกด้วยช่องว่าง"
+                  />
+                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400">
+                    <span className="text-sm">#Tags</span>
                   </div>
-                  <div className="grid grid-cols-4 gap-3">
-                    <div className="space-y-1">
-                      <Label className="text-xs">PCS/CTN</Label>
-                      <Input type="number" value={form.procurementCost?.pcsCtn || ""} onChange={(e) => {
-                        const pcsCtn = parseInt(e.target.value) || 0;
-                        setForm(prev => {
-                          const pc = { ...(prev.procurementCost || emptyProcurementCost), pcsCtn };
-                          pc.shippingPerPiece = pcsCtn > 0 ? pc.shippingCost / pcsCtn : 0;
-                          return { ...prev, procurementCost: pc };
-                        });
-                      }} placeholder="0" />
+                </div>
+              </div>
+              {/* Production Times */}
+              <div>
+                <label
+                  className="block text-sm font-medium text-gray-900 mb-2"
+                  style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
+                >
+                  ระยะเวลาการผลิต
+                </label>
+                <div className="space-y-2">
+                  {productionTimes.map((time, index) => (
+                    <div key={index} className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={time.duration}
+                        onChange={(e) => {
+                          const newTimes = [...productionTimes];
+                          newTimes[index] = {
+                            ...time,
+                            duration: e.target.value, // เปลี่ยนจาก parseInt(e.target.value)
+                          };
+                          setProductionTimes(newTimes);
+                        }}
+                        className="w-24 px-3 py-2 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                      />
+                      <select
+                        value={time.unit}
+                        onChange={(e) => {
+                          const newTimes = [...productionTimes];
+                          newTimes[index] = {
+                            ...time,
+                            unit: e.target.value as
+                              | "days"
+                              | "weeks"
+                              | "months",
+                          };
+                          setProductionTimes(newTimes);
+                        }}
+                        className="w-32 px-3 py-2 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                      >
+                        <option value="days">วัน</option>
+                        <option value="weeks">สัปดาห์</option>
+                        <option value="months">เดือน</option>
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newTimes = [...productionTimes];
+                          newTimes.splice(index, 1);
+                          setProductionTimes(newTimes);
+                        }}
+                        className="p-2 text-red-600 hover:text-[#ec4a4c]"
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          className="h-5 w-5"
+                          viewBox="0 0 20 20"
+                          fill="currentColor"
+                        >
+                          <path
+                            fillRule="evenodd"
+                            d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                      </button>
                     </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">CTN</Label>
-                      <Input type="number" value={form.procurementCost?.ctn || ""} onChange={(e) => {
-                        const ctn = parseInt(e.target.value) || 0;
-                        setForm(prev => {
-                          const pc = { ...(prev.procurementCost || emptyProcurementCost), ctn };
-                          pc.totalShipping = pc.shippingCost * ctn;
-                          return { ...prev, procurementCost: pc };
-                        });
-                      }} placeholder="0" />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">BOX SIZE</Label>
-                      <Input value={form.procurementCost?.boxSize || ""} onChange={(e) => setForm(prev => ({ ...prev, procurementCost: { ...(prev.procurementCost || emptyProcurementCost), boxSize: e.target.value } }))} placeholder="เช่น B2" />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">BOX SIZE (ตัวเลข)</Label>
-                      <Input type="number" step="0.0001" value={form.procurementCost?.boxSizeNum || ""} onChange={(e) => setForm(prev => ({ ...prev, procurementCost: { ...(prev.procurementCost || emptyProcurementCost), boxSizeNum: parseFloat(e.target.value) || 0 } }))} placeholder="0" />
-                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setProductionTimes([
+                        ...productionTimes,
+                        { duration: "", unit: "days" },
+                      ])
+                    }
+                    className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
+                  >
+                    + เพิ่มระยะเวลาการผลิต
+                  </button>
+                </div>
+              </div>
+              <div className="md:col-span-2">
+                <label
+                  className="block text-sm font-medium text-gray-900 mb-2"
+                  style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
+                >
+                  ขนาด
+                </label>
+                <div className="space-y-4">
+                  {editProduct &&
+                    editProduct.sizes?.map((sizeItem, index) => (
+                      <div
+                        key={sizeItem.id || index}
+                        className="bg-white p-4 rounded-lg shadow-sm border"
+                      >
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              ขนาด
+                            </label>
+                            <select
+                              value={sizeItem.size || ""}
+                              onChange={(e) => {
+                                const updatedSizes = [
+                                  ...(editProduct.sizes || []),
+                                ];
+                                updatedSizes[index] = {
+                                  ...updatedSizes[index],
+                                  size: e.target.value,
+                                };
+                                setEditProduct({
+                                  ...editProduct,
+                                  sizes: updatedSizes,
+                                });
+                              }}
+                              className="w-full px-3 py-2 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                            >
+                              <option value="">เลือกขนาด</option>
+                              {(editProduct?.category === "เหรียญรางวัล"
+                                ? COIN_SIZES
+                                : MASTER_SIZES
+                              ).map((option) => (
+                                <option
+                                  key={option.value}
+                                  value={option.value}
+                                >
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Width (cm)
+                            </label>
+                            <input
+                              type="text"
+                              value={sizeItem.width || 0}
+                              onChange={(e) => {
+                                const updatedSizes = [
+                                  ...(editProduct.sizes || []),
+                                ];
+                                updatedSizes[index] = {
+                                  ...updatedSizes[index],
+                                  width: parseFloat(e.target.value),
+                                };
+                                setEditProduct({
+                                  ...editProduct,
+                                  sizes: updatedSizes,
+                                });
+                              }}
+                              className="w-full px-3 py-2 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Height (cm)
+                            </label>
+                            <input
+                              type="text"
+                              value={sizeItem.height || 0}
+                              onChange={(e) => {
+                                const updatedSizes = [
+                                  ...(editProduct.sizes || []),
+                                ];
+                                updatedSizes[index] = {
+                                  ...updatedSizes[index],
+                                  height: parseFloat(e.target.value),
+                                };
+                                setEditProduct({
+                                  ...editProduct,
+                                  sizes: updatedSizes,
+                                });
+                              }}
+                              className="w-full px-3 py-2 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                            />
+                          </div>
+                          <div className="flex-1">
+                            <label className="block text-sm text-gray-700 mb-1">
+                              Weight (g)
+                            </label>
+                            <input
+                              type="text"
+                              min="0"
+                              step="1"
+                              value={sizeItem.weight || 0}
+                              onChange={(e) => {
+                                const updatedSizes = [
+                                  ...(editProduct.sizes || []),
+                                ];
+                                updatedSizes[index] = {
+                                  ...updatedSizes[index],
+                                  weight: parseFloat(e.target.value),
+                                };
+                                setEditProduct({
+                                  ...editProduct,
+                                  sizes: updatedSizes,
+                                });
+                              }}
+                              className="w-full px-3 py-2 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                            />
+                          </div>
+                        </div>
+                        <div className="mt-4 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updatedSizes = [
+                                ...(editProduct.sizes || []),
+                              ];
+                              updatedSizes.splice(index, 1);
+                              setEditProduct({
+                                ...editProduct,
+                                sizes: updatedSizes,
+                              });
+                            }}
+                            className="p-2 text-red-600 hover:text-[#ec4a4c] rounded-lg hover:bg-red-50 transition-all duration-200"
+                          >
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              className="h-5 w-5"
+                              viewBox="0 0 20 20"
+                              fill="currentColor"
+                            >
+                              <path
+                                fillRule="evenodd"
+                                d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                                clipRule="evenodd"
+                              />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const updatedSizes = [...(editProduct.sizes || [])];
+                      updatedSizes.push({
+                        size: "",
+                        width: 0,
+                        height: 0,
+                        weight: 0,
+                      });
+                      setEditProduct({
+                        ...editProduct,
+                        sizes: updatedSizes,
+                      });
+                    }}
+                    className="w-full px-4 py-2.5 text-sm font-medium text-white bg-gradient-to-r from-red-600 to-red-700 rounded-lg hover:from-red-700 hover:to-red-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-all duration-200 hover:shadow-lg"
+                    style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
+                  >
+                    เพิ่มขนาด
+                  </button>
+                </div>
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Options
+                </label>
+                <div className="w-full bg-white shadow-sm rounded-lg border border-gray-200">
+                  <div className="space-y-4">
+                    {[
+                      { id: 1, value: "ทำป้ายจารึก", label: "ทำป้ายจารึก" },
+                      { id: 2, value: "ทำโบว์", label: "ทำโบว์" },
+                      {
+                        id: 3,
+                        value: "ตราสัญลักษณ์",
+                        label: "ตราสัญลักษณ์",
+                      },
+                      { id: 4, value: "สกรีน 1 สี", label: "สกรีน 1 สี" },
+                      { id: 5, value: "สกรีน 4 สี", label: "สกรีน 4 สี" },
+                      { id: 6, value: "สติ๊กเกอร์", label: "สติ๊กเกอร์" },
+                      {
+                        id: 7,
+                        value: "เลเซอร์รมยาสี",
+                        label: "เลเซอร์รมยาสี",
+                      },
+                      { id: 8, value: "mirror", label: "mirror" },
+                      {
+                        id: 9,
+                        value: "กล่องบุสวยงาม",
+                        label: "กล่องบุสวยงาม",
+                      },
+                    ].map((option) => {
+                      // Check if this option is selected in editProduct
+                      const isSelected =
+                        editProduct?.options?.some(
+                          (productOption) =>
+                            productOption.option_id === option.id
+                        ) || false;
+
+                      return (
+                        <div
+                          key={option.id}
+                          className="flex items-center justify-between space-x-3 bg-white p-4 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors w-full"
+                        >
+                          <div className="flex items-center space-x-1">
+                            <input
+                              type="checkbox"
+                              id={`option-${option.id}`}
+                              checked={isSelected}
+                              onChange={(e) => {
+                                const currentOptions =
+                                  editProduct.options || [];
+                                let updatedOptions;
+
+                                if (e.target.checked) {
+                                  // Add new option object
+                                  const newOption = {
+                                    id: Date.now(), // Temporary ID for new options
+                                    product_id: editProduct.id || 0,
+                                    option_id: option.id,
+                                  };
+                                  updatedOptions = [
+                                    ...currentOptions,
+                                    newOption,
+                                  ];
+                                } else {
+                                  // Remove option with matching option_id
+                                  updatedOptions = currentOptions.filter(
+                                    (opt) => opt.option_id !== option.id
+                                  );
+                                }
+
+                                setEditProduct({
+                                  ...editProduct,
+                                  options: updatedOptions,
+                                });
+                              }}
+                              className="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
+                            />
+                            <label
+                              htmlFor={`option-${option.id}`}
+                              className="text-sm text-gray-700"
+                            >
+                              {option.label}
+                            </label>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    อื่นๆโปรดระบุ
+                    <input type="text" />
                   </div>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="space-y-1">
-                      <Label className="text-xs">ค่าขนส่ง</Label>
-                      <Input type="number" value={form.procurementCost?.shippingCost || ""} onChange={(e) => {
-                        const cost = parseFloat(e.target.value) || 0;
-                        setForm(prev => {
-                          const pc = { ...(prev.procurementCost || emptyProcurementCost), shippingCost: cost };
-                          pc.shippingPerPiece = pc.pcsCtn > 0 ? cost / pc.pcsCtn : 0;
-                          pc.totalShipping = cost * pc.ctn;
-                          return { ...prev, procurementCost: pc };
-                        });
-                      }} placeholder="0" />
+                </div>
+              </div>
+              {editProduct && editProduct.productType === "1" && (
+                <div className="md:col-span-2">
+                  <label
+                    className="block text-sm font-medium text-gray-900 mb-2"
+                    style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
+                  >
+                    ส่วนประกอบ
+                  </label>
+                  <div className="space-y-4">
+                    {/* Search input */}
+                    <div className="flex gap-4">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newParts = [
+                            ...(editProduct?.parts || []),
+                            {
+                              id: Date.now().toString(),
+                              modelName: "",
+                              name: "",
+                              for_product: "",
+                              color: "",
+                              quantity: 1,
+                            },
+                          ];
+                          setEditProduct({
+                            ...editProduct!,
+                            parts: newParts,
+                          });
+                        }}
+                        className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                      >
+                        +เพิ่มส่วนประกอบ
+                      </button>
                     </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">ค่าขนส่ง/ชิ้น (อัตโนมัติ)</Label>
-                      <Input type="number" step="0.01" value={form.procurementCost?.shippingPerPiece?.toFixed(2) || "0"} disabled className="bg-muted" />
-                      <p className="text-[10px] text-muted-foreground">= ค่าขนส่ง ÷ PCS/CTN</p>
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs font-bold text-green-600">รวมขนส่ง (อัตโนมัติ)</Label>
-                      <Input type="number" step="0.01" value={form.procurementCost?.totalShipping?.toFixed(2) || "0"} disabled className="bg-muted" />
-                      <p className="text-[10px] text-muted-foreground">= ค่าขนส่ง × CTN</p>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="space-y-1">
-                      <Label className="text-xs">MEAS</Label>
-                      <Input type="number" step="0.0001" value={form.procurementCost?.meas || ""} onChange={(e) => setForm(prev => ({ ...prev, procurementCost: { ...(prev.procurementCost || emptyProcurementCost), meas: parseFloat(e.target.value) || 0 } }))} placeholder="0" />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">GW</Label>
-                      <Input type="number" step="0.01" value={form.procurementCost?.gw || ""} onChange={(e) => setForm(prev => ({ ...prev, procurementCost: { ...(prev.procurementCost || emptyProcurementCost), gw: parseFloat(e.target.value) || 0 } }))} placeholder="0" />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">T.GW</Label>
-                      <Input type="number" value={form.procurementCost?.tgw || ""} onChange={(e) => setForm(prev => ({ ...prev, procurementCost: { ...(prev.procurementCost || emptyProcurementCost), tgw: parseFloat(e.target.value) || 0 } }))} placeholder="0" />
+
+                    {/* Parts list */}
+                    <div className="space-y-4">
+                      {/* Show message if no parts exist */}
+                      {(editProduct?.parts?.length === 0 ||
+                        !editProduct?.parts) && (
+                          <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 text-center text-gray-500">
+                            ไม่มีส่วนประกอบ กรุณาเพิ่มส่วนประกอบ
+                          </div>
+                        )}
+                      {(editProduct?.parts || []).map((part, index) => (
+                        <div
+                          key={part.id}
+                          className="bg-white p-4 rounded-lg border border-gray-200"
+                        >
+                          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                            <div>
+                              <label className="block text-sm text-gray-700 mb-1">
+                                รหัสสินค้า (Model)
+                              </label>
+                              <input
+                                type="text"
+                                value={editProduct?.modelName || ""}
+                                readOnly
+                                className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-md text-gray-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm text-gray-700 mb-1">
+                                ชิ้นส่วนสำหรับ
+                              </label>
+                              <input
+                                type="text"
+                                value={part.for_product || ""}
+                                onChange={(e) => {
+                                  const updatedParts = [
+                                    ...(editProduct?.parts || []),
+                                  ];
+                                  updatedParts[index] = {
+                                    ...part,
+                                    for_product: e.target.value,
+                                  };
+                                  setEditProduct({
+                                    ...editProduct!,
+                                    parts: updatedParts,
+                                  });
+                                }}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm text-gray-700 mb-1">
+                                รหัส/ชื่อสินค้า
+                              </label>
+                              <input
+                                type="text"
+                                value={part.name || ""}
+                                onChange={(e) => {
+                                  const updatedParts = [
+                                    ...(editProduct?.parts || []),
+                                  ];
+                                  updatedParts[index] = {
+                                    ...part,
+                                    name: e.target.value,
+                                  };
+                                  setEditProduct({
+                                    ...editProduct!,
+                                    parts: updatedParts,
+                                  });
+                                }}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm text-gray-700 mb-1">
+                                สี
+                              </label>
+                              <select
+                                value={part.color || ""}
+                                onChange={(e) => {
+                                  const updatedParts = [
+                                    ...(editProduct?.parts || []),
+                                  ];
+                                  updatedParts[index] = {
+                                    ...part,
+                                    color: e.target.value,
+                                  };
+                                  setEditProduct({
+                                    ...editProduct!,
+                                    parts: updatedParts,
+                                  });
+                                }}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                              >
+                                <option value="">เลือกสี</option>
+                                {MASTER_COLORS.map((color) => (
+                                  <option
+                                    key={color.value}
+                                    value={color.value}
+                                  >
+                                    {color.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="flex items-center gap-4">
+                              <div className="flex-1">
+                                <label className="block text-sm text-gray-700 mb-1">
+                                  จำนวน
+                                </label>
+                                <input
+                                  type="text"
+                                  min="1"
+                                  value={part.quantity || 1}
+                                  onChange={(e) => {
+                                    const updatedParts = [
+                                      ...(editProduct?.parts || []),
+                                    ];
+                                    updatedParts[index] = {
+                                      ...part,
+                                      quantity:
+                                        parseInt(e.target.value) || 1,
+                                    };
+                                    setEditProduct({
+                                      ...editProduct!,
+                                      parts: updatedParts,
+                                    });
+                                  }}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                                />
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const updatedParts = (
+                                    editProduct?.parts || []
+                                  ).filter((_, i) => i !== index);
+                                  setEditProduct({
+                                    ...editProduct!,
+                                    parts: updatedParts,
+                                  });
+                                }}
+                                className="mt-6 p-2 text-red-600 hover:text-[#ec4a4c] transition-colors"
+                              >
+                                <svg
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  className="h-5 w-5"
+                                  viewBox="0 0 20 20"
+                                  fill="currentColor"
+                                >
+                                  <path
+                                    fillRule="evenodd"
+                                    d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
+                                    clipRule="evenodd"
+                                  />
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 </div>
               )}
+
+              {/* Prices Section */}
+              <div className="md:col-span-2">
+                <label
+                  className="block text-sm font-medium text-gray-900 mb-2"
+                  style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
+                >
+                  ราคา
+                </label>
+                <div className="space-y-4">
+                  {/* Add Price Button */}
+                  <div className="flex gap-4">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newPrices = [
+                          ...(editProduct?.prices || []),
+                          {
+                            id: Date.now().toString(),
+                            retail_price: 0,
+                            wholesale_price: 0,
+                            special_price: 0,
+                          },
+                        ];
+                        setEditProduct({
+                          ...editProduct!,
+                          prices: newPrices,
+                        });
+                      }}
+                      className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                    >
+                      +เพิ่มราคา
+                    </button>
+                  </div>
+
+                  {/* Prices List */}
+                  {editProduct && editProduct.productType === "1" && (
+                    <div className="space-y-4">
+                      {/* Show message if no prices exist */}
+                      {(editProduct?.prices?.length === 0 ||
+                        !editProduct?.prices) && (
+                          <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 text-center text-gray-500">
+                            ไม่มีราคา กรุณาเพิ่มราคา
+                          </div>
+                        )}
+                      {(editProduct?.prices || []).map((price, index) => (
+                        <div
+                          key={price.id}
+                          className="bg-white p-4 rounded-lg border border-gray-200"
+                        >
+                          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                            <div>
+                              <label className="block text-sm text-gray-700 mb-1">
+                                รหัสสินค้า (Model)
+                              </label>
+                              <input
+                                type="text"
+                                value={editProduct?.modelName || ""}
+                                readOnly
+                                className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-md text-gray-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm text-gray-700 mb-1">
+                                ราคาปลีก
+                              </label>
+                              <input
+                                type="text"
+                                min="0"
+                                value={price.retail_price}
+                                onChange={(e) => {
+                                  const updatedPrices = [
+                                    ...(editProduct?.prices || []),
+                                  ];
+                                  updatedPrices[index] = {
+                                    ...price,
+                                    retail_price:
+                                      parseFloat(e.target.value) || 0,
+                                  };
+                                  setEditProduct({
+                                    ...editProduct!,
+                                    prices: updatedPrices,
+                                  });
+                                }}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm text-gray-700 mb-1">
+                                {" "}
+                                {editProduct &&
+                                  editProduct.productType === "1"
+                                  ? "ราคาส่ง (100 ชิ้นขึ้นไป)"
+                                  : "ค่าโมล"}
+                              </label>
+                              <input
+                                type="text"
+                                min="0"
+                                value={price.wholesale_price}
+                                onChange={(e) => {
+                                  const updatedPrices = [
+                                    ...(editProduct?.prices || []),
+                                  ];
+                                  updatedPrices[index] = {
+                                    ...price,
+                                    wholesale_price:
+                                      parseFloat(e.target.value) || 0,
+                                  };
+                                  setEditProduct({
+                                    ...editProduct!,
+                                    prices: updatedPrices,
+                                  });
+                                }}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                              />
+                            </div>
+                            <div className="flex items-center gap-4">
+                              <div className="flex-1">
+                                <label className="block text-sm text-gray-700 mb-1">
+                                  ราคาพิเศษ
+                                </label>
+                                <input
+                                  type="text"
+                                  min="0"
+                                  value={price.special_price}
+                                  onChange={(e) => {
+                                    const updatedPrices = [
+                                      ...(editProduct?.prices || []),
+                                    ];
+                                    updatedPrices[index] = {
+                                      ...price,
+                                      special_price:
+                                        parseFloat(e.target.value) || 0,
+                                    };
+                                    setEditProduct({
+                                      ...editProduct!,
+                                      prices: updatedPrices,
+                                    });
+                                  }}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                                />
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const updatedPrices = (
+                                    editProduct?.prices || []
+                                  ).filter((_, i) => i !== index);
+                                  setEditProduct({
+                                    ...editProduct!,
+                                    prices: updatedPrices,
+                                  });
+                                }}
+                                className="mt-6 p-2 text-red-600 hover:text-[#ec4a4c] transition-colors"
+                              >
+                                <svg
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  className="h-5 w-5"
+                                  viewBox="0 0 20 20"
+                                  fill="currentColor"
+                                >
+                                  <path
+                                    fillRule="evenodd"
+                                    d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0111 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
+                                    clipRule="evenodd"
+                                  />
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {editProduct && editProduct.productType === "2" && (
+                    <div className="space-y-4">
+                      {(editProduct?.prices || []).map((price, index) => (
+                        <div
+                          key={price.id}
+                          className="bg-white p-4 rounded-lg border border-gray-200"
+                        >
+                          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                            <div>
+                              <label className="block text-sm text-gray-700 mb-1">
+                                รหัสสินค้า (Model)
+                              </label>
+                              <input
+                                type="text"
+                                value={editProduct?.modelName || ""}
+                                readOnly
+                                className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-md text-gray-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm text-gray-700 mb-1">
+                                ราคาปลีก
+                              </label>
+                              <input
+                                type="text"
+                                min="0"
+                                value={price.retail_price}
+                                onChange={(e) => {
+                                  const updatedPrices = [
+                                    ...(editProduct?.prices || []),
+                                  ];
+                                  updatedPrices[index] = {
+                                    ...price,
+                                    retail_price:
+                                      parseFloat(e.target.value) || 0,
+                                  };
+                                  setEditProduct({
+                                    ...editProduct!,
+                                    prices: updatedPrices,
+                                  });
+                                }}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm text-gray-700 mb-1">
+                                ค่าโมล
+                              </label>
+                              <input
+                                type="text"
+                                min="0"
+                                value={price.wholesale_price}
+                                onChange={(e) => {
+                                  const updatedPrices = [
+                                    ...(editProduct?.prices || []),
+                                  ];
+                                  updatedPrices[index] = {
+                                    ...price,
+                                    wholesale_price:
+                                      parseFloat(e.target.value) || 0,
+                                  };
+                                  setEditProduct({
+                                    ...editProduct!,
+                                    prices: updatedPrices,
+                                  });
+                                }}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                              />
+                            </div>
+                            <div className="flex items-center gap-4">
+                              <div className="flex-1">
+                                <label className="block text-sm text-gray-700 mb-1">
+                                  ราคาพิเศษ
+                                </label>
+                                <input
+                                  type="text"
+                                  min="0"
+                                  value={price.special_price}
+                                  onChange={(e) => {
+                                    const updatedPrices = [
+                                      ...(editProduct?.prices || []),
+                                    ];
+                                    updatedPrices[index] = {
+                                      ...price,
+                                      special_price:
+                                        parseFloat(e.target.value) || 0,
+                                    };
+                                    setEditProduct({
+                                      ...editProduct!,
+                                      prices: updatedPrices,
+                                    });
+                                  }}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                                />
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const updatedPrices = (
+                                    editProduct?.prices || []
+                                  ).filter((_, i) => i !== index);
+                                  setEditProduct({
+                                    ...editProduct!,
+                                    prices: updatedPrices,
+                                  });
+                                }}
+                                className="mt-6 p-2 text-red-600 hover:text-[#ec4a4c] transition-colors"
+                              >
+                                <svg
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  className="h-5 w-5"
+                                  viewBox="0 0 20 20"
+                                  fill="currentColor"
+                                >
+                                  <path
+                                    fillRule="evenodd"
+                                    d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0111 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
+                                    clipRule="evenodd"
+                                  />
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {editProduct && editProduct.productType === "3" && (
+                    <div className="space-y-4">
+                      {(editProduct?.prices || []).map((price, index) => (
+                        <div
+                          key={price.id}
+                          className="bg-white p-4 rounded-lg border border-gray-200"
+                        >
+                          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                            <div>
+                              <label className="block text-sm text-gray-700 mb-1">
+                                รหัสสินค้า (Model)
+                              </label>
+                              <input
+                                type="text"
+                                value={editProduct?.modelName || ""}
+                                readOnly
+                                className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-md text-gray-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm text-gray-700 mb-1">
+                                ราคาปลีก
+                              </label>
+                              <input
+                                type="text"
+                                min="0"
+                                value={price.retail_price}
+                                onChange={(e) => {
+                                  const updatedPrices = [
+                                    ...(editProduct?.prices || []),
+                                  ];
+                                  updatedPrices[index] = {
+                                    ...price,
+                                    retail_price:
+                                      parseFloat(e.target.value) || 0,
+                                  };
+                                  setEditProduct({
+                                    ...editProduct!,
+                                    prices: updatedPrices,
+                                  });
+                                }}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm text-gray-700 mb-1">
+                                ค่าโมล
+                              </label>
+                              <input
+                                type="text"
+                                min="0"
+                                value={price.wholesale_price}
+                                onChange={(e) => {
+                                  const updatedPrices = [
+                                    ...(editProduct?.prices || []),
+                                  ];
+                                  updatedPrices[index] = {
+                                    ...price,
+                                    wholesale_price:
+                                      parseFloat(e.target.value) || 0,
+                                  };
+                                  setEditProduct({
+                                    ...editProduct!,
+                                    prices: updatedPrices,
+                                  });
+                                }}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                              />
+                            </div>
+                            <div className="flex items-center gap-4">
+                              <div className="flex-1">
+                                <label className="block text-sm text-gray-700 mb-1">
+                                  ราคาพิเศษ
+                                </label>
+                                <input
+                                  type="text"
+                                  min="0"
+                                  value={price.special_price}
+                                  onChange={(e) => {
+                                    const updatedPrices = [
+                                      ...(editProduct?.prices || []),
+                                    ];
+                                    updatedPrices[index] = {
+                                      ...price,
+                                      special_price:
+                                        parseFloat(e.target.value) || 0,
+                                    };
+                                    setEditProduct({
+                                      ...editProduct!,
+                                      prices: updatedPrices,
+                                    });
+                                  }}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                                />
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const updatedPrices = (
+                                    editProduct?.prices || []
+                                  ).filter((_, i) => i !== index);
+                                  setEditProduct({
+                                    ...editProduct!,
+                                    prices: updatedPrices,
+                                  });
+                                }}
+                                className="mt-6 p-2 text-red-600 hover:text-[#ec4a4c] transition-colors"
+                              >
+                                <svg
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  className="h-5 w-5"
+                                  viewBox="0 0 20 20"
+                                  fill="currentColor"
+                                >
+                                  <path
+                                    fillRule="evenodd"
+                                    d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0111 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
+                                    clipRule="evenodd"
+                                  />
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
-          <DialogFooter className="gap-2 pt-4">
-            <Button variant="outline" onClick={() => setShowModal(false)}>ยกเลิก</Button>
-            <Button className="bg-red-600 hover:bg-red-700" onClick={handleSaveProduct}>บันทึก</Button>
+
+          <DialogFooter className="mt-6 sm:mt-8 flex flex-col sm:flex-row sm:justify-end space-y-2 sm:space-y-0 sm:space-x-3">
+            <button
+              onClick={handleEditClose}
+              className="px-5 py-2.5 text-sm font-medium text-gray-700 hover:text-gray-900 transition-colors"
+              style={{
+                fontFamily:
+                  "Sukhumvit Set, sans-serif" as CSSProperties["fontFamily"],
+              }}
+            >
+              ยกเลิก
+            </button>
+            <button
+              onClick={handleEditSave}
+              className="px-5 py-2.5 text-sm font-medium text-white bg-gradient-to-r from-red-600 to-red-700 rounded-xl hover:from-red-700 hover:to-red-800 transition-all duration-200 hover:shadow-lg active:scale-95"
+              style={{
+                fontFamily:
+                  "Sukhumvit Set, sans-serif" as CSSProperties["fontFamily"],
+              }}
+            >
+              บันทึก
+            </button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* ===== Stock Adjustment Dialog ===== */}
-      <Dialog open={!!adjustItem} onOpenChange={(open) => !open && setAdjustItem(null)}>
+      < Dialog open={!!adjustItem
+      } onOpenChange={(open) => !open && setAdjustItem(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><RefreshCw className="w-5 h-5 text-primary" /> ปรับปรุงสต๊อก</DialogTitle>
@@ -1533,10 +2914,10 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog >
 
       {/* ===== Detail Dialog ===== */}
-      <Dialog open={!!detailItem} onOpenChange={(open) => !open && setDetailItem(null)}>
+      < Dialog open={!!detailItem} onOpenChange={(open) => !open && setDetailItem(null)}>
         <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><Eye className="w-5 h-5 text-blue-600" /> รายละเอียดสินค้า</DialogTitle>
@@ -1642,17 +3023,19 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
             </div>
           )}
         </DialogContent>
-      </Dialog>
+      </Dialog >
 
       {/* Excel Import Dialog */}
-      {isProcurementMode && (
-        <ExcelImportDialog
-          open={showImportDialog}
-          onOpenChange={setShowImportDialog}
-          onImportConfirm={handleImportConfirm}
-          existingSkus={existingSkus}
-        />
-      )}
-    </div>
+      {
+        isProcurementMode && (
+          <ExcelImportDialog
+            open={showImportDialog}
+            onOpenChange={setShowImportDialog}
+            onImportConfirm={handleImportConfirm}
+            existingSkus={existingSkus}
+          />
+        )
+      }
+    </div >
   );
 }
