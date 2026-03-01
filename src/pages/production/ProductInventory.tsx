@@ -34,7 +34,6 @@ interface PriceEntry {
   moldCost: number;
   specialPrice: number;
 }
-
 interface ProductionTime {
   value: number;
   unit: "วัน" | "สัปดาห์";
@@ -78,7 +77,9 @@ interface ProductItem {
   category: string;
   subcategory: string;
   color: string[];
+  colorData?: { color: string; image_path: string }[];
   size: string[];
+  sizeData?: { id?: number; size: string; width: number; height: number; weight: number }[];
   tags: string;
   description: string;
   currentStock: number;
@@ -87,6 +88,7 @@ interface ProductItem {
   model: string;
   productionTime: ProductionTime[];
   options: string[];
+  optionsData?: { id: number; product_id: number; option_id: number }[];
   prices: PriceEntry[];
   lastUpdated: string;
   status: "in_stock" | "low_stock" | "out_of_stock" | "defective";
@@ -101,7 +103,7 @@ const productTypes = [
 ];
 
 const categories = [
-  { key: "all", label: "ทั้งหมด" },
+  { key: "เลือกหมวดหมู่", label: "เลือกหมวดหมู่" },
   { key: "ถ้วยรางวัลสำเร็จ", label: "ถ้วยรางวัลสำเร็จ" },
   { key: "เหรียญรางวัล", label: "เหรียญรางวัล" },
   { key: "โล่รางวัล", label: "โล่รางวัล" },
@@ -248,14 +250,26 @@ function mapApiProduct(p: any): ProductItem {
   const imageUrl = p.image ? `${BASE_IMAGE_URL}${p.image}` : "";
   const additionalImages: string[] = (p.images || []).map((img: string) => `${BASE_IMAGE_URL}${img}`);
   const colors: string[] = (p.colors || []).map((c: any) => c.color).filter(Boolean);
+  const colorData = (p.colors || [])
+    .map((c: any) => ({ color: c.color, image_path: c.image_path || c.image || "" }))
+    .filter((c: any) => c.color);
   const sizes: string[] = (p.sizes || [])
     .map((s: any) => s.size)
     .filter((s: string) => s && s.trim() !== "");
+  const sizeData = (p.sizes || [])
+    .map((s: any) => ({
+      id: s.id,
+      size: s.size || "",
+      width: parseFloat(s.width) || 0,
+      height: parseFloat(s.height) || 0,
+      weight: parseFloat(s.weight) || 0,
+    }));
   const prices: PriceEntry[] = (p.prices || []).map((pr: any) => ({
     model: p.modelName || p.name,
     retailPrice: pr.retail_price || 0,
     moldCost: 0,
     specialPrice: pr.special_price || 0,
+    wholesalePrice: pr.special_price || 0,
   }));
   if (prices.length === 0 && p.price > 0) {
     prices.push({ model: p.modelName || p.name, retailPrice: p.price, moldCost: 0, specialPrice: 0 });
@@ -276,22 +290,30 @@ function mapApiProduct(p: any): ProductItem {
     name: p.name,
     image: imageUrl,
     additionalImages,
-    productType: mainCategory || "สินค้าทั่วไป",
+    productType: p.productType != null ? String(p.productType) : (mainCategory || "สินค้าทั่วไป"),
     category: mainCategory || "สินค้าทั่วไป",
     subcategory: subcategoryName,
     color: colors,
+    colorData: colorData,
     size: sizes,
+    sizeData: sizeData,
     tags: tagsStr,
     description: p.description || "",
     currentStock: stock,
-    minimumStock: 0,
+    minimumStock: (() => { const min = parseInt(p.minimumStock); return isNaN(min) || min === 0 ? 10 : min; })(),
     unit: "ชิ้น",
     model: p.modelName || "",
     productionTime: productionTimes,
     options: [],
+    optionsData: p.options || [],
     prices,
     lastUpdated: new Date().toISOString().split("T")[0],
-    status: stock <= 0 ? "out_of_stock" : "in_stock",
+    status: (() => {
+      const min = (() => { const m = parseInt(p.minimumStock); return isNaN(m) || m === 0 ? 10 : m; })();
+      if (stock <= 0) return "out_of_stock";
+      if (stock < min) return "low_stock";
+      return "in_stock";
+    })() as "in_stock" | "low_stock" | "out_of_stock" | "defective",
     movementHistory: [],
   };
 }
@@ -315,6 +337,8 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
   const [products, setProducts] = useState<ProductItem[]>([]);
   const [apiLoading, setApiLoading] = useState(true);
   const [apiError, setApiError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [notificationMessage, setNotificationMessage] = useState("");
 
   useEffect(() => {
     setApiLoading(true);
@@ -344,7 +368,11 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
   const [newSize, setNewSize] = useState("");
   const imageInputRef = useRef<HTMLInputElement>(null);
   const additionalImageInputRef = useRef<HTMLInputElement>(null);
+  const [notificationType, setNotificationType] = useState<"success" | "error">(
+    "success"
+  );
 
+  const [showNotification, setShowNotification] = useState(false);
   // Detail & adjust dialogs
   const [detailItem, setDetailItem] = useState<ProductItem | null>(null);
   const [adjustItem, setAdjustItem] = useState<ProductItem | null>(null);
@@ -365,14 +393,23 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
       description: item.description,
       category: item.category,
       subcategoryId: "",
-      productType: item.productType === "สินค้าทั่วไป" ? "" : "1",
+      productType: item.productType,
       image: item.image,
       images: item.additionalImages || [],
-      colors: item.color.map((c, i) => ({ id: i, color: c, image_path: "" })),
-      sizes: item.size.map((s, i) => ({ id: i, size: s, width: 0, height: 0, weight: 0 })),
+      colors: [],
+      sizes: item.sizeData && item.sizeData.length > 0
+        ? [...item.sizeData]
+        : item.size.map((s, i) => ({ id: i, size: s, width: 0, height: 0, weight: 0 })),
       tags: item.tags ? item.tags.split(", ").filter(Boolean) : [],
-      options: item.options.map((o, i) => ({ id: i, product_id: item.id, option_id: i + 1 })),
-      prices: item.prices.map((p, i) => ({ id: i, retail_price: p.retailPrice, wholesale_price: p.moldCost, special_price: p.specialPrice })),
+      options: item.optionsData && item.optionsData.length > 0
+        ? [...item.optionsData]
+        : item.options.map((o, i) => ({ id: i, product_id: item.id, option_id: i + 1 })),
+      prices: item.prices.map((p: any, i) => ({
+        id: p.id ?? i,
+        retail_price: parseFloat(p.retail_price ?? p.retailPrice) || 0,
+        wholesale_price: parseFloat(p.wholesale_price ?? p.moldCost ?? p.wholesalePrice) || 0,
+        special_price: parseFloat(p.special_price ?? p.specialPrice) || 0,
+      })),
       parts: [],
     };
     for (const [id, sub] of Object.entries(SUBCATEGORY_MAP)) {
@@ -381,6 +418,22 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
         break;
       }
     }
+
+    const colorList = getColorList(apiProduct.productType, apiProduct.category, apiProduct.subcategoryId);
+    apiProduct.colors = (item.colorData && item.colorData.length > 0)
+      ? item.colorData.map((c, i) => {
+        let img = c.image_path;
+        if (!img) {
+          const found = colorList.find((cl) => cl.value === c.color);
+          img = found ? found.image : "";
+        }
+        return { id: i, color: c.color, image_path: img };
+      })
+      : item.color.map((c, i) => {
+        const found = colorList.find((cl) => cl.value === c);
+        return { id: i, color: c, image_path: found ? found.image : "" };
+      });
+
     setEditProduct(apiProduct);
     setProductionTimes(item.productionTime.map(pt => ({ duration: String(pt.value), unit: pt.unit === "สัปดาห์" ? "months" : "days" })));
     setIsEditModalOpen(true);
@@ -392,9 +445,419 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
     setProductionTimes([]);
   };
 
-  const handleEditSave = () => {
+  const handleEditSave = async () => {
     if (!editProduct) return;
-    handleEditClose();
+
+    try {
+      setIsLoading(true);
+      const formData = new FormData();
+
+      // ข้อมูลพื้นฐาน
+      formData.append("id", editProduct.id);
+      formData.append("subcategory_id", editProduct.subcategoryId || "");
+      formData.append("model", editProduct.modelName || "");
+      formData.append("name", editProduct.name);
+      formData.append("description", editProduct.description || "");
+      formData.append("productType", editProduct.productType || "1");
+
+      // ข้อมูลส่วนประกอบ (Parts)
+      if (editProduct.productType === "1" && editProduct.parts) {
+        const partsData = editProduct.parts.map((part: any) => ({
+          name: part.name,
+          for: part.for,
+          color: part.color,
+          quantity: part.quantity,
+        }));
+        formData.append("parts", JSON.stringify(partsData));
+      }
+
+      // ข้อมูลราคา (Prices)
+      if (editProduct.prices) {
+        const pricesData = editProduct.prices.map((price: any) => ({
+          retailPrice: price.retail_price || price.retailPrice,
+          wholesalePrice: price.wholesale_price || price.wholesalePrice,
+          specialPrice: price.special_price || price.specialPrice,
+        }));
+        formData.append("prices", JSON.stringify(pricesData));
+      }
+
+      // ข้อมูลขนาด (Sizes)
+      if (editProduct.sizes) {
+        formData.append("sizes", JSON.stringify(editProduct.sizes));
+      }
+
+      // ข้อมูลสี (Colors)
+      if (editProduct.colors && editProduct.colors.length > 0) {
+        const colorsData = editProduct.colors.map((color: any) => ({
+          color: color.color,
+          image_path: color.image_path || "",
+        }));
+        formData.append("colors", JSON.stringify(colorsData));
+      }
+
+      // ข้อมูล Options
+      if (editProduct.options && editProduct.options.length > 0) {
+        // Map option_id back to Thai name that PHP switch-case expects
+        const OPTION_ID_TO_NAME: Record<number, string> = {
+          1: "ทำป้ายจารึก",
+          2: "ทำโบว์",
+          3: "ตราสัญลักษณ์",
+          4: "สกรีน 1 สี",
+          5: "สกรีน 4 สี",
+          6: "สติ๊กเกอร์",
+          7: "เลเซอร์รมยาสี",
+          8: "mirror",
+          9: "กล่องบุสวยงาม",
+        };
+        const flatOptions = editProduct.options.map((opt: any) => {
+          // If already a string name (not a number), send as-is
+          if (typeof opt === "string") return opt;
+          // If it's an object with option_id, map to Thai name
+          const id = opt.option_id ?? opt.id;
+          return OPTION_ID_TO_NAME[Number(id)] ?? String(id);
+        });
+        formData.append("options", JSON.stringify(flatOptions));
+      }
+
+      // ข้อมูลระยะเวลาในการผลิต (Production Times)
+      if (productionTimes && productionTimes.length > 0) {
+        formData.append("productionTimes", JSON.stringify(productionTimes));
+      }
+
+      // ข้อมูล Tags
+      if (editProduct.tags && editProduct.tags.length > 0) {
+        formData.append("tags", editProduct.tags.join(","));
+      }
+
+      // รูปภาพหลัก
+      if (editProduct.image && editProduct.image.startsWith("data:")) {
+        const blob = await fetch(editProduct.image).then((r) => r.blob());
+        formData.append("image", blob, `edit-main-${Date.now()}.jpg`);
+      }
+
+      // รูปภาพเพิ่มเติม
+      if (editProduct.images && editProduct.images.length > 0) {
+        const imagePromises = editProduct.images.map(async (img: any, index: number) => {
+          if (typeof img === "string" && img.startsWith("data:")) {
+            const blob = await fetch(img).then((r) => r.blob());
+            formData.append(`additional_image_${index}`, blob, `edit-additional-${index}.jpg`);
+          }
+        });
+        await Promise.all(imagePromises);
+      }
+
+      console.log("Sending form data to update product:", Object.fromEntries(formData.entries()));
+
+      // เรียก API ตรวจสอบ URL อีกครั้งว่าใช้ updateProduct.php หรือไม่
+      const response = await fetch("https://finfinphone.com/api-lucky/portal/updateProduct.php", {
+        method: "POST",
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (result.status === "success") {
+        await fetchProducts();
+        handleEditClose();
+        toast.success("อัปเดตข้อมูลสินค้าเรียบร้อยแล้ว");
+      } else {
+        throw new Error(result.message || "Failed to edit product");
+      }
+    } catch (error) {
+      console.error("Error editing product:", error);
+      toast.error("เกิดข้อผิดพลาดในการอัปเดตสินค้า กรุณาลองใหม่อีกครั้ง");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // New Create Modal state
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [newProduct, setNewProduct] = useState<any>({
+    name: "",
+    modelName: "",
+    description: "",
+    category: "",
+    subcategoryId: "",
+    productType: "",
+    image: "",
+    images: [],
+    colors: [],
+    sizes: [],
+    tags: [],
+    options: [],
+    customOtherValue: "",
+    prices: [{ retail_price: 0, wholesale_price: 0, special_price: 0 }],
+    parts: []
+  });
+
+  const handleCreateClose = () => {
+    setIsCreateModalOpen(false);
+    setNewProduct({
+      name: "",
+      modelName: "",
+      description: "",
+      category: "",
+      subcategoryId: "",
+      productType: "",
+      image: "",
+      images: [],
+      colors: [],
+      sizes: [],
+      tags: [],
+      options: [],
+      customOtherValue: "",
+      prices: [{ retail_price: 0, wholesale_price: 0, special_price: 0 }],
+      parts: []
+    });
+  };
+
+  const fetchProducts = async () => {
+    try {
+      setIsLoading(true);
+      const response = await fetch(
+        "https://finfinphone.com/api-lucky/portal/getProduct.php"
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch products");
+      }
+
+      const result = await response.json();
+
+      // The API returns a response with status, count, and data properties
+      if (result.status === "success" && Array.isArray(result.data)) {
+        // Transform the data to match the structure used when adding products
+        const formattedProducts = result.data.map((product) => {
+          // Extract color names from colorData array (API returns objects)
+          const colorData = Array.isArray(product.colors) ? product.colors : [];
+          const colorNames: string[] = colorData.map((c: any) =>
+            typeof c === "string" ? c : (c.color || c.name || "")
+          ).filter(Boolean);
+
+          // Extract size names from sizeData array (API returns objects)
+          const sizeData = Array.isArray(product.sizes) ? product.sizes : [];
+          const sizeNames: string[] = sizeData.map((s: any) =>
+            typeof s === "string" ? s : (s.size || s.name || "")
+          ).filter(Boolean);
+
+          // Resolve category & subcategory from subcategory_id
+          const subId = String(product.subcategoryId || product.subcategory_id || "");
+          const subName = subId && SUBCATEGORY_MAP[subId] ? SUBCATEGORY_MAP[subId].name : (product.subcategory || "");
+          const categoryName = subId ? getCategoryFromSubcategoryId(subId) : (product.category || "");
+
+          return {
+            id: String(product.id || ""),
+            code: product.code || product.model || String(product.id || ""),
+            name: product.name || "",
+            model: product.model || product.modelName || "",
+            modelName: product.modelName || product.model || "",
+            description: product.description || "",
+            price: parseFloat(product.price) || 0,
+            subcategoryId: subId,
+            subcategory: subName,
+            category: categoryName,
+            productType: String(product.productType || product.type_id || "1"),
+            // String arrays expected by renderCardView / renderTableView
+            color: colorNames,
+            size: sizeNames,
+            // Raw structured data for edit modal
+            colorData: colorData,
+            sizeData: sizeData,
+            optionsData: Array.isArray(product.options) ? product.options : [],
+            options: Array.isArray(product.options)
+              ? product.options.map((o: any) => typeof o === "string" ? o : (o.option_name || o.name || ""))
+              : [],
+            parts: Array.isArray(product.parts) ? product.parts : [],
+            prices: Array.isArray(product.prices)
+              ? product.prices.map((p: any) => ({
+                // Keep both formats so Edit modal can read directly
+                id: p.id,
+                model: p.model || "",
+                // camelCase (for PriceEntry interface)
+                retailPrice: parseFloat(p.retail_price || p.retailPrice) || 0,
+                moldCost: parseFloat(p.wholesale_price || p.moldCost) || 0,
+                specialPrice: parseFloat(p.special_price || p.specialPrice) || 0,
+                // snake_case (for Edit modal UI fields)
+                retail_price: parseFloat(p.retail_price || p.retailPrice) || 0,
+                wholesale_price: parseFloat(p.wholesale_price || p.moldCost) || 0,
+                special_price: parseFloat(p.special_price || p.specialPrice) || 0,
+              }))
+              : [],
+            sizes: sizeData,
+            colors: colorData,
+            image: product.image || "",
+            additionalImages: Array.isArray(product.images) ? product.images : [],
+            images: Array.isArray(product.images) ? product.images : [],
+            productionTime: Array.isArray(product.productionTimes)
+              ? product.productionTimes.map((pt: any) => ({
+                value: parseFloat(pt.duration || pt.value) || 0,
+                unit: (pt.unit === "months" || pt.unit === "สัปดาห์") ? "สัปดาห์" : "วัน",
+              }))
+              : [],
+            inventory: parseInt(product.inventory) || 0,
+            request: parseInt(product.request) || 0,
+            total_available: parseInt(product.total_available) || 0,
+            currentStock: parseInt(product.inventory || product.currentStock) || 0,
+            minimumStock: (() => {
+              const min = parseInt(product.minimumStock);
+              return isNaN(min) || min === 0 ? 10 : min;
+            })(),
+            unit: product.unit || "ชิ้น",
+            tags: Array.isArray(product.tags)
+              ? product.tags.join(", ")
+              : (typeof product.tags === "string" ? product.tags : ""),
+            status: (() => {
+              const inv = parseInt(product.inventory || product.currentStock) || 0;
+              const minStr = parseInt(product.minimumStock);
+              const min = isNaN(minStr) || minStr === 0 ? 10 : minStr;
+              if (inv <= 0) return "out_of_stock";
+              if (inv < min) return "low_stock";
+              return "in_stock";
+            })() as "in_stock" | "low_stock" | "out_of_stock" | "defective",
+            lastUpdated: product.lastUpdated || product.updated_at || "",
+            bom: Array.isArray(product.bom) ? product.bom : [],
+            movementHistory: Array.isArray(product.movementHistory) ? product.movementHistory : [],
+          };
+        });
+
+        setProducts(formattedProducts);
+        console.log(`Fetched ${result.count} products successfully`);
+      } else {
+        console.error("Invalid product data format:", result);
+        setProducts([]);
+      }
+    } catch (error) {
+      console.error("Error fetching products:", error);
+      setProducts([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleCreateSave = async () => {
+    try {
+      setIsLoading(true);
+
+      const formData = new FormData();
+
+      // ข้อมูลพื้นฐาน
+      formData.append("subcategory_id", newProduct.subcategoryId || "");
+      formData.append("model", newProduct.modelName || "");
+      formData.append("name", newProduct.name);
+      formData.append("description", newProduct.description || "");
+      formData.append("productType", newProduct.productType || "1");
+      formData.append("inventory", "1");
+      formData.append("request", "1");
+      formData.append("total_availble", "1");
+
+      // ข้อมูลส่วนประกอบ (Parts)
+      if (newProduct.productType === "1" && newProduct.parts) {
+        const partsData = newProduct.parts.map((part) => ({
+          name: part.name,
+          for: part.for,
+          color: part.color,
+          quantity: part.quantity,
+        }));
+        formData.append("parts", JSON.stringify(partsData));
+      }
+
+      // ข้อมูลราคา (Prices)
+      if (newProduct.prices) {
+        const pricesData = newProduct.prices.map((price) => ({
+          retailPrice: price.retailPrice,
+          wholesalePrice: price.wholesalePrice,
+          specialPrice: price.specialPrice,
+        }));
+        formData.append("prices", JSON.stringify(pricesData));
+      }
+
+      // ข้อมูลขนาด (Sizes)
+      if (newProduct.sizes) {
+        formData.append("sizes", JSON.stringify(newProduct.sizes));
+      }
+
+      // ข้อมูลสี (Colors)
+      if (newProduct.colors && newProduct.colors.length > 0) {
+        const colorsData = newProduct.colors.map((color) => ({
+          color: color.color,
+          image_path: color.image_path || "",
+        }));
+        formData.append("colors", JSON.stringify(colorsData));
+      }
+
+      // ข้อมูล Options
+      if (newProduct.options && newProduct.options.length > 0) {
+        const flatOptions = [
+          ...newProduct.options,
+        ];
+        if (newProduct.options.includes("อื่นๆ") && newProduct.customOtherValue) {
+          flatOptions.push(newProduct.customOtherValue);
+        }
+        formData.append("options", JSON.stringify(flatOptions));
+      }
+
+      // ข้อมูลระยะเวลาในการผลิต (Production Times)
+      if (productionTimes && productionTimes.length > 0) {
+        formData.append("productionTimes", JSON.stringify(productionTimes));
+      }
+
+      // ข้อมูล Tags
+      if (newProduct.tags && newProduct.tags.length > 0) {
+        formData.append("tags", newProduct.tags.join(","));
+      }
+
+      // รูปภาพหลัก
+      if (newProduct.image && newProduct.image.startsWith("data:")) {
+        const blob = await fetch(newProduct.image).then((r) => r.blob());
+        formData.append("image", blob, "main-image.jpg");
+      }
+
+      // รูปภาพเพิ่มเติม
+      if (newProduct.images && newProduct.images.length > 0) {
+        const imagePromises = newProduct.images.map(async (img, index) => {
+          if (img.startsWith("data:")) {
+            const blob = await fetch(img).then((r) => r.blob());
+            formData.append(
+              `additional_image_${index}`,
+              blob,
+              `additional-image-${index}.jpg`
+            );
+          }
+        });
+        await Promise.all(imagePromises);
+      }
+
+      console.log("Sending form data to create product (fields):", [...formData.keys()]);
+
+      // เรียก API
+      const response = await fetch(
+        "https://finfinphone.com/api-lucky/portal/addProduct.php",
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
+
+      const result = await response.json();
+
+      if (result.status === "success") {
+        handleCreateClose();
+        toast.success("บันทึกสินค้าใหม่เรียบร้อยแล้ว");
+        setTimeout(() => {
+          fetchProducts().catch((err) =>
+            console.error("Background refresh failed:", err)
+          );
+        });
+      } else {
+        throw new Error(result.message || "Failed to create product");
+      }
+    } catch (error) {
+      console.error("Error creating product:", error);
+      toast.error("เกิดข้อผิดพลาดในการบันทึกสินค้า กรุณาลองใหม่อีกครั้ง");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Inline editing state
@@ -470,7 +933,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
       name: row.name,
       image: "/placeholder.svg",
       additionalImages: [],
-      productType: row.category || "ถ้วยรางวัลสำเร็จ",
+      productType: "1",
       category: row.category || "ถ้วยรางวัลสำเร็จ",
       subcategory: "",
       color: row.color ? row.color.split(",").map(s => s.trim()).filter(Boolean) : [],
@@ -513,11 +976,11 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
   // Summary counts
   const summaryStats = useMemo(() => {
     const total = products.length;
-    const inStock = products.filter(p => p.status === "in_stock").length;
-    const lowStock = products.filter(p => p.status === "low_stock").length;
-    const outOfStock = products.filter(p => p.status === "out_of_stock").length;
-    const defective = 2; // mock defective count
-    const todayMovements = 12; // mock today's movements
+    const inStock = products.filter(p => p.currentStock >= 10).length;
+    const lowStock = products.filter(p => p.currentStock > 0 && p.currentStock < 10).length;
+    const outOfStock = products.filter(p => p.currentStock === 0).length;
+    const defective = 0; // mock defective count
+    const todayMovements = 0; // mock today's movements
     return { total, inStock, lowStock, outOfStock, defective, todayMovements };
   }, [products]);
 
@@ -555,9 +1018,24 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
 
   // --- Modal handlers ---
   const openAddModal = () => {
-    setEditingProduct(null);
-    setForm({ ...emptyForm, prices: [{ model: "", retailPrice: 0, moldCost: 0, specialPrice: 0 }] });
-    setShowModal(true);
+    setIsCreateModalOpen(true);
+    setNewProduct({
+      name: "",
+      modelName: "",
+      description: "",
+      category: "",
+      subcategoryId: "",
+      productType: "",
+      image: "",
+      images: [],
+      colors: [],
+      sizes: [],
+      tags: [],
+      options: [],
+      customOtherValue: "",
+      prices: [{ retail_price: 0, wholesale_price: 0, special_price: 0 }],
+      parts: []
+    });
   };
 
   const handleSaveProduct = () => {
@@ -1183,6 +1661,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                   </TableRow>
                 </TableHeader>
                 <TableBody>
+                  {/* 
                   {[
                     { id: "MOV-001", date: "2025-02-10", type: "รับเข้า", item: "ถ้วยรางวัลสีทอง", qty: 100, unit: "ชิ้น", by: "สมชาย", note: "รับจากซัพพลายเออร์" },
                     { id: "MOV-002", date: "2025-02-10", type: "จ่ายออก", item: "เหรียญพลาสติก", qty: 50, unit: "ชิ้น", by: "วิชัย", note: "เบิกใช้งาน ORD-003" },
@@ -1207,6 +1686,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                       <TableCell className="text-muted-foreground text-sm">{mov.note}</TableCell>
                     </TableRow>
                   ))}
+                   */}
                 </TableBody>
               </Table>
             </CardContent>
@@ -1428,7 +1908,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                   <option value="">เลือกประเภทสินค้า</option>
                   <option value="1">สินค้าสำเร็จรูป</option>
                   <option value="2">สินค้าพรีออเดอร์</option>
-                  <option value="3">opton</option>
+                  <option value="3">option</option>
                 </select>
               </div>
               <div className="md:col-span-2">
@@ -1651,7 +2131,8 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                             src={
                               color.image_path
                                 ? color.image_path.startsWith("http") ||
-                                  color.image_path.startsWith("data:")
+                                  color.image_path.startsWith("data:") ||
+                                  color.image_path.startsWith("/colors/")
                                   ? color.image_path
                                   : `${BASE_IMAGE_URL}/${color.image_path.replace(
                                     /^\/+/,
@@ -1678,7 +2159,8 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                                 <img
                                   src={
                                     color.image_path.startsWith("http") ||
-                                      color.image_path.startsWith("data:")
+                                      color.image_path.startsWith("data:") ||
+                                      color.image_path.startsWith("/colors/")
                                       ? color.image_path
                                       : `${BASE_IMAGE_URL}/${color.image_path.replace(
                                         /^\/+/,
@@ -1979,17 +2461,19 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                               className="w-full px-3 py-2 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
                             >
                               <option value="">เลือกขนาด</option>
-                              {(editProduct?.category === "เหรียญรางวัล"
-                                ? COIN_SIZES
-                                : MASTER_SIZES
-                              ).map((option) => (
-                                <option
-                                  key={option.value}
-                                  value={option.value}
-                                >
-                                  {option.label}
-                                </option>
-                              ))}
+                              {(() => {
+                                const defaultOptions = editProduct?.category === "เหรียญรางวัล" ? COIN_SIZES : MASTER_SIZES;
+                                const optionsList = [...defaultOptions];
+                                // Add custom size from API if not in the default list
+                                if (sizeItem.size && !optionsList.some(opt => opt.value === sizeItem.size)) {
+                                  optionsList.push({ value: sizeItem.size, label: sizeItem.size });
+                                }
+                                return optionsList.map((option) => (
+                                  <option key={option.value} value={option.value}>
+                                    {option.label}
+                                  </option>
+                                ));
+                              })()}
                             </select>
                           </div>
                           <div>
@@ -1997,15 +2481,15 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                               Width (cm)
                             </label>
                             <input
-                              type="text"
-                              value={sizeItem.width || 0}
+                              type="number"
+                              value={isNaN(sizeItem.width) ? "" : sizeItem.width}
                               onChange={(e) => {
                                 const updatedSizes = [
                                   ...(editProduct.sizes || []),
                                 ];
                                 updatedSizes[index] = {
                                   ...updatedSizes[index],
-                                  width: parseFloat(e.target.value),
+                                  width: e.target.value === "" ? NaN : parseFloat(e.target.value),
                                 };
                                 setEditProduct({
                                   ...editProduct,
@@ -2020,15 +2504,15 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                               Height (cm)
                             </label>
                             <input
-                              type="text"
-                              value={sizeItem.height || 0}
+                              type="number"
+                              value={isNaN(sizeItem.height) ? "" : sizeItem.height}
                               onChange={(e) => {
                                 const updatedSizes = [
                                   ...(editProduct.sizes || []),
                                 ];
                                 updatedSizes[index] = {
                                   ...updatedSizes[index],
-                                  height: parseFloat(e.target.value),
+                                  height: e.target.value === "" ? NaN : parseFloat(e.target.value),
                                 };
                                 setEditProduct({
                                   ...editProduct,
@@ -2043,17 +2527,17 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                               Weight (g)
                             </label>
                             <input
-                              type="text"
+                              type="number"
                               min="0"
                               step="1"
-                              value={sizeItem.weight || 0}
+                              value={isNaN(sizeItem.weight) ? "" : sizeItem.weight}
                               onChange={(e) => {
                                 const updatedSizes = [
                                   ...(editProduct.sizes || []),
                                 ];
                                 updatedSizes[index] = {
                                   ...updatedSizes[index],
-                                  weight: parseFloat(e.target.value),
+                                  weight: e.target.value === "" ? NaN : parseFloat(e.target.value),
                                 };
                                 setEditProduct({
                                   ...editProduct,
@@ -2203,8 +2687,80 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                         </div>
                       );
                     })}
-                    อื่นๆโปรดระบุ
-                    <input type="text" />
+
+                    {/* Option 10: อื่นๆ โปรดระบุ */}
+                    {(() => {
+                      const option = { id: 10, value: "อื่นๆ โปรดระบุ", label: "อื่นๆ โปรดระบุ" };
+                      const selectedOption = editProduct?.options?.find(
+                        (opt: any) => opt.option_id === option.id
+                      );
+                      const isSelected = !!selectedOption;
+
+                      return (
+                        <div className="flex flex-col space-y-3 bg-white p-4 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors w-full">
+                          <div className="flex items-center space-x-3">
+                            <input
+                              type="checkbox"
+                              id={`option-${option.id}`}
+                              checked={isSelected}
+                              onChange={(e) => {
+                                const currentOptions = editProduct.options || [];
+                                let updatedOptions;
+
+                                if (e.target.checked) {
+                                  updatedOptions = [
+                                    ...currentOptions,
+                                    {
+                                      id: Date.now(),
+                                      product_id: editProduct.id || 0,
+                                      option_id: option.id,
+                                      description: "", // Initialize with empty text
+                                    },
+                                  ];
+                                } else {
+                                  updatedOptions = currentOptions.filter(
+                                    (opt: any) => opt.option_id !== option.id
+                                  );
+                                }
+
+                                setEditProduct({
+                                  ...editProduct,
+                                  options: updatedOptions,
+                                });
+                              }}
+                              className="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
+                            />
+                            <label
+                              htmlFor={`option-${option.id}`}
+                              className="text-sm font-medium text-gray-700"
+                            >
+                              {option.label}
+                            </label>
+                          </div>
+                          {isSelected && (
+                            <div className="pl-7">
+                              <input
+                                type="text"
+                                placeholder="โปรดระบุรายละเอียดเพิ่มเติม..."
+                                value={selectedOption?.description || ""}
+                                onChange={(e) => {
+                                  const updatedOptions = (editProduct.options || []).map((opt: any) =>
+                                    opt.option_id === option.id
+                                      ? { ...opt, description: e.target.value }
+                                      : opt
+                                  );
+                                  setEditProduct({
+                                    ...editProduct,
+                                    options: updatedOptions,
+                                  });
+                                }}
+                                className="w-full px-3 py-2 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-sm"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>
@@ -2854,6 +3410,1374 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
             </button>
             <button
               onClick={handleEditSave}
+              className="px-5 py-2.5 text-sm font-medium text-white bg-gradient-to-r from-red-600 to-red-700 rounded-xl hover:from-red-700 hover:to-red-800 transition-all duration-200 hover:shadow-lg active:scale-95"
+              style={{
+                fontFamily:
+                  "Sukhumvit Set, sans-serif" as CSSProperties["fontFamily"],
+              }}
+            >
+              บันทึก
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Product Modal */}
+      <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
+        <DialogContent className="bg-white rounded-lg shadow-xl max-w-5xl w-full p-4 sm:p-6 mx-2 sm:mx-0 max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle
+              className="text-lg font-semibold text-gray-900 mb-4"
+              style={{
+                fontFamily:
+                  "Sukhumvit Set, sans-serif" as CSSProperties["fontFamily"],
+              }}
+            >
+              เพิ่มสินค้า
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="flex flex-col lg:flex-row gap-6">
+            {/* Left Column - Image Upload */}
+            <div className="w-full lg:w-1/3 space-y-4">
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 flex flex-col items-center justify-center bg-gray-50 h-64">
+                {newProduct.image ? (
+                  <div className="relative w-full h-full">
+                    <img
+                      src={newProduct.image}
+                      alt="Product preview"
+                      className="w-full h-full object-cover"
+                    />
+                    <button
+                      onClick={() =>
+                        setNewProduct({ ...newProduct, image: "" })
+                      }
+                      className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="h-5 w-5"
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                      >
+                        <path
+                          fillRule="evenodd"
+                          d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-center">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="mx-auto h-12 w-12 text-gray-400"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                      />
+                    </svg>
+                    <p
+                      className="mt-1 text-sm text-gray-500"
+                      style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
+                    >
+                      รูปภาพหลัก
+                    </p>
+                    <label className="mt-2 cursor-pointer inline-flex items-center px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
+                      <span
+                        style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
+                      >
+                        อัพโหลดรูปภาพ
+                      </span>
+                      <input
+                        type="file"
+                        className="hidden"
+                        accept="image/*"
+                        onChange={(e) => {
+                          if (
+                            e.target.files &&
+                            e.target.files[0] &&
+                            newProduct
+                          ) {
+                            const reader = new FileReader();
+                            reader.onload = (event) => {
+                              if (event.target?.result) {
+                                setNewProduct({
+                                  ...newProduct,
+                                  image: event.target.result as string,
+                                });
+                              }
+                            };
+                            reader.readAsDataURL(e.target.files[0]);
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                )}
+              </div>
+
+              {/* Additional Images */}
+              <div className="mt-4">
+                <label
+                  className="block text-sm font-medium text-gray-900 mb-2"
+                  style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
+                >
+                  รูปภาพเพิ่มเติม
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {newProduct.images &&
+                    newProduct.images.slice(1).map((img, index) => (
+                      <div
+                        key={index}
+                        className="relative h-20 bg-gray-100 rounded-md overflow-hidden"
+                      >
+                        <img
+                          src={
+                            img.startsWith("data:")
+                              ? img
+                              : `${img}`
+                          }
+                          alt={`Product ${index + 1}`}
+                          className="w-full h-full object-cover"
+                        />
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const newImages = [
+                              ...(newProduct.images || []),
+                            ];
+                            newImages.splice(index + 1, 1); // +1 because we sliced the first image
+                            setNewProduct({
+                              ...newProduct,
+                              images: newImages,
+                            });
+                          }}
+                          className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-0.5 hover:bg-red-600 transition-colors z-10"
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            className="h-3 w-3"
+                            viewBox="0 0 20 20"
+                            fill="currentColor"
+                          >
+                            <path
+                              fillRule="evenodd"
+                              d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                              clipRule="evenodd"
+                            />
+                          </svg>
+                        </button>
+                      </div>
+                    ))}
+
+                  {/* Add more images button */}
+                  <label className="h-20 border-2 border-dashed border-gray-300 rounded-md flex items-center justify-center cursor-pointer hover:bg-gray-50">
+                    <div className="flex flex-col items-center">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="h-6 w-6 text-gray-400"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M12 4v16m8-8H4"
+                        />
+                      </svg>
+                      <span className="text-xs text-gray-500 mt-1">
+                        เพิ่มรูปภาพ
+                      </span>
+                    </div>
+                    <input
+                      type="file"
+                      className="hidden"
+                      accept="image/*"
+                      multiple
+                      onChange={(e) => {
+                        const files = e.target.files;
+                        if (!files || files.length === 0) return;
+                        const fileArray = Array.from(files);
+                        const results: string[] = [];
+                        let processed = 0;
+                        fileArray.forEach((file) => {
+                          const reader = new FileReader();
+                          reader.onload = (event) => {
+                            if (event.target?.result) {
+                              results.push(event.target.result as string);
+                            }
+                            processed++;
+                            if (processed === fileArray.length) {
+                              setNewProduct((prev: any) => ({
+                                ...prev,
+                                images: [...(prev.images || []), ...results],
+                              }));
+                            }
+                          };
+                          reader.readAsDataURL(file);
+                        });
+                        // reset so same file can be selected again
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column - Product Details */}
+            <div className="w-full lg:w-2/3 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="md:col-span-2">
+                <label
+                  className="block text-sm font-medium text-gray-900 mb-2"
+                  style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
+                >
+                  ประเภทสินค้า
+                </label>
+                <select
+                  value={newProduct.productType || ""}
+                  onChange={(e) =>
+                    setNewProduct({
+                      ...newProduct,
+                      productType: e.target.value as
+                        | "ready"
+                        | "preorder"
+                        | "",
+                    })
+                  }
+                  className="w-full px-4 py-2.5 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                >
+                  <option value="">เลือกประเภทสินค้า</option>
+                  <option value="1">สินค้าสำเร็จรูป</option>
+                  <option value="2">สินค้าพรีออเดอร์</option>
+                  <option value="3">opton</option>
+                </select>
+              </div>
+
+              <div className="md:col-span-2">
+                <label
+                  className="block text-sm font-medium text-gray-900 mb-2"
+                  style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
+                >
+                  ชื่อสินค้า (สำหรับแสดงลูกค้า)
+                </label>
+                <input
+                  type="text"
+                  value={newProduct.name}
+                  onChange={(e) =>
+                    setNewProduct({ ...newProduct, name: e.target.value })
+                  }
+                  className="w-full px-4 py-2.5 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label
+                  className="block text-sm font-medium text-gray-900 mb-2"
+                  style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
+                >
+                  รหัสสินค้า
+                </label>
+                <input
+                  type="text"
+                  value={newProduct.modelName}
+                  onChange={(e) =>
+                    setNewProduct({
+                      ...newProduct,
+                      modelName: e.target.value,
+                    })
+                  }
+                  className="w-full px-4 py-2.5 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label
+                  className="block text-sm font-medium text-gray-900 mb-2"
+                  style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
+                >
+                  รายละเอียด
+                </label>
+                <textarea
+                  value={newProduct.description}
+                  onChange={(e) =>
+                    setNewProduct({
+                      ...newProduct,
+                      description: e.target.value,
+                    })
+                  }
+                  className="w-full px-4 py-2.5 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  rows={3}
+                />
+              </div>
+
+              {/* <div>
+                    <label className="block text-sm font-medium text-gray-900 mb-2" style={{ fontFamily: 'Sukhumvit Set, sans-serif' }}>
+                      ราคา
+                    </label>
+                    <input
+                      type="text"
+                      value={newProduct.price}
+                      onChange={(e) => setNewProduct({ ...newProduct, price: parseFloat(e.target.value) })}
+                      className="w-full px-4 py-2.5 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                    />
+                  </div> */}
+
+              <div>
+                <label
+                  className="block text-sm font-medium text-gray-900 mb-2"
+                  style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
+                >
+                  หมวดหมู่
+                </label>
+                <select
+                  value={newProduct.category}
+                  onChange={(e) =>
+                    setNewProduct({
+                      ...newProduct,
+                      category: e.target.value,
+                      subcategoryId: "",
+                    })
+                  }
+                  className="w-full px-4 py-2.5 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                >
+                  {categories.map((category) => (
+                    <option key={category.key} value={category.key}>
+                      {category.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label
+                  className="block text-sm font-medium text-gray-900 mb-2"
+                  style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
+                >
+                  หมวดหมู่ย่อย
+                </label>
+                <select
+                  value={newProduct.subcategoryId}
+                  onChange={(e) =>
+                    setNewProduct({
+                      ...newProduct,
+                      subcategoryId: e.target.value,
+                    })
+                  }
+                  className="w-full px-4 py-2.5 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  disabled={
+                    getSubcategoriesForCategory(newProduct.category)
+                      .length === 0
+                  }
+                >
+                  <option value="">เลือกหมวดหมู่ย่อย</option>
+                  {getSubcategoriesForCategory(newProduct.category).map(
+                    (subcategory) => (
+                      <option key={subcategory.id} value={subcategory.id}>
+                        {subcategory.name}
+                      </option>
+                    )
+                  )}
+                </select>
+              </div>
+
+              <div>
+                <label
+                  className="block text-sm font-medium text-gray-900 mb-2"
+                  style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
+                >
+                  สี
+                </label>
+                <div className="space-y-2">
+                  {newProduct.colors?.map((color, index) => (
+                    <div
+                      key={index}
+                      className="bg-white p-4 rounded-lg shadow-sm border"
+                    >
+                      <div className="flex items-center gap-4 mb-4">
+                        <div className="flex-shrink-0 w-12 h-12 rounded-md overflow-hidden">
+                          <img
+                            src={
+                              color.image_path && color.image_path.trim()
+                                ? color.image_path.startsWith("data:")
+                                  ? color.image_path
+                                  : `${color.image_path.replace(
+                                    /^\/+/,
+                                    ""
+                                  )}`
+                                : "/default-color.png"
+                            }
+                            alt={color.color}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <span
+                            className="text-sm text-gray-700"
+                            style={{
+                              fontFamily: "Sukhumvit Set, sans-serif",
+                            }}
+                          >
+                            {MASTER_COLORS.find(
+                              (c) => c.value === color.color
+                            )?.label || color.color}
+                          </span>
+                          <div className="mt-2 space-y-2">
+                            {color.image_path && (
+                              <div className="relative w-20 h-20 rounded-md overflow-hidden mb-2">
+                                <img
+                                  src={
+                                    color.image_path.startsWith("data:")
+                                      ? color.image_path
+                                      : `${color.image_path.replace(
+                                        /^\/+/,
+                                        ""
+                                      )}`
+                                  }
+                                  alt={`Color ${color.color}`}
+                                  className="w-full h-full object-cover"
+                                />
+                              </div>
+                            )}
+                            <div>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={(e) => {
+                                  if (e.target.files && e.target.files[0]) {
+                                    const file = e.target.files[0];
+                                    const reader = new FileReader();
+                                    reader.onloadend = () => {
+                                      const updatedColors = [
+                                        ...(newProduct.colors || []),
+                                      ];
+                                      updatedColors[index] = {
+                                        ...updatedColors[index],
+                                        image_path: reader.result as string,
+                                        color: color.color || "",
+                                      };
+                                      setNewProduct({
+                                        ...newProduct,
+                                        colors: updatedColors,
+                                      });
+                                    };
+                                    reader.readAsDataURL(file);
+                                  }
+                                }}
+                                className="hidden"
+                                id={`color-image-${index}`}
+                              />
+                              <label
+                                htmlFor={`color-image-${index}`}
+                                className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 cursor-pointer"
+                              >
+                                <svg
+                                  className="mr-2 h-4 w-4"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                                  />
+                                </svg>
+                                {color.image_path
+                                  ? "เปลี่ยนรูปภาพ"
+                                  : "อัพโหลดรูปภาพ"}
+                              </label>
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const updatedColors = [
+                              ...(newProduct.colors || []),
+                            ];
+                            updatedColors.splice(index, 1);
+                            setNewProduct({
+                              ...newProduct,
+                              colors: updatedColors,
+                            });
+                          }}
+                          className="p-2 text-red-600 hover:text-[#ec4a4c]"
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            className="h-5 w-5"
+                            viewBox="0 0 20 20"
+                            fill="currentColor"
+                          >
+                            <path
+                              fillRule="evenodd"
+                              d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                              clipRule="evenodd"
+                            />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="flex items-center gap-2">
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        const selectedColor = e.target.value;
+                        if (selectedColor) {
+                          const colorList = getColorList(
+                            newProduct?.productType,
+                            newProduct?.category,
+                            newProduct?.subcategoryId
+                          );
+                          const selectedColorData = colorList.find(
+                            (c) => c.value === selectedColor
+                          );
+                          setNewProduct({
+                            ...newProduct,
+                            colors: [
+                              ...(newProduct.colors || []),
+                              {
+                                color: selectedColor,
+                                image_path: selectedColorData?.image || "",
+                              },
+                            ],
+                          });
+                        }
+                      }}
+                      className="flex-1 mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-sm"
+                    >
+                      <option value="">เลือกสี</option>
+                      {getColorList(
+                        newProduct?.productType,
+                        newProduct?.category,
+                        newProduct?.subcategoryId
+                      ).map((color) => (
+                        <option key={color.value} value={color.value}>
+                          {color.label}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewProduct({ ...newProduct, colors: [] });
+                      }}
+                      className="px-3 py-1 text-sm text-white bg-red-600 rounded-md hover:bg-red-700"
+                    >
+                      ล้างสีทั้งหมด
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <label
+                  className="block text-sm font-medium text-gray-900 mb-2"
+                  style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
+                >
+                  Tags
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={newProduct?.tagsRaw !== undefined ? newProduct.tagsRaw : (newProduct?.tags?.join(" ") || "")}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const tagsArray = val
+                        .split(" ")
+                        .filter((tag) => tag.trim() !== "")
+                        .map((tag) =>
+                          tag.startsWith("#") ? tag : `#${tag}`
+                        );
+
+                      setNewProduct({ ...newProduct, tagsRaw: val, tags: tagsArray });
+                    }}
+                    className="w-full px-4 py-2.5 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                    placeholder="ป้อน tags แยกด้วยช่องว่าง"
+                  />
+                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400">
+                    <span className="text-sm">#Tags</span>
+                  </div>
+                </div>
+              </div>
+              {/* Production Times */}
+              <div>
+                <label
+                  className="block text-sm font-medium text-gray-900 mb-2"
+                  style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
+                >
+                  ระยะเวลาการผลิต
+                </label>
+                <div className="space-y-2">
+                  {productionTimes.map((time, index) => (
+                    <div key={index} className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={time.duration}
+                        onChange={(e) => {
+                          const newTimes = [...productionTimes];
+                          newTimes[index] = {
+                            ...time,
+                            duration: e.target.value,
+                          };
+                          setProductionTimes(newTimes);
+                        }}
+                        className="w-24 px-3 py-2 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                      />
+                      <select
+                        value={time.unit}
+                        onChange={(e) => {
+                          const newTimes = [...productionTimes];
+                          newTimes[index] = {
+                            ...time,
+                            unit: e.target.value as
+                              | "days"
+                              | "weeks"
+                              | "months",
+                          };
+                          setProductionTimes(newTimes);
+                        }}
+                        className="w-32 px-3 py-2 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                      >
+                        <option value="days">วัน</option>
+                        <option value="weeks">สัปดาห์</option>
+                        <option value="months">เดือน</option>
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newTimes = [...productionTimes];
+                          newTimes.splice(index, 1);
+                          setProductionTimes(newTimes);
+                        }}
+                        className="p-2 text-red-600 hover:text-[#ec4a4c]"
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          className="h-5 w-5"
+                          viewBox="0 0 20 20"
+                          fill="currentColor"
+                        >
+                          <path
+                            fillRule="evenodd"
+                            d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setProductionTimes([
+                        ...productionTimes,
+                        { duration: "", unit: "days" },
+                      ])
+                    }
+                    className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
+                  >
+                    + เพิ่มระยะเวลาการผลิต
+                  </button>
+                </div>
+              </div>
+              <div className="md:col-span-2">
+                <label
+                  className="block text-sm font-medium text-gray-900 mb-2"
+                  style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
+                >
+                  ขนาด
+                </label>
+                <div className="space-y-4">
+                  {newProduct.sizes?.map((sizeItem, index) => (
+                    <div
+                      key={index}
+                      className="bg-white p-4 rounded-lg shadow-sm border"
+                    >
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            ขนาด
+                          </label>
+                          <select
+                            value={sizeItem.size || ""}
+                            onChange={(e) => {
+                              const updatedSizes = [
+                                ...(newProduct.sizes || []),
+                              ];
+                              updatedSizes[index] = {
+                                ...updatedSizes[index],
+                                size: e.target.value,
+                              };
+                              setNewProduct({
+                                ...newProduct,
+                                sizes: updatedSizes,
+                              });
+                            }}
+                            className="w-full px-3 py-2 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                          >
+                            <option value="">เลือกขนาด</option>
+                            {(newProduct?.category === "เหรียญรางวัล"
+                              ? COIN_SIZES
+                              : MASTER_SIZES
+                            ).map((option) => (
+                              <option
+                                key={option.value}
+                                value={option.value}
+                              >
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Width (cm)
+                          </label>
+                          <input
+                            type="text"
+                            value={sizeItem.width || 0}
+                            onChange={(e) => {
+                              const updatedSizes = [
+                                ...(newProduct.sizes || []),
+                              ];
+                              updatedSizes[index] = {
+                                ...updatedSizes[index],
+                                width: parseFloat(e.target.value),
+                              };
+                              setNewProduct({
+                                ...newProduct,
+                                sizes: updatedSizes,
+                              });
+                            }}
+                            className="w-full px-3 py-2 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Height (cm)
+                          </label>
+                          <input
+                            type="text"
+                            value={sizeItem.height || 0}
+                            onChange={(e) => {
+                              const updatedSizes = [
+                                ...(newProduct.sizes || []),
+                              ];
+                              updatedSizes[index] = {
+                                ...updatedSizes[index],
+                                height: parseFloat(e.target.value),
+                              };
+                              setNewProduct({
+                                ...newProduct,
+                                sizes: updatedSizes,
+                              });
+                            }}
+                            className="w-full px-3 py-2 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <label className="block text-sm text-gray-700 mb-1">
+                            Weight (g)
+                          </label>
+                          <input
+                            type="text"
+                            min="0"
+                            step="1"
+                            value={sizeItem.weight || 0}
+                            onChange={(e) => {
+                              const updatedSizes = [
+                                ...(newProduct.sizes || []),
+                              ];
+                              updatedSizes[index] = {
+                                ...updatedSizes[index],
+                                weight: parseFloat(e.target.value),
+                              };
+                              setNewProduct({
+                                ...newProduct,
+                                sizes: updatedSizes,
+                              });
+                            }}
+                            className="w-full px-3 py-2 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                          />
+                        </div>
+                      </div>
+                      <div className="mt-4 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const updatedSizes = [
+                              ...(newProduct.sizes || []),
+                            ];
+                            updatedSizes.splice(index, 1);
+                            setNewProduct({
+                              ...newProduct,
+                              sizes: updatedSizes,
+                            });
+                          }}
+                          className="p-2 text-red-600 hover:text-[#ec4a4c] rounded-lg hover:bg-red-50 transition-all duration-200"
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            className="h-5 w-5"
+                            viewBox="0 0 20 20"
+                            fill="currentColor"
+                          >
+                            <path
+                              fillRule="evenodd"
+                              d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                              clipRule="evenodd"
+                            />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const updatedSizes = [...(newProduct.sizes || [])];
+                      updatedSizes.push({
+                        size: "",
+                        width: 0,
+                        height: 0,
+                        weight: 0,
+                      });
+                      setNewProduct({ ...newProduct, sizes: updatedSizes });
+                    }}
+                    className="w-full px-4 py-2.5 text-sm font-medium text-white bg-gradient-to-r from-red-600 to-red-700 rounded-lg hover:from-red-700 hover:to-red-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-all duration-200 hover:shadow-lg"
+                    style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
+                  >
+                    เพิ่มขนาด
+                  </button>
+                </div>
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Options
+                </label>
+                <div className="w-full bg-white shadow-sm rounded-lg border border-gray-200">
+                  <div className="space-y-4">
+                    {[
+                      { id: 1, value: "ทำป้ายจารึก", label: "ทำป้ายจารึก" },
+                      { id: 2, value: "ทำโบว์", label: "ทำโบว์" },
+                      {
+                        id: 3,
+                        value: "ตราสัญลักษณ์",
+                        label: "ตราสัญลักษณ์",
+                      },
+                      { id: 4, value: "สกรีน 1 สี", label: "สกรีน 1 สี" },
+                      { id: 5, value: "สกรีน 4 สี", label: "สกรีน 4 สี" },
+                      { id: 6, value: "สติ๊กเกอร์", label: "สติ๊กเกอร์" },
+                      {
+                        id: 7,
+                        value: "เลเซอร์รมยาสี",
+                        label: "เลเซอร์รมยาสี",
+                      },
+                      { id: 8, value: "mirror", label: "mirror" },
+                      {
+                        id: 9,
+                        value: "กล่องบุสวยงาม",
+                        label: "กล่องบุสวยงาม",
+                      },
+                    ].map((option) => (
+                      <div
+                        key={option.id}
+                        className="flex items-center justify-between space-x-3 bg-white p-4 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors w-full"
+                      >
+                        <div className="flex items-center space-x-1">
+                          <input
+                            type="checkbox"
+                            id={`option-${option.id}`}
+                            checked={
+                              newProduct.options?.includes(option.value) ||
+                              false
+                            }
+                            onChange={(e) => {
+                              const currentOptions =
+                                newProduct.options || [];
+                              const updatedOptions = e.target.checked
+                                ? [...currentOptions, option.value]
+                                : currentOptions.filter(
+                                  (value) => value !== option.value
+                                );
+                              setNewProduct({
+                                ...newProduct,
+                                options: updatedOptions,
+                              });
+                            }}
+                            className="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
+                          />
+                          <label
+                            htmlFor={`option-${option.id}`}
+                            className="text-sm text-gray-700"
+                          >
+                            {option.label}
+                          </label>
+                        </div>
+                      </div>
+                    ))}
+                    {/* Others option */}
+                    {(() => {
+                      const otherOption = {
+                        id: 10,
+                        value: "อื่นๆ",
+                        label: "อื่นๆ โปรดระบุ",
+                      };
+                      const isSelected =
+                        newProduct.options?.includes(otherOption.value) ||
+                        false;
+                      const otherValue = newProduct.customOtherValue || "";
+
+                      return (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between space-x-3 bg-white p-4 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors w-full">
+                            <div className="flex items-center space-x-1">
+                              <input
+                                type="checkbox"
+                                id={`option-${otherOption.id}`}
+                                checked={isSelected}
+                                onChange={(e) => {
+                                  const currentOptions =
+                                    newProduct.options || [];
+                                  let updatedOptions;
+
+                                  if (e.target.checked) {
+                                    updatedOptions = [
+                                      ...currentOptions,
+                                      otherOption.value,
+                                    ];
+                                  } else {
+                                    updatedOptions = currentOptions.filter(
+                                      (value) => value !== otherOption.value
+                                    );
+                                  }
+
+                                  setNewProduct({
+                                    ...newProduct,
+                                    options: updatedOptions,
+                                    customOtherValue: e.target.checked
+                                      ? otherValue
+                                      : "",
+                                  });
+                                }}
+                                className="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
+                              />
+                              <label
+                                htmlFor={`option-${otherOption.id}`}
+                                className="text-sm text-gray-700"
+                              >
+                                {otherOption.label}
+                              </label>
+                            </div>
+                          </div>
+                          {isSelected && (
+                            <div className="ml-8 mr-4">
+                              <input
+                                type="text"
+                                value={otherValue}
+                                onChange={(e) => {
+                                  setNewProduct({
+                                    ...newProduct,
+                                    customOtherValue: e.target.value,
+                                  });
+                                }}
+                                placeholder="ระบุรายละเอียดเพิ่มเติม..."
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-red-500 focus:border-red-500 text-sm"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+              </div>
+              {newProduct.productType === "1" && (
+                <div className="md:col-span-2">
+                  <label
+                    className="block text-sm font-medium text-gray-900 mb-2"
+                    style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
+                  >
+                    ส่วนประกอบ
+                  </label>
+                  <div className="space-y-4">
+                    {/* Search input */}
+                    <div className="flex gap-4">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newParts = [
+                            ...(newProduct.parts || []),
+                            {
+                              id: Date.now().toString(),
+                              modelName: "",
+                              name: "",
+                              for_product: "",
+                              color: "",
+                              quantity: 1,
+                            },
+                          ];
+                          setNewProduct({
+                            ...newProduct,
+                            parts: newParts,
+                          });
+                        }}
+                        className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                      >
+                        +เพิ่มส่วนประกอบ
+                      </button>
+                    </div>
+
+                    {/* Parts list */}
+                    <div className="space-y-4">
+                      {(newProduct.parts || []).map((part, index) => (
+                        <div
+                          key={part.id}
+                          className="bg-white p-4 rounded-lg border border-gray-200"
+                        >
+                          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                            <div>
+                              <label className="block text-sm text-gray-700 mb-1">
+                                รหัสสินค้า (Model)
+                              </label>
+                              <input
+                                type="text"
+                                value={newProduct.modelName}
+                                readOnly
+                                className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-md text-gray-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm text-gray-700 mb-1">
+                                ชิ้นส่วนสำหรับ
+                              </label>
+                              <input
+                                type="text"
+                                value={part.for}
+                                onChange={(e) => {
+                                  const updatedParts = [
+                                    ...(newProduct.parts || []),
+                                  ];
+                                  updatedParts[index] = {
+                                    ...part,
+                                    for: e.target.value,
+                                  };
+                                  setNewProduct({
+                                    ...newProduct,
+                                    parts: updatedParts,
+                                  });
+                                }}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm text-gray-700 mb-1">
+                                รหัส/ชื่อสินค้า
+                              </label>
+                              <input
+                                type="text"
+                                value={part.name}
+                                onChange={(e) => {
+                                  const updatedParts = [
+                                    ...(newProduct.parts || []),
+                                  ];
+                                  updatedParts[index] = {
+                                    ...part,
+                                    name: e.target.value,
+                                  };
+                                  setNewProduct({
+                                    ...newProduct,
+                                    parts: updatedParts,
+                                  });
+                                }}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm text-gray-700 mb-1">
+                                สี
+                              </label>
+                              <select
+                                value={part.color}
+                                onChange={(e) => {
+                                  const updatedParts = [
+                                    ...(newProduct.parts || []),
+                                  ];
+                                  updatedParts[index] = {
+                                    ...part,
+                                    color: e.target.value,
+                                  };
+                                  setNewProduct({
+                                    ...newProduct,
+                                    parts: updatedParts,
+                                  });
+                                }}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                              >
+                                <option value="">เลือกสี</option>
+                                {MASTER_COLORS.map((color) => (
+                                  <option
+                                    key={color.value}
+                                    value={color.value}
+                                  >
+                                    {color.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="flex items-center gap-4">
+                              <div className="flex-1">
+                                <label className="block text-sm text-gray-700 mb-1">
+                                  จำนวน
+                                </label>
+                                <input
+                                  type="text"
+                                  min="1"
+                                  value={part.quantity}
+                                  onChange={(e) => {
+                                    const updatedParts = [
+                                      ...(newProduct.parts || []),
+                                    ];
+                                    updatedParts[index] = {
+                                      ...part,
+                                      quantity:
+                                        parseInt(e.target.value) || 1,
+                                    };
+                                    setNewProduct({
+                                      ...newProduct,
+                                      parts: updatedParts,
+                                    });
+                                  }}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                                />
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const updatedParts = (
+                                    newProduct.parts || []
+                                  ).filter((_, i) => i !== index);
+                                  setNewProduct({
+                                    ...newProduct,
+                                    parts: updatedParts,
+                                  });
+                                }}
+                                className="mt-6 p-2 text-red-600 hover:text-[#ec4a4c] transition-colors"
+                              >
+                                <svg
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  className="h-5 w-5"
+                                  viewBox="0 0 20 20"
+                                  fill="currentColor"
+                                >
+                                  <path
+                                    fillRule="evenodd"
+                                    d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0111 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
+                                    clipRule="evenodd"
+                                  />
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Prices Section */}
+              <div className="md:col-span-2">
+                <label
+                  className="block text-sm font-medium text-gray-900 mb-2"
+                  style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
+                >
+                  ราคา
+                </label>
+                <div className="space-y-4">
+                  {/* Add Price Button */}
+                  <div className="flex gap-4">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newPrices = [
+                          ...(newProduct.prices || []),
+                          {
+                            id: Date.now().toString(),
+                            retailPrice: 0,
+                            wholesalePrice: 0,
+                            specialPrice: 0,
+                          },
+                        ];
+                        setNewProduct({ ...newProduct, prices: newPrices });
+                      }}
+                      className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                    >
+                      +เพิ่มราคา
+                    </button>
+                  </div>
+
+                  {/* Prices List */}
+                  <div className="space-y-4">
+                    {(newProduct.prices || []).map((price, index) => (
+                      <div
+                        key={price.id}
+                        className="bg-white p-4 rounded-lg border border-gray-200"
+                      >
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                          <div>
+                            <label className="block text-sm text-gray-700 mb-1">
+                              รหัสสินค้า (Model)
+                            </label>
+                            <input
+                              type="text"
+                              value={newProduct.modelName}
+                              readOnly
+                              className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-md text-gray-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm text-gray-700 mb-1">
+                              ราคาปลีก
+                            </label>
+                            <input
+                              type="text"
+                              min="0"
+                              value={price.retailPrice}
+                              onChange={(e) => {
+                                const updatedPrices = [
+                                  ...(newProduct.prices || []),
+                                ];
+                                updatedPrices[index] = {
+                                  ...price,
+                                  retailPrice:
+                                    parseFloat(e.target.value) || 0,
+                                };
+                                setNewProduct({
+                                  ...newProduct,
+                                  prices: updatedPrices,
+                                });
+                              }}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm text-gray-700 mb-1">
+                              {newProduct.productType === "1"
+                                ? "ราคาส่ง (100 ชิ้นขึ้นไป)"
+                                : "ค่าโมล"}
+                            </label>
+                            <input
+                              type="text"
+                              min="0"
+                              value={price.wholesalePrice}
+                              onChange={(e) => {
+                                const updatedPrices = [
+                                  ...(newProduct.prices || []),
+                                ];
+                                updatedPrices[index] = {
+                                  ...price,
+                                  wholesalePrice:
+                                    parseFloat(e.target.value) || 0,
+                                };
+                                setNewProduct({
+                                  ...newProduct,
+                                  prices: updatedPrices,
+                                });
+                              }}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                            />
+                          </div>
+                          <div className="flex items-center gap-4">
+                            <div className="flex-1">
+                              <label className="block text-sm text-gray-700 mb-1">
+                                ราคาพิเศษ
+                              </label>
+                              <input
+                                type="text"
+                                min="0"
+                                value={price.specialPrice}
+                                onChange={(e) => {
+                                  const updatedPrices = [
+                                    ...(newProduct.prices || []),
+                                  ];
+                                  updatedPrices[index] = {
+                                    ...price,
+                                    specialPrice:
+                                      parseFloat(e.target.value) || 0,
+                                  };
+                                  setNewProduct({
+                                    ...newProduct,
+                                    prices: updatedPrices,
+                                  });
+                                }}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updatedPrices = (
+                                  newProduct.prices || []
+                                ).filter((_, i) => i !== index);
+                                setNewProduct({
+                                  ...newProduct,
+                                  prices: updatedPrices,
+                                });
+                              }}
+                              className="mt-6 p-2 text-red-600 hover:text-[#ec4a4c] transition-colors"
+                            >
+                              <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                className="h-5 w-5"
+                                viewBox="0 0 20 20"
+                                fill="currentColor"
+                              >
+                                <path
+                                  fillRule="evenodd"
+                                  d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0111 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
+                                  clipRule="evenodd"
+                                />
+                              </svg>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="mt-6 sm:mt-8 flex flex-col sm:flex-row sm:justify-end space-y-2 sm:space-y-0 sm:space-x-3">
+            <button
+              onClick={handleCreateClose}
+              className="px-5 py-2.5 text-sm font-medium text-gray-700 hover:text-gray-900 transition-colors"
+              style={{
+                fontFamily:
+                  "Sukhumvit Set, sans-serif" as CSSProperties["fontFamily"],
+              }}
+            >
+              ยกเลิก
+            </button>
+            <button
+              onClick={handleCreateSave}
               className="px-5 py-2.5 text-sm font-medium text-white bg-gradient-to-r from-red-600 to-red-700 rounded-xl hover:from-red-700 hover:to-red-800 transition-all duration-200 hover:shadow-lg active:scale-95"
               style={{
                 fontFamily:
