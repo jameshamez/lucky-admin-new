@@ -6,8 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
-import { 
-  Search, 
+import {
+  Search,
   AlertTriangle,
   Clock,
   Package,
@@ -83,7 +83,7 @@ interface Order {
   sentDepartments?: string[];
 }
 
-const orders: Order[] = [
+const mockOrders: Order[] = [
   {
     id: "JOB-2024-001",
     customer: "บริษัท เอบีซี จำกัด",
@@ -358,6 +358,77 @@ const getProgressCategory = (status: string): string => {
 
 export default function OrderTracking() {
   const navigate = useNavigate();
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    const fetchOrders = async () => {
+      setIsLoading(true);
+      try {
+        const res = await fetch("https://finfinphone.com/api-lucky/admin/orders.php");
+        const json = await res.json();
+        if (json.status === "success" && json.data) {
+          const mappedOrders = json.data.map((o: any) => {
+            const departments = (() => {
+              if (!o.departments) return [];
+              if (Array.isArray(o.departments)) return o.departments;
+              if (typeof o.departments === 'string') {
+                try { return JSON.parse(o.departments); } catch (e) { return []; }
+              }
+              return [];
+            })();
+
+            // Map standard order status for KPI
+            let broadStatus = "pending_approval";
+            if (["กำลังผลิต", "ตรวจสอบ Artwork จากโรงงาน", "ตรวจสอบ CNC", "อัปเดทปั้มชิ้นงาน", "อัปเดตสาย"].includes(o.order_status)) {
+              broadStatus = "in_production";
+            } else if (["อัปเดตชิ้นงานก่อนจัดส่ง", "งานเสร็จสมบูรณ์"].includes(o.order_status)) {
+              broadStatus = "ready_to_ship";
+            } else if (["อยู่ระหว่างขนส่ง", "สินค้ามาส่งที่ร้าน", "จัดส่งเรียบร้อย"].includes(o.order_status)) {
+              broadStatus = "shipped";
+            }
+
+            return {
+              id: o.job_id || String(o.order_id),
+              customer: o.customer_name || "ไม่ระบุชื่อ",
+              items: o.job_name || "ไม่ระบุสินค้า",
+              orderDate: (o.order_date || "").split(" ")[0],
+              dueDate: o.delivery_date || "-",
+              status: broadStatus,
+              value: parseFloat(o.total_amount) || 0,
+              progress: 0,
+              type: o.product_category || "internal",
+              location: o.event_location || "domestic",
+              department: o.responsible_person || "-",
+              lineId: o.customer_line || "-",
+              phone: o.customer_phone || "-",
+              email: o.customer_email || "-",
+              address: o.customer_address || o.delivery_address || "-",
+              taxId: o.tax_id || "-",
+              sentDepartments: departments,
+              orderItems: [
+                {
+                  id: o.order_id || Math.random(),
+                  name: o.job_name || "คำสั่งซื้อ",
+                  description: o.notes || "สร้างจาก Order",
+                  quantity: 1,
+                  currentStatus: o.order_status || "รอจัดซื้อส่งประเมิน",
+                  statusHistory: []
+                }
+              ]
+            } as Order;
+          });
+          setOrders(mappedOrders);
+        }
+      } catch (err) {
+        console.error(err);
+        toast.error("ดึงข้อมูลออเดอร์ล้มเหลว");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchOrders();
+  }, []);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all"); // KPI card filter
   const [progressBubble, setProgressBubble] = useState("all"); // bubble filter
@@ -395,7 +466,7 @@ export default function OrderTracking() {
     inProduction: orders.filter(o => o.status === "in_production").length,
     readyToShip: orders.filter(o => o.status === "ready_to_ship").length,
     urgent: orders.filter(o => o.status === "urgent").length,
-  }), []);
+  }), [orders]);
 
   // Progress bubble counts (item-level)
   const progressCounts = useMemo(() => {
@@ -405,7 +476,7 @@ export default function OrderTracking() {
       counts[cat] = (counts[cat] || 0) + 1;
     }));
     return counts;
-  }, []);
+  }, [orders]);
 
   const progressCategories = ["ประเมินราคา/อนุมัติ", "ออกแบบกราฟิก", "จัดซื้อ/สั่งผลิต", "กำลังผลิต", "QC/ตรวจสอบ", "ขนส่ง", "ส่งถึงแล้ว"];
   const progressColors: Record<string, string> = {
@@ -446,7 +517,7 @@ export default function OrderTracking() {
       }
       return true;
     });
-  }, [searchTerm, statusFilter, colFilterId, colFilterCustomer, colFilterOrderDate, colFilterDueDate, colFilterItem, colFilterStatus, progressBubble, deepSearch]);
+  }, [orders, searchTerm, statusFilter, colFilterId, colFilterCustomer, colFilterOrderDate, colFilterDueDate, colFilterItem, colFilterStatus, progressBubble, deepSearch]);
 
   // Reset page when filters change
   useEffect(() => { setCurrentPage(1); }, [searchTerm, statusFilter, colFilterId, colFilterCustomer, colFilterOrderDate, colFilterDueDate, colFilterItem, colFilterStatus, progressBubble]);
@@ -545,7 +616,7 @@ export default function OrderTracking() {
     const set = new Set<string>();
     orders.forEach(o => o.orderItems.forEach(i => set.add(i.currentStatus)));
     return Array.from(set);
-  }, []);
+  }, [orders]);
 
   return (
     <div className="min-h-screen bg-[#F7F7F7] p-6">
@@ -647,7 +718,12 @@ export default function OrderTracking() {
 
         {/* ===== Orders Table with Column Filters ===== */}
         <div className="space-y-4">
-          {filteredOrders.length === 0 ? (
+          {isLoading ? (
+            <div className="bg-white rounded-lg shadow-sm border p-12 text-center flex flex-col items-center justify-center">
+              <div className="w-8 h-8 rounded-full border-4 border-primary border-t-transparent animate-spin mb-4"></div>
+              <p className="text-muted-foreground">กำลังโหลดข้อมูลออเดอร์...</p>
+            </div>
+          ) : filteredOrders.length === 0 ? (
             <div className="bg-white rounded-lg shadow-sm border p-12 text-center">
               <Package className="w-16 h-16 text-muted-foreground mx-auto mb-4 opacity-50" />
               <p className="text-muted-foreground">ไม่พบออเดอร์ที่ตรงกับเงื่อนไขการค้นหา</p>

@@ -25,12 +25,15 @@ import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { EstimationDetailDialog } from "./EstimationDetailDialog";
+import {
+  getProvinces, getAmphoesByProvince, getDistricts, getZipcode, loadAddressData
+} from "@/utils/thaiAddress";
 
 // Define the form schema
 const createOrderSchema = z.object({
   // Section 1: Sales Employee
   responsiblePerson: z.string().min(1, "กรุณาระบุพนักงานที่รับผิดชอบ"),
-  
+
   // Section 2: Customer Information
   customerSearch: z.string().optional(),
   customerName: z.string().min(1, "กรุณาระบุชื่อลูกค้า"),
@@ -41,7 +44,7 @@ const createOrderSchema = z.object({
   taxPayerName: z.string().optional(),
   taxId: z.string().optional(),
   taxAddress: z.string().optional(),
-  
+
   // Section 3: Order Information
   jobId: z.string().optional(),
   quotationNumber: z.string().optional(),
@@ -53,7 +56,7 @@ const createOrderSchema = z.object({
   budget: z.string().optional(),
   productType: z.string().optional(),
   material: z.string().optional(),
-  
+
   // Section 4: Job Details (dynamic based on product type)
   jobDetails: z.object({
     customerReferenceImages: z.any().optional(),
@@ -78,7 +81,7 @@ const createOrderSchema = z.object({
     attachedFiles: z.any().optional(),
     customType: z.string().optional(),
   }).optional(),
-  
+
   // Section 5: Delivery Information
   deliveryType: z.string().min(1, "กรุณาเลือกรูปแบบการรับสินค้า"),
   deliveryInfo: z.object({
@@ -116,28 +119,67 @@ interface CreateOrderFormProps {
   } | null;
 }
 
+// Master Subcategories with their parent category (IDs match API subcategoryId)
+const SUBCATEGORY_MAP: Record<string, { id: string; name: string }> = {
+  // ถ้วยรางวัลสำเร็จ
+  "1": { id: "1", name: "ถ้วยรางวัลโลหะอิตาลี" },
+  "2": { id: "2", name: "ถ้วยรางวัลโลหะจีน" },
+  "3": { id: "3", name: "ถ้วยรางวัลพลาสติกอิตาลี" },
+  "4": { id: "4", name: "ถ้วยรางวัลพลาสติกไทย" },
+  "5": { id: "5", name: "ถ้วยรางวัลพิวเตอร์" },
+  "6": { id: "6", name: "ถ้วยรางวัลเบญจรงค์" },
+  // เหรียญรางวัล
+  "7": { id: "7", name: "เหรียญรางวัลสำเร็จรูป" },
+  "8": { id: "8", name: "เหรียญรางวัลซิงค์อัลลอย" },
+  "9": { id: "9", name: "เหรียญรางวัลอะคริลิก" },
+  "10": { id: "10", name: "เหรียญรางวัลอื่นๆ" },
+  // โล่รางวัล
+  "11": { id: "11", name: "โล่รางวัลอะคริลิก(สำเร็จ)" },
+  "12": { id: "12", name: "โล่รางวัลอะคริลิก (สั่งผลิต)" },
+  "13": { id: "13", name: "โล่รางวัลคริสตัล" },
+  "14": { id: "14", name: "โล่รางวัลไม้" },
+  "15": { id: "15", name: "โล่รางวัลเรซิน" },
+  // เสื้อพิมพ์ลายและผ้า
+  "16": { id: "16", name: "เสื้อคอปก" },
+  "17": { id: "17", name: "เสื้อคอกลม" },
+  "18": { id: "18", name: "เสื้อแขนยาว" },
+  // ชิ้นส่วนถ้วยรางวัล
+  "19": { id: "19", name: "หัวป้ายพลาสติก" },
+  "20": { id: "20", name: "หัวป้ายตุ๊กตาพลาสติก" },
+  "21": { id: "21", name: "เหรียญรางวัลอะคริลิก" },
+};
+
 export default function CreateOrderForm({ onSubmit, onCancel, initialData, estimationData }: CreateOrderFormProps) {
   const navigate = useNavigate();
   const [productItems, setProductItems] = useState<any[]>([]);
   const [savedProducts, setSavedProducts] = useState<any[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
+  const [employees, setEmployees] = useState<any[]>([]);
   const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
+
+  // Thai address cascade states
+  const [thaiProvinces, setThaiProvinces] = useState<string[]>([]);
+  const [thaiAmphures, setThaiAmphures] = useState<string[]>([]);
+  const [thaiTambons, setThaiTambons] = useState<string[]>([]);
+  const [selectedProvinceName, setSelectedProvinceName] = useState<string>("");
+  const [selectedAmphureName, setSelectedAmphureName] = useState<string>("");
   const [showTaxFields, setShowTaxFields] = useState(false);
   const [deliveryType, setDeliveryType] = useState<string>("parcel");
   const [customSize, setCustomSize] = useState("");
   const [showCustomSize, setShowCustomSize] = useState(false);
   const [selectedSize, setSelectedSize] = useState("");
   const [shapeFiles, setShapeFiles] = useState<File[]>([]);
-  
+
   // ReadyMedal specific states
   const [selectedProductModel, setSelectedProductModel] = useState<string>("");
   const [selectedPlatingColor, setSelectedPlatingColor] = useState<string>("");
-  const [readyMedalColorEntries, setReadyMedalColorEntries] = useState<{color: string; quantity: string}[]>([]);
-  const [newColorEntry, setNewColorEntry] = useState<{color: string; quantity: string}>({color: "", quantity: ""});
+  const [readyMedalColorEntries, setReadyMedalColorEntries] = useState<{ color: string; quantity: string }[]>([]);
+  const [newColorEntry, setNewColorEntry] = useState<{ color: string; quantity: string }>({ color: "", quantity: "" });
   const [wantsSticker, setWantsSticker] = useState<string>("");
   const [stickerDesignDetails, setStickerDesignDetails] = useState<string>("");
   const [stickerFiles, setStickerFiles] = useState<File[]>([]);
-  
+
   // Add color entry
   const addColorEntry = () => {
     if (newColorEntry.color && newColorEntry.quantity) {
@@ -157,17 +199,17 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
         }
         return [...prev, newColorEntry];
       });
-      setNewColorEntry({color: "", quantity: ""});
+      setNewColorEntry({ color: "", quantity: "" });
     }
   };
-  
+
   // Remove color entry
   const removeColorEntry = (index: number) => {
     setReadyMedalColorEntries(prev => prev.filter((_, i) => i !== index));
   };
   // Trophy sizes state
   const [trophySizes, setTrophySizes] = useState<{ size: string; height: number; opening: number; price: number; quantity: string }[]>([]);
-  
+
   // Shirt form state
   const [shirtCollar, setShirtCollar] = useState<string>("");
   const [shirtSleeve, setShirtSleeve] = useState<string>("");
@@ -184,11 +226,11 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
   ]);
   const [showCustomShirtSize, setShowCustomShirtSize] = useState(false);
   const [customShirtSize, setCustomShirtSize] = useState({ size: "", chest: "", length: "", shoulder: "", sleeve: "", quantity: "" });
-  
+
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>("");
   const [selectedPriceEstimationId, setSelectedPriceEstimationId] = useState<number | null>(null);
-const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
+  const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
   const [viewingEstimation, setViewingEstimation] = useState<{
     id: number;
     date: string;
@@ -203,7 +245,7 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
     jobDescription: string;
     material?: string;
   } | null>(null);
-  
+
   // Selected estimations for quotation-style product list (multiple selection)
   const [selectedEstimations, setSelectedEstimations] = useState<{
     id: number;
@@ -462,7 +504,7 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
   const findCategoryForProduct = (productLabel: string): string | null => {
     const productValue = productLabelToValue[productLabel];
     if (!productValue) return null;
-    
+
     for (const [categoryId, products] of Object.entries(productsByCategory)) {
       if (products.some(p => p.value === productValue)) {
         return categoryId;
@@ -494,19 +536,19 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
   // Select price estimation and auto-fill form (legacy single-select, kept for compatibility)
   const selectPriceEstimation = (estimation: typeof priceEstimations[0]) => {
     setSelectedPriceEstimationId(estimation.id);
-    
+
     // Auto-fill customer info
     form.setValue("customerName", estimation.customerName);
     form.setValue("customerLine", estimation.lineName);
     form.setValue("customerPhone", estimation.customerPhone);
     form.setValue("customerEmail", estimation.customerEmail);
-    
+
     // Auto-fill budget/price
     form.setValue("budget", estimation.price.toString());
-    
+
     // Auto-fill job details quantity
     form.setValue("jobDetails.quantity", estimation.quantity.toString());
-    
+
     // Auto-fill product type and category
     const productValue = productLabelToValue[estimation.productType];
     if (productValue) {
@@ -517,7 +559,7 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
       form.setValue("productType", productValue);
       form.setValue("material", "");
     }
-    
+
     toast({
       title: "เลือกรายการสำเร็จ",
       description: `นำข้อมูลจากรายการประเมินราคา #${estimation.id} มาใช้แล้ว`,
@@ -536,9 +578,11 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
 
   const productsByCategory: Record<string, { value: string; label: string; flow: "catalog" | "estimate" }[]> = {
     readymade: [
-      { value: "ReadyMedal", label: "เหรียญสำเร็จรูป", flow: "catalog" },
-      { value: "Trophy", label: "ถ้วยรางวัล", flow: "catalog" },
-      { value: "WoodAward", label: "โล่ไม้", flow: "catalog" },
+      { value: "Trophy", label: "ถ้วยรางวัลสำเร็จ", flow: "catalog" },
+      { value: "ReadyMedal", label: "เหรียญรางวัล", flow: "catalog" },
+      { value: "Award", label: "โล่รางวัล", flow: "catalog" },
+      { value: "Shirt", label: "เสื้อพิมพ์ลายและผ้า", flow: "catalog" },
+      { value: "TrophyPart", label: "ชิ้นส่วนถ้วยรางวัล", flow: "catalog" },
     ],
     custom: [
       { value: "Medal", label: "เหรียญสั่งผลิต", flow: "estimate" },
@@ -586,7 +630,7 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
     };
     return labels[type] || type;
   };
-  
+
   const form = useForm<CreateOrderFormData>({
     resolver: zodResolver(createOrderSchema),
     defaultValues: initialData || {
@@ -635,19 +679,65 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
     return [merged, ...basePriceEstimations.filter((e) => e.id !== estimationData.id)];
   }, [estimationData, watchedCustomerName, watchedCustomerPhone, watchedCustomerEmail]);
 
-  // Load customers on component mount
+  // Load address database immediately on mount
   useEffect(() => {
-    const loadCustomers = async () => {
-      const { data, error } = await supabase
-        .from('customers')
-        .select('*');
-      
-      if (data && !error) {
-        setCustomers(data);
-      }
-    };
-    
-    loadCustomers();
+    loadAddressData().then(() => {
+      getProvinces().then(setThaiProvinces);
+    });
+  }, []);
+
+  // When province changes → load amphures
+  useEffect(() => {
+    if (selectedProvinceName) {
+      setThaiAmphures([]);
+      setThaiTambons([]);
+      setSelectedAmphureName("");
+      form.setValue("deliveryInfo.district", "");
+      form.setValue("deliveryInfo.subdistrict", "");
+      form.setValue("deliveryInfo.postalCode", "");
+      getAmphoesByProvince(selectedProvinceName).then(setThaiAmphures);
+    }
+  }, [selectedProvinceName]);
+
+  // When amphure changes → load tambons
+  useEffect(() => {
+    if (selectedProvinceName && selectedAmphureName) {
+      setThaiTambons([]);
+      form.setValue("deliveryInfo.subdistrict", "");
+      form.setValue("deliveryInfo.postalCode", "");
+      getDistricts(selectedProvinceName, selectedAmphureName).then(setThaiTambons);
+    }
+  }, [selectedAmphureName, selectedProvinceName]);
+
+  // API base URLs
+  const CUSTOMERS_API = "https://finfinphone.com/api-lucky/admin/customers.php";
+  const LOCAL_API = "https://finfinphone.com/api-lucky/admin/";
+
+  // Load all customers from finfinphone server on mount
+  useEffect(() => {
+    fetch(CUSTOMERS_API)
+      .then(r => r.json())
+      .then(json => {
+        if (json.status === "success") setCustomers(json.data);
+      })
+      .catch(err => console.warn("Failed to load customers:", err));
+  }, []);
+
+  // Load employees (sales staff only) from local backend
+  useEffect(() => {
+    fetch(`${LOCAL_API}/employees.php?sales_only=1`)
+      .then(r => r.json())
+      .then(json => {
+        if (json.status === "success") setEmployees(json.data);
+      })
+      .catch(() => {
+        // Fallback to hardcoded if API fails
+        setEmployees([
+          { id: 1, full_name: "นายสมศักดิ์ รักงาน", code: "EMP001" },
+          { id: 2, full_name: "นางสาวพิมพ์ใจ ดีเยี่ยม", code: "EMP002" },
+          { id: 3, full_name: "นายวิชัย มั่นคง", code: "EMP003" },
+        ]);
+      });
   }, []);
 
   // Auto-fill form when estimationData is provided
@@ -688,7 +778,7 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
 
       // Set LINE name as customer line
       form.setValue("customerLine", estimationData.lineName);
-      
+
       // Set budget
       if (estimationData.price) {
         form.setValue("budget", estimationData.price.toString());
@@ -704,31 +794,86 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
     }
   }, [estimationData, form]);
 
-  // Search customers
+  // Search customers (local filter on loaded dataset, falls back to API search)
   useEffect(() => {
-    if (watchedCustomerSearch && watchedCustomerSearch.length > 2) {
-      const filtered = customers.filter(customer => 
-        customer.contact_name?.toLowerCase().includes(watchedCustomerSearch.toLowerCase()) ||
-        customer.company_name?.toLowerCase().includes(watchedCustomerSearch.toLowerCase()) ||
-        customer.line_id?.toLowerCase().includes(watchedCustomerSearch.toLowerCase()) ||
-        customer.phone_numbers?.some((phone: string) => phone.includes(watchedCustomerSearch))
-      );
-      setSearchResults(filtered);
-    } else {
-      setSearchResults([]);
+    const term = watchedCustomerSearch;
+
+    // ถ้ายังไม่ได้พิมพ์ → แสดงรายชื่อทั้งหมด (first 10)
+    if (!term || term.length === 0) {
+      setSearchResults(customers.slice(0, 10));
+      return;
     }
+
+    // Local search first (instant)
+    const lower = term.toLowerCase();
+    const local = customers.filter(c =>
+      c.contact_name?.toLowerCase().includes(lower) ||
+      c.company_name?.toLowerCase().includes(lower) ||
+      c.line_id?.toLowerCase().includes(lower) ||
+      (Array.isArray(c.phone_numbers) && c.phone_numbers.some((p: string) => p.includes(term)))
+    );
+    if (local.length > 0) {
+      setSearchResults(local.slice(0, 10));
+      return;
+    }
+    // Fallback: live API search on finfinphone server
+    const timeout = setTimeout(() => {
+      fetch(`${CUSTOMERS_API}?search=${encodeURIComponent(term)}`)
+        .then(r => r.json())
+        .then(json => {
+          if (json.status === "success") setSearchResults(json.data.slice(0, 10));
+        })
+        .catch(() => { });
+    }, 300);
+    return () => clearTimeout(timeout);
   }, [watchedCustomerSearch, customers]);
 
-  // Select customer from search results
+  // Select customer from search results — auto-fill all fields
   const selectCustomer = (customer: any) => {
-    form.setValue("customerName", customer.contact_name);
-    form.setValue("customerPhone", customer.phone_numbers?.[0] || "");
-    form.setValue("customerLine", customer.line_id || "");
-    form.setValue("customerEmail", customer.emails?.[0] || "");
+    // ข้อมูลลูกค้าหลัก
+    form.setValue("customerName", customer.contact_name ?? "");
+    form.setValue("customerPhone", Array.isArray(customer.phone_numbers) ? (customer.phone_numbers[0] ?? "") : "");
+    form.setValue("customerLine", customer.line_id ?? "");
+    form.setValue("customerEmail", Array.isArray(customer.emails) ? (customer.emails[0] ?? "") : "");
+
+    // ข้อมูลภาษี (ถ้ามี)
+    if (customer.tax_id) {
+      form.setValue("taxId", customer.tax_id ?? "");
+      form.setValue("taxPayerName", customer.company_name ?? customer.contact_name ?? "");
+      form.setValue("taxAddress", [
+        customer.billing_address,
+        customer.billing_subdistrict,
+        customer.billing_district,
+        customer.billing_province,
+        customer.billing_postcode,
+      ].filter(Boolean).join(" ") || "");
+      form.setValue("requireTaxInvoice", true);
+      setShowTaxFields(true);
+    }
+
+    // ที่อยู่จัดส่ง — ใช้ shipping address (ถ้ามี) ไม่งั้นใช้ billing
+    const addr = customer.shipping_address || customer.billing_address || "";
+    const sub = customer.shipping_subdistrict || customer.billing_subdistrict || "";
+    const dist = customer.shipping_district || customer.billing_district || "";
+    const prov = customer.shipping_province || customer.billing_province || "";
+    const post = customer.shipping_postcode || customer.billing_postcode || "";
+
+    form.setValue("deliveryInfo.recipientName", customer.contact_name ?? "");
+    form.setValue("deliveryInfo.recipientPhone", Array.isArray(customer.phone_numbers) ? (customer.phone_numbers[0] ?? "") : "");
+    form.setValue("deliveryInfo.address", addr);
+    form.setValue("deliveryInfo.subdistrict", sub);
+    form.setValue("deliveryInfo.district", dist);
+    form.setValue("deliveryInfo.province", prov);
+    form.setValue("deliveryInfo.postalCode", post);
+
+    // Update cascading dropdown states
+    setSelectedProvinceName(prov);
+    setSelectedAmphureName(dist);
+
     setSearchResults([]);
     form.setValue("customerSearch", "");
-    // Reset price estimation when changing customer
     setSelectedPriceEstimationId(null);
+    setShowCustomerDropdown(false);
   };
 
   // Update recipient info when customer info changes
@@ -740,37 +885,29 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
   // Material options based on product type
   const getMaterialOptions = (productType: string) => {
     switch (productType) {
-      // สินค้าสำเร็จรูป
-      case "ReadyMedal":
-        return [
-          "พลาสติก รู้แพ้รู้ชนะ",
-          "พลาสติกข้าวสาร",
-          "พลาสติกรวงข้าว",
-          "อะลูมิเนียม",
-          "โลหะซิงค์มัลติฟังค์ชั่น",
-          "โลหะซิงค์สำเร็จรูปหมุนได้"
-        ];
+      // ถ้วยรางวัล
       case "Trophy":
-        return [
-          "ถ้วยรางวัลโลหะอิตาลี",
-          "ถ้วยรางวัลโลหะจีน",
-          "ถ้วยรางวัลพลาสติกอิตาลี",
-          "ถ้วยรางวัลพลาสติกไทย",
-          "ถ้วยรางวัลพิวเตอร์",
-          "ถ้วยรางวัลเบญจรงค์"
-        ];
-      case "WoodAward":
-        return ["ไม้สัก", "ไม้MDF", "อื่นๆ (โปรดระบุ)"];
-      // สินค้าสั่งผลิต
+        return ["1", "2", "3", "4", "5", "6"].map(id => SUBCATEGORY_MAP[id].name);
+
+      // เหรียญรางวัล
+      case "ReadyMedal":
       case "Medal":
-        return ["ซิงค์อัลลอย", "อะคริลิค", "คริสตัล", "PVC", "ไม้", "อื่นๆ (โปรดระบุ)"];
+        return ["7", "8", "9", "10", "21"].map(id => SUBCATEGORY_MAP[id].name);
+
+      // โล่รางวัล
+      case "WoodAward":
       case "Award":
-        return ["อะคริลิค", "คริสตัล", "ซิงค์อัลลอย", "อื่นๆ (โปรดระบุ)"];
-      // หมวดสิ่งทอ & เสื้อผ้า
+        return ["11", "12", "13", "14", "15"].map(id => SUBCATEGORY_MAP[id].name);
+
+      // เสื้อพิมพ์ลายและผ้า
       case "Fabric":
-        return ["ผ้าคอตตอน", "ผ้าโพลีเอสเตอร์", "ผ้าไนลอน", "อื่นๆ (โปรดระบุ)"];
       case "Shirt":
-        return ["ผ้าไมโครเรียบ"];
+        return ["16", "17", "18"].map(id => SUBCATEGORY_MAP[id].name);
+
+      // ชิ้นส่วนถ้วยรางวัล
+      case "TrophyPart":
+        return ["19", "20"].map(id => SUBCATEGORY_MAP[id].name);
+
       // ของใช้
       case "Hat":
         return ["ผ้าคอตตอน", "ผ้าโพลีเอสเตอร์", "ผ้าตาข่าย", "อื่นๆ (โปรดระบุ)"];
@@ -786,11 +923,13 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
         return ["กระดาษถนอมสายตา", "กระดาษอาร์ต", "อื่นๆ (โปรดระบุ)"];
       case "Calendar":
         return ["กระดาษอาร์ต", "กระดาษถนอมสายตา", "อื่นๆ (โปรดระบุ)"];
+
       // หมวดสายคล้อง
       case "Lanyard":
         return ["โพลีสกรีน", "ผ้าไมโครเรียบ", "ผ้าดาวกระจาย", "ผ้าเม็ดข้าวสาร", "โฟม", "อื่นๆ (โปรดระบุ)"];
       case "Wristband":
         return ["ยาง", "กระดาษ", "ผ้า", "อื่นๆ (โปรดระบุ)"];
+
       // ของพรีเมียม
       case "Magnet":
         return ["ยาง", "โลหะ", "อะคริลิค", "อื่นๆ (โปรดระบุ)"];
@@ -800,6 +939,7 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
         return ["โลหะ", "ยาง", "อะคริลิค", "PVC", "อื่นๆ (โปรดระบุ)"];
       case "Paperweight":
         return ["คริสตัล", "อะคริลิค", "โลหะ", "อื่นๆ (โปรดระบุ)"];
+
       default:
         return ["อื่นๆ (โปรดระบุ)"];
     }
@@ -811,7 +951,7 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
         return (
           <div className="space-y-4">
             <h4 className="font-semibold text-lg">รายละเอียดเหรียญสั่งผลิต</h4>
-            
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <FormField
                 control={form.control}
@@ -889,12 +1029,12 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>ขนาด</FormLabel>
-                    <Select 
+                    <Select
                       onValueChange={(value) => {
                         field.onChange(value);
                         setSelectedSize(value);
                         setShowCustomSize(value === "other");
-                      }} 
+                      }}
                       defaultValue={field.value}
                     >
                       <FormControl>
@@ -911,8 +1051,8 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                       </SelectContent>
                     </Select>
                     {showCustomSize && (
-                      <Input 
-                        placeholder="ระบุขนาด" 
+                      <Input
+                        placeholder="ระบุขนาด"
                         value={customSize}
                         onChange={(e) => {
                           setCustomSize(e.target.value);
@@ -1134,7 +1274,7 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
         return (
           <div className="space-y-4">
             <h4 className="font-semibold text-lg">รายละเอียดถ้วยรางวัล</h4>
-            
+
             <FormField
               control={form.control}
               name="jobDetails.model"
@@ -1242,7 +1382,7 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
         return (
           <div className="space-y-4">
             <h4 className="font-semibold text-lg">รายละเอียดโล่</h4>
-            
+
             <FormField
               control={form.control}
               name="jobDetails.model"
@@ -1352,7 +1492,7 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
         return (
           <div className="space-y-4">
             <h4 className="font-semibold text-lg">รายละเอียดป้ายบิบ</h4>
-            
+
             <FormField
               control={form.control}
               name="jobDetails.quantity"
@@ -1398,7 +1538,7 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
         return (
           <div className="space-y-4">
             <h4 className="font-semibold text-lg">รายละเอียด{watchedProductType}</h4>
-            
+
             {watchedProductType === "อื่นๆ" && (
               <FormField
                 control={form.control}
@@ -1414,7 +1554,7 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                 )}
               />
             )}
-            
+
             <FormField
               control={form.control}
               name="jobDetails.quantity"
@@ -1461,13 +1601,13 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
       // Check if this is a zinc model that has plating color
       const isZincModel = ["โลหะซิงค์มัลติฟังค์ชั่น", "โลหะซิงค์สำเร็จรูปหมุนได้"].includes(watchedMaterial || "");
       const platingLabel = selectedPlatingColor === "สีเงา" ? "เงา" : (selectedPlatingColor === "สีรมดำ" ? "รมดำ" : "");
-      
+
       const newProducts = readyMedalColorEntries.map((colorEntry, index) => {
         // Build display name with plating color for zinc models
         const displayName = isZincModel && platingLabel
           ? `เหรียญสำเร็จรูป ${watchedMaterial} ${platingLabel} ${colorEntry.color}`
           : `เหรียญสำเร็จรูป ${watchedMaterial} ${colorEntry.color}`;
-        
+
         return {
           id: Date.now() + index,
           productType: watchedProductType,
@@ -1482,9 +1622,9 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
           details: form.getValues("jobDetails"),
         };
       });
-      
+
       setSavedProducts([...savedProducts, ...newProducts]);
-      
+
       // Reset all fields
       form.setValue("productType", "");
       form.setValue("material", "");
@@ -1492,12 +1632,12 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
       setSelectedProductModel("");
       setSelectedPlatingColor("");
       setReadyMedalColorEntries([]);
-      setNewColorEntry({color: "", quantity: ""});
+      setNewColorEntry({ color: "", quantity: "" });
       setWantsSticker("");
       setStickerDesignDetails("");
       return;
     }
-    
+
     // Special handling for Trophy - add separate line items for each size
     if (watchedProductType === "Trophy" && trophySizes.length > 0) {
       const modelName = (() => {
@@ -1510,7 +1650,7 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
         ];
         return models.find((m) => m.id === form.getValues("jobDetails.model"))?.name || "ถ้วยรางวัล";
       })();
-      
+
       const newProducts = trophySizes.map((sizeEntry, index) => ({
         id: Date.now() + index,
         productType: watchedProductType,
@@ -1523,9 +1663,9 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
         unitPrice: sizeEntry.price,
         details: form.getValues("jobDetails"),
       }));
-      
+
       setSavedProducts([...savedProducts, ...newProducts]);
-      
+
       // Reset all fields
       form.setValue("productType", "");
       form.setValue("material", "");
@@ -1533,20 +1673,20 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
       setTrophySizes([]);
       return;
     }
-    
+
     // Special handling for Shirt - add separate line items for each size with quantity
     if (watchedProductType === "Shirt") {
       const collarLabel = shirtCollar === "polo" ? "คอปก" : "คอกลม";
       const sleeveLabel = shirtSleeve === "sleeveless" ? "แขนกุด" : (shirtSleeve === "short" ? "แขนสั้น" : "แขนยาว");
-      
+
       // Collect sizes with quantities
       const sizesWithQuantity = shirtSizes.filter(s => parseInt(s.quantity) > 0);
-      
+
       // Include custom size if has quantity
       if (showCustomShirtSize && customShirtSize.size && parseInt(customShirtSize.quantity) > 0) {
         sizesWithQuantity.push(customShirtSize);
       }
-      
+
       if (sizesWithQuantity.length === 0) {
         toast({
           title: "กรุณาระบุจำนวน",
@@ -1555,7 +1695,7 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
         });
         return;
       }
-      
+
       const newProducts = sizesWithQuantity.map((sizeEntry, index) => ({
         id: Date.now() + index,
         productType: watchedProductType,
@@ -1574,9 +1714,9 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
           sleeveLength: sizeEntry.sleeve,
         },
       }));
-      
+
       setSavedProducts([...savedProducts, ...newProducts]);
-      
+
       // Reset all fields
       form.setValue("productType", "");
       form.setValue("material", "");
@@ -1598,7 +1738,7 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
       setCustomShirtSize({ size: "", chest: "", length: "", shoulder: "", sleeve: "", quantity: "" });
       return;
     }
-    
+
     // Default behavior for other products
     const currentProduct = {
       id: Date.now(),
@@ -1607,7 +1747,7 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
       details: form.getValues("jobDetails"),
     };
     setSavedProducts([...savedProducts, currentProduct]);
-    
+
     // Reset product type and material to allow adding new product
     form.setValue("productType", "");
     form.setValue("material", "");
@@ -1637,8 +1777,100 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
       return;
     }
 
-    console.log("Form submitted:", data);
-    onSubmit(data);
+    // --- Build items array from every product source ---
+    const allItems: any[] = [];
+
+    // 1. savedProducts (ทั่วไป)
+    savedProducts.forEach(p => {
+      allItems.push({
+        item_type: "custom",
+        product_name: p.productType || p.label || "",
+        material: p.material || null,
+        size: p.size || null,
+        color: p.color || null,
+        quantity: parseInt(p.quantity) || 1,
+        unit_price: parseFloat(p.unitPrice || p.price || 0),
+        total_price: (parseInt(p.quantity) || 1) * parseFloat(p.unitPrice || p.price || 0),
+        details: p.details || null,
+      });
+    });
+
+    // 2. Trophy sizes
+    if (data.productType === "Trophy" && trophySizes.length > 0) {
+      trophySizes.filter(s => s.quantity).forEach(s => {
+        allItems.push({
+          item_type: "readymade",
+          product_name: `ถ้วยรางวัล ${data.material || ""} ขนาด ${s.size}`,
+          size: s.size,
+          quantity: parseInt(s.quantity) || 0,
+          unit_price: s.price,
+          total_price: (parseInt(s.quantity) || 0) * s.price,
+          details: { height: s.height, opening: s.opening },
+        });
+      });
+    }
+
+    // 3. Shirt sizes
+    if ((data.productType === "Shirt" || data.productType === "Fabric") && shirtSizes.length > 0) {
+      shirtSizes.filter(s => s.quantity).forEach(s => {
+        allItems.push({
+          item_type: "custom",
+          product_name: `เสื้อ ${data.material || ""} ไซส์ ${s.size}`,
+          size: s.size,
+          quantity: parseInt(s.quantity) || 0,
+          unit_price: 0,
+          total_price: 0,
+          details: { chest: s.chest, length: s.length, shoulder: s.shoulder, sleeve: s.sleeve },
+        });
+      });
+    }
+
+    // 4. ReadyMedal color entries
+    if (data.productType === "ReadyMedal" && readyMedalColorEntries.length > 0) {
+      readyMedalColorEntries.forEach(entry => {
+        allItems.push({
+          item_type: "readymade",
+          product_name: `เหรียญสำเร็จรูป ${selectedProductModel || data.material || ""}`,
+          color: entry.color,
+          quantity: parseInt(entry.quantity) || 0,
+          unit_price: 0,
+          total_price: 0,
+          details: {
+            model: selectedProductModel,
+            plating: selectedPlatingColor,
+          },
+        });
+      });
+    }
+
+    // 5. selectedEstimations (สินค้าจากใบประเมินราคา)
+    selectedEstimations.forEach(est => {
+      allItems.push({
+        item_type: "estimate",
+        product_name: est.productType,
+        material: est.material || null,
+        quantity: est.quantity,
+        unit_price: est.price,
+        total_price: est.price,
+        details: { estimation_id: est.id, job_description: est.jobDescription },
+      });
+    });
+
+    // --- Build final payload ---
+    const payload = {
+      ...data,
+      // หมวดสินค้า
+      productCategory: selectedCategory,
+      // รายการสินค้า
+      savedProducts: allItems,
+      items: allItems,
+      // ชำระเงิน
+      paymentItems: paymentItems,
+      payments: paymentItems,
+    };
+
+    console.log("Form submitted with payload:", payload);
+    onSubmit(payload);
   };
 
   const handleEstimatePrice = () => {
@@ -1699,15 +1931,17 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                   <Select onValueChange={field.onChange} defaultValue={field.value}>
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder="เลือกพนักงาน" />
+                        <SelectValue placeholder={employees.length === 0 ? "กำลังโหลดรายชื่อ..." : "เลือกพนักงาน"} />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="employee1">พนักงาน 1</SelectItem>
-                      <SelectItem value="employee2">พนักงาน 2</SelectItem>
-                      <SelectItem value="employee3">พนักงาน 3</SelectItem>
-                      <SelectItem value="employee4">พนักงาน 4</SelectItem>
-                      <SelectItem value="employee5">พนักงาน 5</SelectItem>
+                      {employees.map((emp) => (
+                        <SelectItem key={emp.id} value={emp.full_name}>
+                          {emp.full_name}
+                          {emp.nickname ? ` (${emp.nickname})` : ""}
+                          {emp.position ? ` — ${emp.position}` : ""}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                   <FormMessage />
@@ -1731,18 +1965,36 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                   <FormLabel>ช่องค้นหาลูกค้า</FormLabel>
                   <FormControl>
                     <div className="relative">
-                      <Input {...field} placeholder="ค้นหาจากเบอร์โทร ชื่อลูกค้า หรือชื่อไลน์" />
-                      {searchResults.length > 0 && (
-                        <div className="absolute z-10 w-full bg-background border border-border rounded-md mt-1 max-h-48 overflow-y-auto">
+                      <Input
+                        {...field}
+                        placeholder="ค้นหาจากเบอร์โทร ชื่อลูกค้า หรือชื่อไลน์"
+                        onFocus={() => setShowCustomerDropdown(true)}
+                        onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 200)}
+                      />
+                      {showCustomerDropdown && searchResults.length > 0 && (
+                        <div className="absolute z-50 w-full bg-background border border-border rounded-md shadow-lg mt-1 max-h-64 overflow-y-auto">
                           {searchResults.map((customer) => (
                             <div
                               key={customer.id}
-                              className="p-2 hover:bg-muted cursor-pointer border-b last:border-b-0"
-                              onClick={() => selectCustomer(customer)}
+                              className="p-3 hover:bg-muted cursor-pointer border-b last:border-b-0 transition-colors"
+                              onMouseDown={(e) => { e.preventDefault(); selectCustomer(customer); }}
                             >
-                              <div className="font-medium">{customer.contact_name}</div>
-                              <div className="text-sm text-muted-foreground">
-                                {customer.company_name} - {customer.phone_numbers?.[0]}
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-medium text-sm">{customer.contact_name}</span>
+                                {customer.tax_id && (
+                                  <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded shrink-0">มีภาษี</span>
+                                )}
+                              </div>
+                              {customer.company_name && (
+                                <div className="text-xs text-muted-foreground mt-0.5">🏢 {customer.company_name}</div>
+                              )}
+                              <div className="flex gap-3 mt-0.5 flex-wrap">
+                                {Array.isArray(customer.phone_numbers) && customer.phone_numbers[0] && (
+                                  <span className="text-xs text-muted-foreground">📞 {customer.phone_numbers[0]}</span>
+                                )}
+                                {customer.line_id && (
+                                  <span className="text-xs text-muted-foreground">💬 {customer.line_id}</span>
+                                )}
                               </div>
                             </div>
                           ))}
@@ -1814,8 +2066,8 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
             </div>
 
             <div className="flex items-center space-x-2">
-              <Checkbox 
-                id="requireTaxInvoice" 
+              <Checkbox
+                id="requireTaxInvoice"
                 checked={showTaxFields}
                 onCheckedChange={(checked) => setShowTaxFields(checked === true)}
               />
@@ -1879,9 +2131,9 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
               <span>การชำระเงิน</span>
-              <Button 
-                type="button" 
-                variant="outline" 
+              <Button
+                type="button"
+                variant="outline"
                 size="sm"
                 onClick={() => setShowPaymentForm(true)}
               >
@@ -1897,8 +2149,8 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                   <div>
                     <label className="text-sm font-medium mb-2 block">ประเภทการชำระเงิน</label>
-                    <Select 
-                      value={newPayment.type} 
+                    <Select
+                      value={newPayment.type}
                       onValueChange={(value) => setNewPayment({ ...newPayment, type: value, additionalDetails: '' })}
                     >
                       <SelectTrigger className="bg-background">
@@ -1921,15 +2173,15 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                         <span className="text-sm">
                           {newPayment.slipFile ? newPayment.slipFile.name : 'อัพโหลดสลิป (รูปภาพ/PDF)'}
                         </span>
-                        <input 
-                          type="file" 
+                        <input
+                          type="file"
                           accept="image/*,.pdf"
                           className="hidden"
                           onChange={(e) => {
                             const file = e.target.files?.[0];
                             if (file) {
                               setNewPayment({
-                                ...newPayment, 
+                                ...newPayment,
                                 slipFile: file,
                                 slipPreview: URL.createObjectURL(file)
                               });
@@ -1945,9 +2197,9 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                 {newPayment.type === 'additional' && (
                   <div className="mb-4">
                     <label className="text-sm font-medium mb-2 block">รายละเอียดการชำระเพิ่มเติม</label>
-                    <Textarea 
+                    <Textarea
                       value={newPayment.additionalDetails}
-                      onChange={(e) => setNewPayment({...newPayment, additionalDetails: e.target.value})}
+                      onChange={(e) => setNewPayment({ ...newPayment, additionalDetails: e.target.value })}
                       placeholder="เช่น ชำระเพิ่มจากงานแก้ไข / ค่าจัดส่ง / ค่าเพิ่มอื่น ๆ"
                       rows={2}
                     />
@@ -1960,7 +2212,7 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                     <label className="text-sm font-medium mb-2 block">ระยะเวลาเครดิตเทอม (วัน)</label>
                     <Select
                       value={newPayment.additionalDetails}
-                      onValueChange={(value) => setNewPayment({...newPayment, additionalDetails: value})}
+                      onValueChange={(value) => setNewPayment({ ...newPayment, additionalDetails: value })}
                     >
                       <SelectTrigger className="bg-background">
                         <SelectValue placeholder="เลือกจำนวนวัน" />
@@ -1980,10 +2232,10 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                   <div>
                     <label className="text-sm font-medium mb-2 block">จำนวนเงิน (บาท)</label>
-                    <Input 
+                    <Input
                       type="number"
                       value={newPayment.amount}
-                      onChange={(e) => setNewPayment({...newPayment, amount: e.target.value})}
+                      onChange={(e) => setNewPayment({ ...newPayment, amount: e.target.value })}
                       placeholder="0.00"
                     />
                   </div>
@@ -2011,7 +2263,7 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                         <Calendar
                           mode="single"
                           selected={newPayment.transferDate}
-                          onSelect={(date) => setNewPayment({...newPayment, transferDate: date})}
+                          onSelect={(date) => setNewPayment({ ...newPayment, transferDate: date })}
                           initialFocus
                           className="pointer-events-auto"
                         />
@@ -2025,9 +2277,9 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                 </p>
 
                 <div className="flex gap-2 justify-end">
-                  <Button 
-                    type="button" 
-                    variant="outline" 
+                  <Button
+                    type="button"
+                    variant="outline"
                     size="sm"
                     onClick={() => {
                       setShowPaymentForm(false);
@@ -2036,8 +2288,8 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                   >
                     ยกเลิก
                   </Button>
-                  <Button 
-                    type="button" 
+                  <Button
+                    type="button"
                     size="sm"
                     onClick={() => {
                       try {
@@ -2198,8 +2450,8 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
             <div>
               <Label className="text-sm font-medium">แนบไฟล์ใบเสนอราคา</Label>
               <div className="mt-2 flex items-center gap-2">
-                <Input 
-                  type="file" 
+                <Input
+                  type="file"
                   accept=".pdf,.jpg,.jpeg,.png"
                   className="flex-1"
                 />
@@ -2491,10 +2743,10 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                   {(() => {
                     const categoryProducts = productsByCategory[selectedCategory] || [];
                     const categoryProductLabels = categoryProducts.map(p => productValueToLabel[p.value] || p.label);
-                    const hasEstimationsForCategory = getFilteredEstimations().some(est => 
+                    const hasEstimationsForCategory = getFilteredEstimations().some(est =>
                       categoryProductLabels.includes(est.productType)
                     );
-                    
+
                     if (!hasEstimationsForCategory) {
                       return (
                         <div className="text-center py-6 border border-dashed border-border rounded-lg bg-muted/20">
@@ -2514,7 +2766,7 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                         </div>
                       );
                     }
-                    
+
                     return null;
                   })()}
                 </div>
@@ -2548,13 +2800,13 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                       </Button>
                     ))}
                   </div>
-                  
+
                   {watchedProductType && (
                     <div className="flex items-center gap-2 p-2 rounded-md bg-muted/50 text-sm">
                       <span className="text-muted-foreground">Flow:</span>
                       <span className="font-medium">
-                        {getProductFlow(watchedProductType) === "catalog" 
-                          ? "📦 Catalog / สต็อก" 
+                        {getProductFlow(watchedProductType) === "catalog"
+                          ? "📦 Catalog / สต็อก"
                           : "🔧 ตีราคา / แนบไฟล์"}
                       </span>
                     </div>
@@ -2574,15 +2826,15 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>รุ่นสินค้า</FormLabel>
-                            <Select 
+                            <Select
                               onValueChange={(value) => {
                                 field.onChange(value);
                                 setSelectedProductModel(value);
                                 // Reset plating and color entries when model changes
                                 setSelectedPlatingColor("");
                                 setReadyMedalColorEntries([]);
-                                setNewColorEntry({color: "", quantity: ""});
-                              }} 
+                                setNewColorEntry({ color: "", quantity: "" });
+                              }}
                               defaultValue={field.value}
                             >
                               <FormControl>
@@ -2607,12 +2859,12 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                       {selectedProductModel && ["โลหะซิงค์มัลติฟังค์ชั่น", "โลหะซิงค์สำเร็จรูปหมุนได้"].includes(selectedProductModel) && (
                         <div>
                           <Label className="text-sm font-medium">สีชุบ</Label>
-                          <Select 
-                            value={selectedPlatingColor} 
+                          <Select
+                            value={selectedPlatingColor}
                             onValueChange={(value) => {
                               setSelectedPlatingColor(value);
                               setReadyMedalColorEntries([]); // Reset color entries when plating changes
-                              setNewColorEntry({color: "", quantity: ""});
+                              setNewColorEntry({ color: "", quantity: "" });
                             }}
                           >
                             <SelectTrigger className="bg-background mt-2">
@@ -2661,9 +2913,9 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                               <div className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end">
                                 <div>
                                   <Label className="text-sm font-medium">สี</Label>
-                                  <Select 
-                                    value={newColorEntry.color} 
-                                    onValueChange={(value) => setNewColorEntry(prev => ({...prev, color: value}))}
+                                  <Select
+                                    value={newColorEntry.color}
+                                    onValueChange={(value) => setNewColorEntry(prev => ({ ...prev, color: value }))}
                                   >
                                     <SelectTrigger className="bg-background mt-2">
                                       <SelectValue placeholder="เลือกสี" />
@@ -2677,10 +2929,10 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                                 </div>
                                 <div>
                                   <Label className="text-sm font-medium">จำนวน</Label>
-                                  <Input 
+                                  <Input
                                     type="number"
                                     value={newColorEntry.quantity}
-                                    onChange={(e) => setNewColorEntry(prev => ({...prev, quantity: e.target.value}))}
+                                    onChange={(e) => setNewColorEntry(prev => ({ ...prev, quantity: e.target.value }))}
                                     placeholder="ระบุจำนวน"
                                     className="mt-2"
                                   />
@@ -2706,7 +2958,7 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                                   className="mt-2 min-h-[80px]"
                                 />
                               </div>
-                              
+
                               {/* File attachment for job details */}
                               <div>
                                 <Label className="text-sm font-medium">แนบไฟล์</Label>
@@ -2752,14 +3004,14 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                                   </div>
                                 )}
                               </div>
-                              
+
                               {/* Sticker option */}
                               {readyMedalColorEntries.length > 0 && (
                                 <div className="space-y-4">
                                   <div>
                                     <Label className="text-sm font-medium">สติ๊กเกอร์</Label>
-                                    <RadioGroup 
-                                      value={wantsSticker} 
+                                    <RadioGroup
+                                      value={wantsSticker}
                                       onValueChange={setWantsSticker}
                                       className="flex gap-4 mt-2"
                                     >
@@ -2869,9 +3121,9 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                               <div className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end">
                                 <div>
                                   <Label className="text-sm font-medium">สี</Label>
-                                  <Select 
-                                    value={newColorEntry.color} 
-                                    onValueChange={(value) => setNewColorEntry(prev => ({...prev, color: value}))}
+                                  <Select
+                                    value={newColorEntry.color}
+                                    onValueChange={(value) => setNewColorEntry(prev => ({ ...prev, color: value }))}
                                   >
                                     <SelectTrigger className="bg-background mt-2">
                                       <SelectValue placeholder="เลือกสี" />
@@ -2885,10 +3137,10 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                                 </div>
                                 <div>
                                   <Label className="text-sm font-medium">จำนวน</Label>
-                                  <Input 
+                                  <Input
                                     type="number"
                                     value={newColorEntry.quantity}
-                                    onChange={(e) => setNewColorEntry(prev => ({...prev, quantity: e.target.value}))}
+                                    onChange={(e) => setNewColorEntry(prev => ({ ...prev, quantity: e.target.value }))}
                                     placeholder="ระบุจำนวน"
                                     className="mt-2"
                                   />
@@ -2914,7 +3166,7 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                                   className="mt-2 min-h-[80px]"
                                 />
                               </div>
-                              
+
                               {/* File attachment for job details */}
                               <div>
                                 <Label className="text-sm font-medium">แนบไฟล์</Label>
@@ -2960,14 +3212,14 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                                   </div>
                                 )}
                               </div>
-                              
+
                               {/* Sticker option */}
                               {readyMedalColorEntries.length > 0 && (
                                 <div className="space-y-4">
                                   <div>
                                     <Label className="text-sm font-medium">สติ๊กเกอร์</Label>
-                                    <RadioGroup 
-                                      value={wantsSticker} 
+                                    <RadioGroup
+                                      value={wantsSticker}
                                       onValueChange={setWantsSticker}
                                       className="flex gap-4 mt-2"
                                     >
@@ -3074,12 +3326,12 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                           </FormItem>
                         )}
                       />
-                      
+
                       {/* รายละเอียดถ้วยรางวัล - in same box as product details */}
                       {watchedMaterial && (
                         <div className="space-y-4 pt-4 border-t">
                           <h4 className="font-semibold text-lg">รายละเอียดถ้วยรางวัล</h4>
-                          
+
                           {/* รุ่นโมเดล - Searchable Dropdown */}
                           <FormField
                             control={form.control}
@@ -3100,15 +3352,15 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                                       >
                                         {field.value
                                           ? (() => {
-                                              const models = [
-                                                { id: "B112G", name: "ถ้วยโลหะอิตาลี รุ่น B112 G" },
-                                                { id: "B113G", name: "ถ้วยโลหะอิตาลี รุ่น B113 G" },
-                                                { id: "B114G", name: "ถ้วยโลหะอิตาลี รุ่น B114 G" },
-                                                { id: "C201S", name: "ถ้วยคริสตัล รุ่น C201 S" },
-                                                { id: "C202S", name: "ถ้วยคริสตัล รุ่น C202 S" },
-                                              ];
-                                              return models.find((m) => m.id === field.value)?.name || field.value;
-                                            })()
+                                            const models = [
+                                              { id: "B112G", name: "ถ้วยโลหะอิตาลี รุ่น B112 G" },
+                                              { id: "B113G", name: "ถ้วยโลหะอิตาลี รุ่น B113 G" },
+                                              { id: "B114G", name: "ถ้วยโลหะอิตาลี รุ่น B114 G" },
+                                              { id: "C201S", name: "ถ้วยคริสตัล รุ่น C201 S" },
+                                              { id: "C202S", name: "ถ้วยคริสตัล รุ่น C202 S" },
+                                            ];
+                                            return models.find((m) => m.id === field.value)?.name || field.value;
+                                          })()
                                           : "เลือกรุ่นโมเดล"}
                                         <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                                       </Button>
@@ -3162,14 +3414,14 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                                 {/* Product Image - match table height */}
                                 <div className="flex-shrink-0 flex">
                                   <div className="border rounded-lg p-3 bg-muted/30 flex items-center justify-center">
-                                    <img 
-                                      src={trophyB112GImage} 
-                                      alt="ถ้วยโลหะอิตาลี" 
+                                    <img
+                                      src={trophyB112GImage}
+                                      alt="ถ้วยโลหะอิตาลี"
                                       className="h-full w-auto max-h-48 object-contain"
                                     />
                                   </div>
                                 </div>
-                                
+
                                 {/* Size Table */}
                                 <div className="flex-1 border rounded-lg overflow-hidden">
                                   <table className="w-full text-sm">
@@ -3190,7 +3442,7 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                                       ].map((sizeOption) => {
                                         const currentSize = trophySizes.find((s) => s.size === sizeOption.size);
                                         const quantity = currentSize?.quantity || "";
-                                        
+
                                         return (
                                           <tr key={sizeOption.size} className="border-t border-border">
                                             <td className="px-3 py-3 font-medium">{sizeOption.size}</td>
@@ -3207,7 +3459,7 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                                                 onChange={(e) => {
                                                   const newQuantity = e.target.value;
                                                   const otherSizes = trophySizes.filter((s) => s.size !== sizeOption.size);
-                                                  
+
                                                   if (newQuantity && parseInt(newQuantity) > 0) {
                                                     setTrophySizes([
                                                       ...otherSizes,
@@ -3228,7 +3480,7 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                               </div>
                               {trophySizes.length > 0 && (
                                 <div className="text-sm text-muted-foreground">
-                                  รวม: {trophySizes.reduce((sum, s) => sum + (parseInt(s.quantity) || 0), 0)} ชิ้น | 
+                                  รวม: {trophySizes.reduce((sum, s) => sum + (parseInt(s.quantity) || 0), 0)} ชิ้น |
                                   มูลค่า: {trophySizes.reduce((sum, s) => sum + ((parseInt(s.quantity) || 0) * s.price), 0).toLocaleString()} บาท
                                 </div>
                               )}
@@ -3240,7 +3492,7 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                             <Label className="text-sm font-medium">ป้ายจารึก</Label>
                             <div className="flex items-center gap-6">
                               <div className="flex items-center space-x-2">
-                                <Checkbox 
+                                <Checkbox
                                   id="engraving-accept"
                                   checked={form.watch("jobDetails.engraving") === "accept"}
                                   onCheckedChange={(checked) => {
@@ -3250,7 +3502,7 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                                 <label htmlFor="engraving-accept" className="text-sm cursor-pointer">รับ</label>
                               </div>
                               <div className="flex items-center space-x-2">
-                                <Checkbox 
+                                <Checkbox
                                   id="engraving-decline"
                                   checked={form.watch("jobDetails.engraving") === "decline"}
                                   onCheckedChange={(checked) => {
@@ -3304,7 +3556,7 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                             <Label className="text-sm font-medium">โบว์</Label>
                             <div className="flex items-center gap-6">
                               <div className="flex items-center space-x-2">
-                                <Checkbox 
+                                <Checkbox
                                   id="bow-accept"
                                   checked={form.watch("jobDetails.customType") === "bow-accept"}
                                   onCheckedChange={(checked) => {
@@ -3314,7 +3566,7 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                                 <label htmlFor="bow-accept" className="text-sm cursor-pointer">รับ</label>
                               </div>
                               <div className="flex items-center space-x-2">
-                                <Checkbox 
+                                <Checkbox
                                   id="bow-decline"
                                   checked={form.watch("jobDetails.customType") === "bow-decline" || !form.watch("jobDetails.customType")}
                                   onCheckedChange={(checked) => {
@@ -3409,12 +3661,12 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                           </FormItem>
                         )}
                       />
-                      
+
                       {/* รายละเอียดเสื้อ - in same box as product details */}
                       {watchedMaterial && (
                         <div className="space-y-4 pt-4 border-t">
                           <h4 className="font-semibold text-lg">รายละเอียดเสื้อ</h4>
-                          
+
                           {/* Collar selection */}
                           <div>
                             <Label className="text-sm font-medium">คอเสื้อ</Label>
@@ -3542,7 +3794,7 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                                   </TableBody>
                                 </Table>
                               </div>
-                              
+
                               {/* Add custom size button */}
                               {!showCustomShirtSize && (
                                 <Button
@@ -3627,7 +3879,7 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
           </CardContent>
         </Card>
 
-{/* Price Estimation List Panel - Based on Customer (after Section 4) */}
+        {/* Price Estimation List Panel - Based on Customer (after Section 4) */}
         {(watchedCustomerName || watchedCustomerLine) && (
           <Card>
             <CardHeader>
@@ -3663,7 +3915,7 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                       {getFilteredEstimations().map((estimation) => {
                         const isSelected = selectedEstimations.some(e => e.id === estimation.id);
                         return (
-                          <TableRow 
+                          <TableRow
                             key={estimation.id}
                             className={cn(
                               "cursor-pointer hover:bg-muted/50 transition-colors",
@@ -3816,11 +4068,11 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
                       // Use displayName if available (for ReadyMedal with colors or Trophy), otherwise fallback to label
                       const productLabel = product.displayName || productValueToLabel[product.productType] || product.productType;
                       // For Trophy, show sizeLabel. For others, show material/color info
-                      const productDetails = product.sizeLabel 
-                        ? product.sizeLabel 
-                        : (product.wantsSticker === "receive" 
-                            ? "รับสติ๊กเกอร์" 
-                            : (product.displayName ? "-" : (product.material && !product.displayName ? product.material : (product.color ? "" : product.material || "-"))));
+                      const productDetails = product.sizeLabel
+                        ? product.sizeLabel
+                        : (product.wantsSticker === "receive"
+                          ? "รับสติ๊กเกอร์"
+                          : (product.displayName ? "-" : (product.material && !product.displayName ? product.material : (product.color ? "" : product.material || "-"))));
                       const quantity = product.quantity || parseInt(product.details?.quantity) || 1;
                       const unitPrice = product.unitPrice || null;
                       const totalPrice = unitPrice ? unitPrice * quantity : null;
@@ -3870,30 +4122,30 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
               </div>
             </CardContent>
           </Card>
-                )}
+        )}
 
-                {/* Credit term days */}
-                {newPayment.type === 'credit_term' && (
-                  <div className="mb-4">
-                    <label className="text-sm font-medium mb-2 block">ระยะเวลาเครดิตเทอม (วัน)</label>
-                    <Select
-                      value={newPayment.additionalDetails}
-                      onValueChange={(value) => setNewPayment({...newPayment, additionalDetails: value})}
-                    >
-                      <SelectTrigger className="bg-background">
-                        <SelectValue placeholder="เลือกจำนวนวัน" />
-                      </SelectTrigger>
-                      <SelectContent className="bg-background z-50">
-                        <SelectItem value="15">15 วัน</SelectItem>
-                        <SelectItem value="30">30 วัน</SelectItem>
-                        <SelectItem value="45">45 วัน</SelectItem>
-                        <SelectItem value="60">60 วัน</SelectItem>
-                        <SelectItem value="90">90 วัน</SelectItem>
-                        <SelectItem value="120">120 วัน</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
+        {/* Credit term days */}
+        {newPayment.type === 'credit_term' && (
+          <div className="mb-4">
+            <label className="text-sm font-medium mb-2 block">ระยะเวลาเครดิตเทอม (วัน)</label>
+            <Select
+              value={newPayment.additionalDetails}
+              onValueChange={(value) => setNewPayment({ ...newPayment, additionalDetails: value })}
+            >
+              <SelectTrigger className="bg-background">
+                <SelectValue placeholder="เลือกจำนวนวัน" />
+              </SelectTrigger>
+              <SelectContent className="bg-background z-50">
+                <SelectItem value="15">15 วัน</SelectItem>
+                <SelectItem value="30">30 วัน</SelectItem>
+                <SelectItem value="45">45 วัน</SelectItem>
+                <SelectItem value="60">60 วัน</SelectItem>
+                <SelectItem value="90">90 วัน</SelectItem>
+                <SelectItem value="120">120 วัน</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         {/* Section 5: Job Details (Dynamic) - Show job details for all product types EXCEPT Trophy and ReadyMedal (already in product details box) */}
         {watchedProductType && watchedMaterial && watchedProductType !== "Trophy" && watchedProductType !== "ReadyMedal" && (
@@ -3911,382 +4163,407 @@ const [estimationDetailOpen, setEstimationDetailOpen] = useState(false);
 
         {/* Section 6: Delivery Information */}
         {((watchedProductType && watchedMaterial) || savedProducts.length > 0) && (
-        <Card>
-          <CardHeader>
-            <CardTitle>การจัดส่ง</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {/* Delivery Type Selection */}
-            <div>
-              <h4 className="font-semibold mb-4">รูปแบบการรับสินค้า</h4>
-              <FormField
-                control={form.control}
-                name="deliveryType"
-                render={({ field }) => (
-                  <FormItem className="space-y-3">
-                    <FormControl>
-                      <RadioGroup
-                        onValueChange={(value) => {
-                          field.onChange(value);
-                          setDeliveryType(value);
-                        }}
-                        defaultValue={field.value}
-                        className="flex flex-col space-y-1"
+          <Card>
+            <CardHeader>
+              <CardTitle>การจัดส่ง</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Delivery Type Selection */}
+              <div>
+                <h4 className="font-semibold mb-4">รูปแบบการรับสินค้า</h4>
+                <FormField
+                  control={form.control}
+                  name="deliveryType"
+                  render={({ field }) => (
+                    <FormItem className="space-y-3">
+                      <FormControl>
+                        <RadioGroup
+                          onValueChange={(value) => {
+                            field.onChange(value);
+                            setDeliveryType(value);
+                          }}
+                          defaultValue={field.value}
+                          className="flex flex-col space-y-1"
+                        >
+                          <FormItem className="flex items-center space-x-3 space-y-0">
+                            <FormControl>
+                              <RadioGroupItem value="parcel" />
+                            </FormControl>
+                            <FormLabel className="font-normal">
+                              จัดส่งพัสดุ
+                            </FormLabel>
+                          </FormItem>
+                          <FormItem className="flex items-center space-x-3 space-y-0">
+                            <FormControl>
+                              <RadioGroupItem value="pickup" />
+                            </FormControl>
+                            <FormLabel className="font-normal">
+                              รับที่ร้าน
+                            </FormLabel>
+                          </FormItem>
+                        </RadioGroup>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              {/* Show pickup date & time period if "รับที่ร้าน" is selected */}
+              {deliveryType === "pickup" && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="deliveryInfo.pickupDate"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-col">
+                        <FormLabel>วันที่จะมารับ</FormLabel>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <FormControl>
+                              <Button
+                                variant="outline"
+                                className={cn(
+                                  "w-full pl-3 text-left font-normal",
+                                  !field.value && "text-muted-foreground"
+                                )}
+                              >
+                                {field.value ? format(field.value, "dd/MM/yyyy") : <span>เลือกวันที่</span>}
+                                <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                              </Button>
+                            </FormControl>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <Calendar
+                              mode="single"
+                              selected={field.value}
+                              onSelect={field.onChange}
+                              initialFocus
+                              className={cn("p-3 pointer-events-auto")}
+                            />
+                          </PopoverContent>
+                        </Popover>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="deliveryInfo.pickupTimePeriod"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>ช่วงเวลาที่จะมารับ</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="เลือกช่วงเวลา" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="morning">ช่วงเช้า (09:00 - 12:00)</SelectItem>
+                            <SelectItem value="afternoon">ช่วงบ่าย (13:00 - 17:00)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              )}
+
+              {/* Show delivery form if "จัดส่งพัสดุ" is selected */}
+              {deliveryType === "parcel" && (
+                <>
+                  {/* 5.1 Recipient Information */}
+                  <div>
+                    <h4 className="font-semibold mb-4">5.1 ข้อมูลผู้รับสินค้า</h4>
+                    <div className="mb-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={updateRecipientInfo}
+                        className="text-sm"
                       >
-                        <FormItem className="flex items-center space-x-3 space-y-0">
+                        ใช้ข้อมูลลูกค้า
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="deliveryInfo.recipientName"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>ชื่อ-นามสกุลผู้รับ</FormLabel>
+                            <FormControl>
+                              <Input {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="deliveryInfo.recipientPhone"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>เบอร์โทรศัพท์ติดต่อ</FormLabel>
+                            <FormControl>
+                              <Input {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                    </div>
+                  </div>
+
+                  {/* 5.2 Delivery Address */}
+                  <div>
+                    <h4 className="font-semibold mb-4">5.2 ที่อยู่สำหรับจัดส่ง</h4>
+                    <div className="space-y-4">
+                      <FormField
+                        control={form.control}
+                        name="deliveryInfo.address"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>บ้านเลขที่ / หมู่บ้าน / อาคาร / ห้องเลขที่ ซอย / ถนน</FormLabel>
+                            <FormControl>
+                              <Textarea {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        {/* จังหวัด */}
+                        <FormField
+                          control={form.control}
+                          name="deliveryInfo.province"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>จังหวัด</FormLabel>
+                              <Select
+                                onValueChange={(val) => {
+                                  field.onChange(val);
+                                  setSelectedProvinceName(val);
+                                }}
+                                value={field.value}
+                              >
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder={thaiProvinces.length === 0 ? "กำลังโหลด..." : "เลือกจังหวัด"} />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent className="max-h-60">
+                                  {thaiProvinces.map(p => (
+                                    <SelectItem key={p} value={p}>{p}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+
+                        {/* เขต/อำเภอ */}
+                        <FormField
+                          control={form.control}
+                          name="deliveryInfo.district"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>เขต/อำเภอ</FormLabel>
+                              <Select
+                                onValueChange={(val) => {
+                                  field.onChange(val);
+                                  setSelectedAmphureName(val);
+                                }}
+                                value={field.value}
+                                disabled={!selectedProvinceName}
+                              >
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder={!selectedProvinceName ? "เลือกจังหวัดก่อน" : "เลือกเขต/อำเภอ"} />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent className="max-h-60">
+                                  {thaiAmphures.map(a => (
+                                    <SelectItem key={a} value={a}>{a}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+
+                        {/* แขวง/ตำบล */}
+                        <FormField
+                          control={form.control}
+                          name="deliveryInfo.subdistrict"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>แขวง/ตำบล</FormLabel>
+                              <Select
+                                onValueChange={(val) => {
+                                  field.onChange(val);
+                                  getZipcode(selectedProvinceName, selectedAmphureName, val).then(zip => {
+                                    if (zip) form.setValue("deliveryInfo.postalCode", zip);
+                                  });
+                                }}
+                                value={field.value}
+                                disabled={!selectedAmphureName}
+                              >
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder={!selectedAmphureName ? "เลือกอำเภอก่อน" : "เลือกแขวง/ตำบล"} />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent className="max-h-60">
+                                  {thaiTambons.map(t => (
+                                    <SelectItem key={t} value={t}>{t}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+
+                        {/* รหัสไปรษณีย์ (auto-fill) */}
+                        <FormField
+                          control={form.control}
+                          name="deliveryInfo.postalCode"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>รหัสไปรษณีย์</FormLabel>
+                              <FormControl>
+                                <Input {...field} placeholder="กรอกเองหรืออัตโนมัติ" />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 5.3 Delivery Options */}
+                  <div>
+                    <h4 className="font-semibold mb-4">5.3 ตัวเลือกการจัดส่ง</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="deliveryInfo.deliveryMethod"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>วิธีการจัดส่ง</FormLabel>
+                            <Select onValueChange={field.onChange} defaultValue={field.value}>
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="เลือกวิธีการจัดส่ง" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="ems">EMS</SelectItem>
+                                <SelectItem value="kerry">Kerry</SelectItem>
+                                <SelectItem value="flash">Flash</SelectItem>
+                                <SelectItem value="private_transport">ขนส่งเอกชน</SelectItem>
+                                <SelectItem value="pickup">นัดรับ</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="deliveryInfo.preferredDeliveryDate"
+                        render={({ field }) => (
+                          <FormItem className="flex flex-col">
+                            <FormLabel>วันที่/เวลาที่ต้องการให้จัดส่ง</FormLabel>
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <FormControl>
+                                  <Button
+                                    variant={"outline"}
+                                    className={cn(
+                                      "w-full pl-3 text-left font-normal",
+                                      !field.value && "text-muted-foreground"
+                                    )}
+                                  >
+                                    {field.value ? (
+                                      format(field.value, "PPP")
+                                    ) : (
+                                      <span>{watchedDeliveryDate ? format(watchedDeliveryDate, "PPP") : "เลือกวันที่"}</span>
+                                    )}
+                                    <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                                  </Button>
+                                </FormControl>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-auto p-0" align="start">
+                                <Calendar
+                                  mode="single"
+                                  selected={field.value || watchedDeliveryDate}
+                                  onSelect={field.onChange}
+                                  disabled={(date) =>
+                                    date < new Date(new Date().setHours(0, 0, 0, 0))
+                                  }
+                                  initialFocus
+                                  className="pointer-events-auto"
+                                />
+                              </PopoverContent>
+                            </Popover>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </div>
+
+                  {/* 5.4 Additional Instructions */}
+                  <div>
+                    <h4 className="font-semibold mb-4">5.4 คำแนะนำเพิ่มเติมในการจัดส่ง</h4>
+                    <FormField
+                      control={form.control}
+                      name="deliveryInfo.deliveryInstructions"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>คำแนะนำเพิ่มเติม</FormLabel>
                           <FormControl>
-                            <RadioGroupItem value="parcel" />
+                            <Textarea {...field} placeholder="เช่น ฝากไว้กับ รปภ., โทรหาก่อนส่ง" />
                           </FormControl>
-                          <FormLabel className="font-normal">
-                            จัดส่งพัสดุ
-                          </FormLabel>
+                          <FormMessage />
                         </FormItem>
-                        <FormItem className="flex items-center space-x-3 space-y-0">
-                          <FormControl>
-                            <RadioGroupItem value="pickup" />
-                          </FormControl>
-                          <FormLabel className="font-normal">
-                            รับที่ร้าน
-                          </FormLabel>
-                        </FormItem>
-                      </RadioGroup>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            {/* Show pickup date & time period if "รับที่ร้าน" is selected */}
-            {deliveryType === "pickup" && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="deliveryInfo.pickupDate"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-col">
-                      <FormLabel>วันที่จะมารับ</FormLabel>
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <FormControl>
-                            <Button
-                              variant="outline"
-                              className={cn(
-                                "w-full pl-3 text-left font-normal",
-                                !field.value && "text-muted-foreground"
-                              )}
-                            >
-                              {field.value ? format(field.value, "dd/MM/yyyy") : <span>เลือกวันที่</span>}
-                              <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                            </Button>
-                          </FormControl>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
-                          <Calendar
-                            mode="single"
-                            selected={field.value}
-                            onSelect={field.onChange}
-                            initialFocus
-                            className={cn("p-3 pointer-events-auto")}
-                          />
-                        </PopoverContent>
-                      </Popover>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="deliveryInfo.pickupTimePeriod"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>ช่วงเวลาที่จะมารับ</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="เลือกช่วงเวลา" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="morning">ช่วงเช้า (09:00 - 12:00)</SelectItem>
-                          <SelectItem value="afternoon">ช่วงบ่าย (13:00 - 17:00)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-            )}
-
-            {/* Show delivery form if "จัดส่งพัสดุ" is selected */}
-            {deliveryType === "parcel" && (
-              <>
-                {/* 5.1 Recipient Information */}
-                <div>
-                  <h4 className="font-semibold mb-4">5.1 ข้อมูลผู้รับสินค้า</h4>
-              <div className="mb-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={updateRecipientInfo}
-                  className="text-sm"
-                >
-                  ใช้ข้อมูลลูกค้า
-                </Button>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="deliveryInfo.recipientName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>ชื่อ-นามสกุลผู้รับ</FormLabel>
-                      <FormControl>
-                        <Input {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="deliveryInfo.recipientPhone"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>เบอร์โทรศัพท์ติดต่อ</FormLabel>
-                      <FormControl>
-                        <Input {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-              </div>
-            </div>
-
-            {/* 5.2 Delivery Address */}
-            <div>
-              <h4 className="font-semibold mb-4">5.2 ที่อยู่สำหรับจัดส่ง</h4>
-              <div className="space-y-4">
-                <FormField
-                  control={form.control}
-                  name="deliveryInfo.address"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>บ้านเลขที่ / หมู่บ้าน / อาคาร / ห้องเลขที่ ซอย / ถนน</FormLabel>
-                      <FormControl>
-                        <Textarea {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="deliveryInfo.province"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>จังหวัด</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="เลือกจังหวัด" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="bangkok">กรุงเทพมหานคร</SelectItem>
-                            <SelectItem value="chiangmai">เชียงใหม่</SelectItem>
-                            <SelectItem value="phuket">ภูเก็ต</SelectItem>
-                            {/* Add more provinces */}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="deliveryInfo.district"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>เขต/อำเภอ</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="เลือกเขต/อำเภอ" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="district1">เขต/อำเภอ 1</SelectItem>
-                            <SelectItem value="district2">เขต/อำเภอ 2</SelectItem>
-                            {/* Add more districts based on selected province */}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="deliveryInfo.subdistrict"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>แขวง/ตำบล</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="เลือกแขวง/ตำบล" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="subdistrict1">แขวง/ตำบล 1</SelectItem>
-                            <SelectItem value="subdistrict2">แขวง/ตำบล 2</SelectItem>
-                            {/* Add more subdistricts based on selected district */}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="deliveryInfo.postalCode"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>รหัสไปรษณีย์</FormLabel>
-                        <FormControl>
-                          <Input {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* 5.3 Delivery Options */}
-            <div>
-              <h4 className="font-semibold mb-4">5.3 ตัวเลือกการจัดส่ง</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="deliveryInfo.deliveryMethod"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>วิธีการจัดส่ง</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="เลือกวิธีการจัดส่ง" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="ems">EMS</SelectItem>
-                          <SelectItem value="kerry">Kerry</SelectItem>
-                          <SelectItem value="flash">Flash</SelectItem>
-                          <SelectItem value="private_transport">ขนส่งเอกชน</SelectItem>
-                          <SelectItem value="pickup">นัดรับ</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="deliveryInfo.preferredDeliveryDate"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-col">
-                      <FormLabel>วันที่/เวลาที่ต้องการให้จัดส่ง</FormLabel>
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <FormControl>
-                            <Button
-                              variant={"outline"}
-                              className={cn(
-                                "w-full pl-3 text-left font-normal",
-                                !field.value && "text-muted-foreground"
-                              )}
-                            >
-                              {field.value ? (
-                                format(field.value, "PPP")
-                              ) : (
-                                <span>{watchedDeliveryDate ? format(watchedDeliveryDate, "PPP") : "เลือกวันที่"}</span>
-                              )}
-                              <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                            </Button>
-                          </FormControl>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
-                          <Calendar
-                            mode="single"
-                            selected={field.value || watchedDeliveryDate}
-                            onSelect={field.onChange}
-                            disabled={(date) =>
-                              date < new Date(new Date().setHours(0, 0, 0, 0))
-                            }
-                            initialFocus
-                            className="pointer-events-auto"
-                          />
-                        </PopoverContent>
-                      </Popover>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-            </div>
-
-                {/* 5.4 Additional Instructions */}
-                <div>
-                  <h4 className="font-semibold mb-4">5.4 คำแนะนำเพิ่มเติมในการจัดส่ง</h4>
-                  <FormField
-                    control={form.control}
-                    name="deliveryInfo.deliveryInstructions"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>คำแนะนำเพิ่มเติม</FormLabel>
-                        <FormControl>
-                          <Textarea {...field} placeholder="เช่น ฝากไว้กับ รปภ., โทรหาก่อนส่ง" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
+                      )}
+                    />
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
         )}
 
         {/* Action Buttons */}
         <div className="flex flex-wrap gap-3 justify-end">
           <Button type="button" variant="outline" onClick={onCancel}>
-            ปุ่มยกเลิก
+            ยกเลิก
           </Button>
-          
+
           <Button type="submit" variant="secondary">
-            ปุ่มบันทึก
+            บันทึก
           </Button>
 
           {/* Conditional buttons based on product type */}
-          {(watchedProductType === "Medal" || watchedProductType === "Award" || 
+          {(watchedProductType === "Medal" || watchedProductType === "Award" ||
             ["Keychain", "Doll", "Lanyard", "Box packaging", "Bag", "Bottle", "อื่นๆ"].includes(watchedProductType)) && (
-            <Button type="button" onClick={handleEstimatePrice}>
-              ปุ่มประเมินราคา
-            </Button>
-          )}
+              <Button type="button" onClick={handleEstimatePrice}>
+                ประเมินราคา
+              </Button>
+            )}
 
         </div>
       </form>

@@ -193,7 +193,7 @@ export default function AddPriceEstimation() {
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
-  
+
   // Customer search state
   const [customerSearch, setCustomerSearch] = useState("");
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -202,7 +202,7 @@ export default function AddPriceEstimation() {
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [isLoadingCustomers, setIsLoadingCustomers] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
-  
+
   // Section A: Customer Profile State
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -220,12 +220,12 @@ export default function AddPriceEstimation() {
       setCustomerLineId(data.customerLineId || "");
       setCustomerEmail(data.customerEmail || "");
       setCustomerTags(data.customerTags || "");
-      
+
       toast({
         title: "ดึงข้อมูลลูกค้าอัตโนมัติ",
         description: `กรอกข้อมูลของ "${data.customerName}" จากใบประเมินราคาเดิมแล้ว`,
       });
-      
+
       // Clear the state to prevent re-triggering on refresh
       window.history.replaceState({}, document.title);
     }
@@ -253,7 +253,7 @@ export default function AddPriceEstimation() {
   const [modalEditColors, setModalEditColors] = useState<string[]>([]);
   const [modalEditLanyardSize, setModalEditLanyardSize] = useState("");
   const [modalEditLanyardPatterns, setModalEditLanyardPatterns] = useState("");
-  
+
   // Summary popup state
   const [showSummaryPopup, setShowSummaryPopup] = useState(false);
   const [showAwardSummaryPopup, setShowAwardSummaryPopup] = useState(false);
@@ -268,15 +268,15 @@ export default function AddPriceEstimation() {
   const [lanyardPatterns, setLanyardPatterns] = useState("");
   const [medalSize, setMedalSize] = useState("");
   const [medalThickness, setMedalThickness] = useState("");
-  
+
   // Finish type state
   const [finishType, setFinishType] = useState("");
   const [customFinishType, setCustomFinishType] = useState("");
-  
+
   // Custom size/thickness inputs
   const [customMedalSize, setCustomMedalSize] = useState("");
   const [customMedalThickness, setCustomMedalThickness] = useState("");
-  
+
   // Dynamic color quantity rows with multiple quantity sets
   interface ColorQuantityRow {
     id: string;
@@ -284,26 +284,26 @@ export default function AddPriceEstimation() {
     quantities: number[]; // Support multiple sets (ชุด A, B, C)
     note: string; // หมายเหตุ
   }
-  
+
   // Quantity sets management
   const [quantitySets, setQuantitySets] = useState<string[]>(["A"]);
   const [colorQuantityRows, setColorQuantityRows] = useState<ColorQuantityRow[]>([
     { id: crypto.randomUUID(), color: "", quantities: [0], note: "" }
   ]);
-  
+
   // ต้องการตัวอย่าง state
   const [needSample, setNeedSample] = useState<string>("");
-  
+
   // ชนิดสายคล้อง state
   const [lanyardType, setLanyardType] = useState("");
   const [customLanyardType, setCustomLanyardType] = useState("");
-  
+
   // Detail options sub-fields
   const [frontColorCount, setFrontColorCount] = useState("");
   const [backColorCount, setBackColorCount] = useState("");
   const [frontOtherText, setFrontOtherText] = useState("");
   const [backOtherText, setBackOtherText] = useState("");
-  
+
   // Multi-select for sizes and thicknesses
   const [selectedMedalSizes, setSelectedMedalSizes] = useState<string[]>([]);
   const [selectedMedalThicknesses, setSelectedMedalThicknesses] = useState<string[]>([]);
@@ -325,15 +325,15 @@ export default function AddPriceEstimation() {
   const [awardModel, setAwardModel] = useState("");
   const [inscriptionPlate, setInscriptionPlate] = useState("");
   const [inscriptionDetails, setInscriptionDetails] = useState("");
-  
+
   // โล่สั่งผลิต dynamic form state
   const [awardDesignDetails, setAwardDesignDetails] = useState("");
   const [plaqueOption, setPlaqueOption] = useState("no-plaque");
   const [plaqueText, setPlaqueText] = useState("");
-  
+
   // Generic design details for ของใช้, หมวดสายคล้อง, ของพรีเมียม (มีแบบ)
   const [genericDesignDetails, setGenericDesignDetails] = useState("");
-  
+
   // Custom material input
   const [customMaterial, setCustomMaterial] = useState("");
 
@@ -349,44 +349,80 @@ export default function AddPriceEstimation() {
   // File attachments
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
 
-  // Fetch customers from Supabase
+  // Sales employees options (from API)
+  const [salesOptions, setSalesOptions] = useState<{ value: string; label: string }[]>([]);
+
+  // Fetch sales employees from API
+  useEffect(() => {
+    const fetchSalesEmployees = async () => {
+      try {
+        const res = await fetch('https://finfinphone.com/api-lucky/admin/employees.php');
+        if (!res.ok) throw new Error('Failed to fetch employees');
+        const json = await res.json();
+        if (json.status === 'success' && json.data) {
+          const sales = json.data
+            .filter((emp: any) => String(emp.is_sales) === '1' && String(emp.is_active) === '1')
+            .map((emp: any) => ({
+              value: emp.full_name,
+              label: `${emp.full_name}${emp.nickname ? ` (${emp.nickname})` : ''}`
+            }));
+          setSalesOptions(sales);
+        }
+      } catch (err) {
+        console.error('Error fetching employees:', err);
+      }
+    };
+    fetchSalesEmployees();
+  }, []);
+
+  // Fetch customers from API
   useEffect(() => {
     const fetchCustomers = async () => {
       setIsLoadingCustomers(true);
       try {
-        const { data, error } = await supabase
-          .from('customers')
-          .select('id, company_name, contact_name, phone_numbers, line_id, emails, customer_type, notes')
-          .order('company_name');
-        
-        if (error) throw error;
-        setCustomers(data || []);
+        const res = await fetch('https://finfinphone.com/api-lucky/admin/customers.php');
+        if (!res.ok) throw new Error('Failed to fetch customers');
+        const json = await res.json();
+        if (json.status === 'success' && json.data) {
+          // Map API response to Customer interface
+          const mapped: Customer[] = json.data.map((c: any) => ({
+            id: String(c.id),
+            company_name: c.company_name || '',
+            contact_name: c.contact_name || '',
+            phone_numbers: Array.isArray(c.phone_numbers) ? c.phone_numbers : [],
+            line_id: c.line_id || null,
+            emails: Array.isArray(c.emails) ? c.emails : [],
+            customer_type: c.customer_type || '',
+            notes: c.notes || null,
+          }));
+          setCustomers(mapped);
+        }
       } catch (error) {
         console.error('Error fetching customers:', error);
       } finally {
         setIsLoadingCustomers(false);
       }
     };
-    
+
     fetchCustomers();
   }, []);
 
   // Filter customers based on search
   useEffect(() => {
     if (customerSearch.trim() === "") {
-      setFilteredCustomers([]);
+      setFilteredCustomers(customers);
       return;
     }
 
     const searchLower = customerSearch.toLowerCase();
     const filtered = customers.filter(customer => {
-      const nameMatch = customer.company_name?.toLowerCase().includes(searchLower) || 
-                        customer.contact_name?.toLowerCase().includes(searchLower);
+      const nameMatch = customer.company_name?.toLowerCase().includes(searchLower) ||
+        customer.contact_name?.toLowerCase().includes(searchLower);
       const phoneMatch = customer.phone_numbers?.some(p => p.includes(customerSearch));
       const lineMatch = customer.line_id?.toLowerCase().includes(searchLower);
       return nameMatch || phoneMatch || lineMatch;
     });
-    
+
     setFilteredCustomers(filtered);
   }, [customerSearch, customers]);
 
@@ -412,7 +448,7 @@ export default function AddPriceEstimation() {
     setCustomerNote(customer.notes || "");
     setCustomerSearch("");
     setShowCustomerDropdown(false);
-    
+
     toast({
       title: "เลือกลูกค้าสำเร็จ",
       description: `ดึงข้อมูลของ "${customer.contact_name || customer.company_name}" แล้ว`,
@@ -428,7 +464,7 @@ export default function AddPriceEstimation() {
     setCustomerTags("");
     setCustomerNote("");
     setCustomerSearch("");
-    
+
     toast({
       title: "ล้างการเลือกลูกค้า",
       description: "กลับสู่โหมดกรอกลูกค้าใหม่",
@@ -436,36 +472,45 @@ export default function AddPriceEstimation() {
   };
 
   const productCategoryOptions = [
-    { value: "สินค้าสั่งผลิต", label: "สินค้าสั่งผลิต" },
-    { value: "ของใช้", label: "ของใช้" },
-    { value: "หมวดสายคล้อง", label: "หมวดสายคล้อง" },
-    { value: "ของพรีเมียม", label: "ของพรีเมียม" },
+    { value: "ถ้วยรางวัลสำเร็จ", label: "ถ้วยรางวัลสำเร็จ" },
+    { value: "เหรียญรางวัล", label: "เหรียญรางวัล" },
+    { value: "โล่รางวัล", label: "โล่รางวัล" },
+    { value: "เสื้อพิมพ์ลายและผ้า", label: "เสื้อพิมพ์ลายและผ้า" },
+    { value: "ชิ้นส่วนถ้วยรางวัล", label: "ชิ้นส่วนถ้วยรางวัล" },
   ];
 
   // Mapping: product_category -> filtered products
   const productsByCategory: Record<string, { value: string; label: string }[]> = {
-    "สินค้าสั่งผลิต": [
-      { value: "medal", label: "เหรียญสั่งผลิต" },
-      { value: "award", label: "โล่สั่งผลิต" },
+    "ถ้วยรางวัลสำเร็จ": [
+      { value: "1", label: "ถ้วยรางวัลโลหะอิตาลี" },
+      { value: "2", label: "ถ้วยรางวัลโลหะจีน" },
+      { value: "3", label: "ถ้วยรางวัลพลาสติกอิตาลี" },
+      { value: "4", label: "ถ้วยรางวัลพลาสติกไทย" },
+      { value: "5", label: "ถ้วยรางวัลพิวเตอร์" },
+      { value: "6", label: "ถ้วยรางวัลเบญจรงค์" },
     ],
-    "ของใช้": [
-      { value: "hat", label: "หมวก" },
-      { value: "bag", label: "กระเป๋า" },
-      { value: "glass", label: "แก้ว" },
-      { value: "bottle", label: "ขวดน้ำ" },
-      { value: "doll", label: "ตุ๊กตา" },
-      { value: "notebook", label: "สมุด" },
-      { value: "calendar", label: "ปฏิทิน" },
+    "เหรียญรางวัล": [
+      { value: "7", label: "เหรียญรางวัลสำเร็จรูป" },
+      { value: "8", label: "เหรียญรางวัลซิงค์อัลลอย" },
+      { value: "9", label: "เหรียญรางวัลอะคริลิก" },
+      { value: "10", label: "เหรียญรางวัลอื่นๆ" },
     ],
-    "หมวดสายคล้อง": [
-      { value: "wristband", label: "ลิสแบรนด์" },
-      { value: "lanyard", label: "สายคล้อง" },
+    "โล่รางวัล": [
+      { value: "11", label: "โล่รางวัลอะคริลิก(สำเร็จ)" },
+      { value: "12", label: "โล่รางวัลอะคริลิก (สั่งผลิต)" },
+      { value: "13", label: "โล่รางวัลคริสตัล" },
+      { value: "14", label: "โล่รางวัลไม้" },
+      { value: "15", label: "โล่รางวัลเรซิน" },
     ],
-    "ของพรีเมียม": [
-      { value: "magnet", label: "แม่เหล็ก" },
-      { value: "bottle-opener", label: "ที่เปิดขวด" },
-      { value: "keychain", label: "พวงกุญแจ" },
-      { value: "paperweight", label: "ที่ทับกระดาษ" },
+    "เสื้อพิมพ์ลายและผ้า": [
+      { value: "16", label: "เสื้อคอปก" },
+      { value: "17", label: "เสื้อคอกลม" },
+      { value: "18", label: "เสื้อแขนยาว" },
+    ],
+    "ชิ้นส่วนถ้วยรางวัล": [
+      { value: "19", label: "หัวป้ายพลาสติก" },
+      { value: "20", label: "หัวป้ายตุ๊กตาพลาสติก" },
+      { value: "21", label: "เหรียญรางวัลอะคริลิก" },
     ],
   };
 
@@ -571,7 +616,7 @@ export default function AddPriceEstimation() {
     setSelectedMedalSizes([]);
     setSelectedMedalThicknesses([]);
   };
-  
+
   // Add a new quantity set (ชุด B, C, etc.)
   const addQuantitySet = () => {
     if (quantitySets.length >= 3) {
@@ -589,7 +634,7 @@ export default function AddPriceEstimation() {
       quantities: [...row.quantities, 0],
     })));
   };
-  
+
   // Remove a quantity set
   const removeQuantitySet = (index: number) => {
     if (quantitySets.length <= 1) return;
@@ -599,7 +644,7 @@ export default function AddPriceEstimation() {
       quantities: row.quantities.filter((_, i) => i !== index)
     })));
   };
-  
+
   // Toggle multi-select for medal sizes (max 3)
   const toggleMedalSize = (size: string) => {
     setSelectedMedalSizes(prev => {
@@ -617,7 +662,7 @@ export default function AddPriceEstimation() {
       return [...prev, size];
     });
   };
-  
+
   // Toggle multi-select for medal thicknesses (max 3)
   const toggleMedalThickness = (thickness: string) => {
     setSelectedMedalThicknesses(prev => {
@@ -635,12 +680,12 @@ export default function AddPriceEstimation() {
       return [...prev, thickness];
     });
   };
-  
+
   // Calculate total per set
   const getSetTotal = (setIndex: number) => {
     return colorQuantityRows.reduce((sum, row) => sum + (row.quantities[setIndex] || 0), 0);
   };
-  
+
   // Generate estimation options for procurement display
   const generateEstimationOptions = () => {
     const options: string[] = [];
@@ -659,9 +704,9 @@ export default function AddPriceEstimation() {
     if (!customerName || !selectedProductType) {
       return [];
     }
-    
+
     // Filter mock data by customer name and product type
-    return mockPreviousEstimations.filter(est => 
+    return mockPreviousEstimations.filter(est =>
       est.customerName.toLowerCase().includes(customerName.toLowerCase()) &&
       est.productType === selectedProductType
     );
@@ -672,7 +717,7 @@ export default function AddPriceEstimation() {
     setUsePreviousModel(checked);
     setSelectedPreviousEstimation(null);
     setShowPreviousOrderModal(false);
-    
+
     if (checked) {
       const filtered = filterPreviousEstimations();
       setPreviousEstimations(filtered);
@@ -692,8 +737,8 @@ export default function AddPriceEstimation() {
 
   // Toggle color in modal
   const toggleModalColor = (color: string) => {
-    setModalEditColors(prev => 
-      prev.includes(color) 
+    setModalEditColors(prev =>
+      prev.includes(color)
         ? prev.filter(c => c !== color)
         : [...prev, color]
     );
@@ -710,23 +755,23 @@ export default function AddPriceEstimation() {
     setHasDesign(selectedPreviousEstimation.hasDesign);
     setFrontDetails([...selectedPreviousEstimation.frontDetails]);
     setBackDetails([...selectedPreviousEstimation.backDetails]);
-    
+
     // Apply EDITABLE fields from modal (can still be modified)
     setSelectedColors([...modalEditColors]);
     setLanyardSize(modalEditLanyardSize);
     setLanyardPatterns(modalEditLanyardPatterns);
-    
+
     // Track that we used previous model (keep usePreviousModel = true for locking)
     setSelectedFromPreviousModel(true);
     setOriginalOrderReference(`${new Date(selectedPreviousEstimation.date).toLocaleDateString('th-TH')} — ${selectedPreviousEstimation.jobName}`);
-    
+
     // Close modal but KEEP usePreviousModel = true to lock fields
     setShowPreviousOrderModal(false);
     // DO NOT reset these - keep the selection to show locked state
     // setUsePreviousModel(false);
     // setSelectedPreviousEstimation(null);
     // setPreviousEstimations([]);
-    
+
     toast({
       title: "เลือกออเดอร์เดิมสำเร็จ",
       description: "ข้อมูลรายละเอียดสินค้าถูกล็อกจากโมเดลเดิม ยังแก้ไขได้เฉพาะ สี, สายคล้อง, จำนวน, งบประมาณ",
@@ -749,7 +794,7 @@ export default function AddPriceEstimation() {
     setBackDetails([]);
     setHasDesign("");
   };
-  
+
   // Check if fields should be locked (previous model selected and order chosen)
   const isFieldLocked = usePreviousModel && selectedPreviousEstimation !== null;
 
@@ -869,15 +914,10 @@ export default function AddPriceEstimation() {
     { value: "other", label: "อื่นๆ (โปรดระบุ)" },
   ];
 
-  const salesOptions = [
-    { value: "sales1", label: "พนักงานขาย 1" },
-    { value: "sales2", label: "พนักงานขาย 2" },
-    { value: "sales3", label: "พนักงานขาย 3" }
-  ];
 
   const toggleColor = (color: string) => {
-    setSelectedColors(prev => 
-      prev.includes(color) 
+    setSelectedColors(prev =>
+      prev.includes(color)
         ? prev.filter(c => c !== color)
         : [...prev, color]
     );
@@ -885,14 +925,14 @@ export default function AddPriceEstimation() {
 
   const toggleDetail = (detail: string, type: 'front' | 'back') => {
     if (type === 'front') {
-      setFrontDetails(prev => 
-        prev.includes(detail) 
+      setFrontDetails(prev =>
+        prev.includes(detail)
           ? prev.filter(d => d !== detail)
           : [...prev, detail]
       );
     } else {
-      setBackDetails(prev => 
-        prev.includes(detail) 
+      setBackDetails(prev =>
+        prev.includes(detail)
           ? prev.filter(d => d !== detail)
           : [...prev, detail]
       );
@@ -965,33 +1005,76 @@ export default function AddPriceEstimation() {
     handleConfirmSave();
   };
 
-  const handleConfirmSave = () => {
+  const handleConfirmSave = async () => {
     setShowSummaryPopup(false);
     setShowAwardSummaryPopup(false);
     setShowLanyardSummaryPopup(false);
-    
-    // Simulate upsert customer + create price estimation
-    const isNewCustomer = Math.random() > 0.5; // Mock logic
-    
-    setTimeout(() => {
-      if (isNewCustomer) {
-        toast({
-          title: "สำเร็จ",
-          description: "สร้างลูกค้าใหม่ + บันทึกประเมินราคาแล้ว",
-        });
-      } else {
-        toast({
-          title: "สำเร็จ",
-          description: "อัปเดตข้อมูลลูกค้า + บันทึกประเมินราคาแล้ว",
-        });
-      }
-      
+
+    try {
+      const payload = {
+        customer_id: selectedCustomerId,
+        customer_name: customerName,
+        customer_phone: customerPhone,
+        customer_line: customerLineId,
+        customer_email: customerEmail,
+        sales_owner_id: salesOwnerId,
+        job_name: jobName,
+        product_category: productCategory,
+        product_type: selectedProductType,
+        quantity: parseInt(quantity) || (colorQuantityRows.length > 0 ? getSetTotal(0) : 0),
+        budget: 0, // Not explicitly defined in this form
+        status: status === "รอประเมินราคา" ? "ยื่นคำขอประเมิน" : status, // API maps
+        notes: estimateNote || designDescription || customerNote,
+        estimation_date: estimateDate,
+        details: {
+          productCategoryText: productsByCategory[productCategory]?.find(p => p.value === selectedProductType)?.label,
+          material: material,
+          colorQuantityRows,
+          quantitySets,
+          selectedMedalSizes,
+          selectedMedalThicknesses,
+          frontDetails,
+          backDetails,
+          lanyardSize,
+          lanyardPatterns,
+          lanyardType,
+          awardDesignDetails,
+          plaqueOption,
+          plaqueText,
+          genericDesignDetails,
+          designDescription,
+          inscriptionPlate,
+          inscriptionDetails
+        }
+      };
+
+      const res = await fetch('https://finfinphone.com/api-lucky/admin/price_estimations.php', {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      const json = await res.json();
+      if (!res.ok || json.status === "error") throw new Error(json.message || "Failed to save estimation");
+
+      toast({
+        title: "สำเร็จ",
+        description: "บันทึกคำขอประเมินราคาเรียบร้อยแล้ว",
+      });
+
       // Reset previous model tracking
       setSelectedFromPreviousModel(false);
       setOriginalOrderReference("");
-      
+
       navigate("/sales/price-estimation");
-    }, 500);
+    } catch (err: any) {
+      console.error(err);
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: err.message || "ไม่สามารถบันทึกคำขอประเมินราคาได้",
+        variant: "destructive",
+      });
+    }
   };
 
   // Copy functions for summary popups
@@ -1000,21 +1083,21 @@ export default function AddPriceEstimation() {
     let text = `สินค้า:${productName}`;
     if (material) text += `\n\nวัสดุ:${getMaterialLabel(material)}`;
     if (jobName) text += `\n\nชื่องาน:${jobName}`;
-    
+
     // Multi-option sizes and thicknesses
     if (selectedMedalSizes.length > 0) {
-      const sizeLabels = selectedMedalSizes.map(s => 
+      const sizeLabels = selectedMedalSizes.map(s =>
         s === "other" ? customMedalSize + " ซม." : medalSizes.find(size => size.value === s)?.label || s
       );
       text += `\n\nขนาด (Multi-Select):${sizeLabels.join(", ")}`;
     }
     if (selectedMedalThicknesses.length > 0) {
-      const thicknessLabels = selectedMedalThicknesses.map(t => 
+      const thicknessLabels = selectedMedalThicknesses.map(t =>
         t === "other" ? customMedalThickness + " มิล" : medalThicknessOptions.find(th => th.value === t)?.label || t
       );
       text += `\n\nความหนา (Multi-Select):${thicknessLabels.join(", ")}`;
     }
-    
+
     // Options for Procurement
     const options = generateEstimationOptions();
     if (options.length > 0) {
@@ -1023,7 +1106,7 @@ export default function AddPriceEstimation() {
         text += `\n   Option ${idx + 1}: ${opt}`;
       });
     }
-    
+
     // Color quantity sets
     if (colorQuantityRows.some(r => r.color)) {
       text += `\n\nสีและจำนวน (${quantitySets.length} ชุด):`;
@@ -1034,12 +1117,12 @@ export default function AddPriceEstimation() {
       });
       text += `\n   รวมต่อชุด: ${quantitySets.map((set, idx) => `ชุด${set}:${getSetTotal(idx)}`).join(", ")}`;
     }
-    
+
     if (frontDetails.length > 0) text += `\n\nรายละเอียดด้านหน้า:${frontDetails.join(", ")}`;
     if (backDetails.length > 0) text += `\n\nรายละเอียดด้านหลัง:${backDetails.join(", ")}`;
     if (lanyardSize) text += `\n\nขนาดสายคล้อง:${getLanyardSizeLabel(lanyardSize)}`;
     if (lanyardPatterns) text += `\n\nจำนวนแบบสายคล้อง:${lanyardPatterns}`;
-    
+
     navigator.clipboard.writeText(text);
     toast({ title: "คัดลอกแล้ว", description: "คัดลอกข้อมูลสรุปเรียบร้อย" });
   };
@@ -1049,7 +1132,7 @@ export default function AddPriceEstimation() {
     if (material) text += `\n\nวัสดุ:${getMaterialLabel(material)}`;
     if (quantity) text += `\n\nจำนวน:${parseInt(quantity).toLocaleString()}`;
     if (awardDesignDetails) text += `\n\nรายละเอียดงานเพิ่มเติม:${awardDesignDetails}`;
-    
+
     navigator.clipboard.writeText(text);
     toast({ title: "คัดลอกแล้ว", description: "คัดลอกข้อมูลสรุปเรียบร้อย" });
   };
@@ -1061,7 +1144,7 @@ export default function AddPriceEstimation() {
     if (strapSize) text += `\n\nขนาดสาย:${getStrapSizeLabel(strapSize)}`;
     if (strapPatternCount) text += `\n\nจำนวนแบบ:${strapPatternCount}`;
     if (quantity) text += `\n\nจำนวน:${parseInt(quantity).toLocaleString()}`;
-    
+
     navigator.clipboard.writeText(text);
     toast({ title: "คัดลอกแล้ว", description: "คัดลอกข้อมูลสรุปเรียบร้อย" });
   };
@@ -1087,67 +1170,63 @@ export default function AddPriceEstimation() {
               <User className="h-5 w-5 text-primary" />
               <CardTitle>ข้อมูลทั่วไปลูกค้า</CardTitle>
             </div>
-            <CardDescription>ใช้ซ้ำทุกงาน ระบบจะจำให้</CardDescription>
+            {/* <CardDescription>ใช้ซ้ำทุกงาน ระบบจะจำให้</CardDescription> */}
           </CardHeader>
           <CardContent className="space-y-4">
             {/* ค้นหาลูกค้า - Search Autocomplete */}
             <div className="space-y-2" ref={searchRef}>
-              <Label htmlFor="customer-search">ค้นหาลูกค้า</Label>
+              <Label htmlFor="customer-search">ช่องค้นหาลูกค้า</Label>
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input 
-                  id="customer-search" 
-                  placeholder="ค้นหาจาก ชื่อ / เบอร์โทร / LINE ID"
+                <Input
+                  id="customer-search"
+                  placeholder="ค้นหาจากเบอร์โทร ชื่อลูกค้า หรือชื่อไลน์"
                   value={customerSearch}
                   onChange={(e) => {
                     setCustomerSearch(e.target.value);
                     setShowCustomerDropdown(true);
                   }}
-                  onFocus={() => customerSearch && setShowCustomerDropdown(true)}
-                  className="pl-9"
+                  onFocus={() => setShowCustomerDropdown(true)}
+                  onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 200)}
                 />
-                
+
                 {/* Dropdown Results */}
-                {showCustomerDropdown && customerSearch && (
-                  <div className="absolute z-50 w-full mt-1 bg-background border border-border rounded-md shadow-lg max-h-60 overflow-y-auto">
-                    {isLoadingCustomers ? (
-                      <div className="p-3 text-center text-muted-foreground">กำลังโหลด...</div>
-                    ) : filteredCustomers.length > 0 ? (
-                      filteredCustomers.map((customer) => (
-                        <div
-                          key={customer.id}
-                          className="p-3 hover:bg-muted cursor-pointer border-b border-border last:border-b-0"
-                          onClick={() => handleSelectCustomer(customer)}
-                        >
-                          <div className="font-semibold">{customer.contact_name || customer.company_name}</div>
-                          <div className="text-sm text-muted-foreground flex gap-3">
-                            {customer.phone_numbers?.[0] && (
-                              <span>📞 {customer.phone_numbers[0]}</span>
-                            )}
-                            {customer.line_id && (
-                              <span>LINE: {customer.line_id}</span>
-                            )}
-                          </div>
+                {showCustomerDropdown && filteredCustomers.length > 0 && (
+                  <div className="absolute z-50 w-full mt-1 bg-background border border-border rounded-md shadow-lg max-h-64 overflow-y-auto">
+                    {filteredCustomers.map((customer) => (
+                      <div
+                        key={customer.id}
+                        className="p-3 hover:bg-muted cursor-pointer border-b last:border-b-0 transition-colors"
+                        onMouseDown={(e) => { e.preventDefault(); handleSelectCustomer(customer); }}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-medium text-sm">{customer.contact_name || customer.company_name}</span>
                         </div>
-                      ))
-                    ) : (
-                      <div className="p-3 text-center text-muted-foreground">
-                        ไม่พบข้อมูลที่ตรงกัน
+                        {customer.company_name && customer.contact_name && (
+                          <div className="text-xs text-muted-foreground mt-0.5">🏢 {customer.company_name}</div>
+                        )}
+                        <div className="flex gap-3 mt-0.5 flex-wrap">
+                          {customer.phone_numbers?.[0] && (
+                            <span className="text-xs text-muted-foreground">📞 {customer.phone_numbers[0]}</span>
+                          )}
+                          {customer.line_id && (
+                            <span className="text-xs text-muted-foreground">💬 {customer.line_id}</span>
+                          )}
+                        </div>
                       </div>
-                    )}
+                    ))}
                   </div>
                 )}
               </div>
-              
+
               {/* Selected Customer Indicator */}
               {selectedCustomerId && (
                 <div className="flex items-center justify-between p-2 bg-primary/10 rounded-md border border-primary/30">
                   <span className="text-sm text-primary">
                     ✓ เลือกลูกค้าเดิม: <span className="font-semibold">{customerName}</span>
                   </span>
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={handleClearCustomerSelection}
                     className="h-7 px-2 text-destructive hover:text-destructive hover:bg-destructive/10"
                   >
@@ -1161,9 +1240,9 @@ export default function AddPriceEstimation() {
             {/* ชื่อลูกค้า - เต็มแถว */}
             <div className="space-y-2">
               <Label htmlFor="customer-name">ชื่อลูกค้า <span className="text-destructive">*</span></Label>
-              <Input 
-                id="customer-name" 
-                placeholder="กรอกชื่อลูกค้า" 
+              <Input
+                id="customer-name"
+                placeholder="กรอกชื่อลูกค้า"
                 value={customerName}
                 onChange={(e) => setCustomerName(e.target.value)}
               />
@@ -1173,9 +1252,9 @@ export default function AddPriceEstimation() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="customer-phone">เบอร์โทร <span className="text-muted-foreground text-xs">(key หลัก)</span></Label>
-                <Input 
-                  id="customer-phone" 
-                  placeholder="กรอกเบอร์โทร" 
+                <Input
+                  id="customer-phone"
+                  placeholder="กรอกเบอร์โทร"
                   value={customerPhone}
                   onChange={(e) => setCustomerPhone(e.target.value)}
                 />
@@ -1183,9 +1262,9 @@ export default function AddPriceEstimation() {
 
               <div className="space-y-2">
                 <Label htmlFor="customer-line">ชื่อไลน์ <span className="text-muted-foreground text-xs">(key รอง)</span></Label>
-                <Input 
-                  id="customer-line" 
-                  placeholder="กรอกชื่อไลน์" 
+                <Input
+                  id="customer-line"
+                  placeholder="กรอกชื่อไลน์"
                   value={customerLineId}
                   onChange={(e) => setCustomerLineId(e.target.value)}
                 />
@@ -1196,10 +1275,10 @@ export default function AddPriceEstimation() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="customer-email">อีเมล</Label>
-                <Input 
-                  id="customer-email" 
+                <Input
+                  id="customer-email"
                   type="email"
-                  placeholder="กรอกอีเมล" 
+                  placeholder="กรอกอีเมล"
                   value={customerEmail}
                   onChange={(e) => setCustomerEmail(e.target.value)}
                 />
@@ -1207,9 +1286,9 @@ export default function AddPriceEstimation() {
 
               <div className="space-y-2">
                 <Label htmlFor="customer-tags">ประเภทลูกค้า / แท็ก</Label>
-                <Input 
-                  id="customer-tags" 
-                  placeholder="เช่น ลูกค้าประจำ, องค์กร" 
+                <Input
+                  id="customer-tags"
+                  placeholder="เช่น ลูกค้าประจำ, องค์กร"
                   value={customerTags}
                   onChange={(e) => setCustomerTags(e.target.value)}
                 />
@@ -1219,9 +1298,9 @@ export default function AddPriceEstimation() {
             {/* หมายเหตุลูกค้า - เต็มแถว */}
             <div className="space-y-2">
               <Label htmlFor="customer-note">หมายเหตุลูกค้า</Label>
-              <Textarea 
-                id="customer-note" 
-                placeholder="หมายเหตุเกี่ยวกับลูกค้า (ถ้ามี)" 
+              <Textarea
+                id="customer-note"
+                placeholder="หมายเหตุเกี่ยวกับลูกค้า (ถ้ามี)"
                 value={customerNote}
                 onChange={(e) => setCustomerNote(e.target.value)}
               />
@@ -1247,14 +1326,14 @@ export default function AddPriceEstimation() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="estimate-date">วันที่ประเมินราคา</Label>
-                <Input 
-                  type="date" 
-                  id="estimate-date" 
+                <Input
+                  type="date"
+                  id="estimate-date"
                   value={estimateDate}
                   onChange={(e) => setEstimateDate(e.target.value)}
                 />
               </div>
-              
+
               <div className="space-y-2">
                 <Label htmlFor="sales-owner">เซลล์ผู้รับผิดชอบ</Label>
                 <Select value={salesOwnerId} onValueChange={setSalesOwnerId}>
@@ -1276,9 +1355,9 @@ export default function AddPriceEstimation() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="job-name">ชื่องาน</Label>
-                <Input 
-                  id="job-name" 
-                  placeholder="กรอกชื่องาน" 
+                <Input
+                  id="job-name"
+                  placeholder="กรอกชื่องาน"
                   value={jobName}
                   onChange={(e) => setJobName(e.target.value)}
                 />
@@ -1286,9 +1365,9 @@ export default function AddPriceEstimation() {
 
               <div className="space-y-2">
                 <Label htmlFor="event-date">วันที่ใช้งาน</Label>
-                <Input 
-                  type="date" 
-                  id="event-date" 
+                <Input
+                  type="date"
+                  id="event-date"
                   value={eventDate}
                   onChange={(e) => setEventDate(e.target.value)}
                 />
@@ -1312,10 +1391,10 @@ export default function AddPriceEstimation() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="quantity">จำนวน</Label>
-                  <Input 
-                    id="quantity" 
-                    type="number" 
-                    placeholder="กรอกจำนวน" 
+                  <Input
+                    id="quantity"
+                    type="number"
+                    placeholder="กรอกจำนวน"
                     value={quantity}
                     onChange={(e) => setQuantity(e.target.value)}
                   />
@@ -1323,10 +1402,10 @@ export default function AddPriceEstimation() {
 
                 <div className="space-y-2">
                   <Label htmlFor="price">งบประมาณต่อชิ้น (บาท)</Label>
-                  <Input 
-                    id="price" 
-                    type="number" 
-                    placeholder="กรอกงบประมาณต่อชิ้น (ถ้ามี)" 
+                  <Input
+                    id="price"
+                    type="number"
+                    placeholder="กรอกงบประมาณต่อชิ้น (ถ้ามี)"
                     value={price}
                     onChange={(e) => setPrice(e.target.value)}
                   />
@@ -1338,7 +1417,7 @@ export default function AddPriceEstimation() {
             {selectedProductType === 'medal' && (
               <div className="space-y-3 p-4 border border-border rounded-lg bg-muted/30">
                 <div className="flex items-center space-x-2">
-                  <Checkbox 
+                  <Checkbox
                     id="use-previous-model"
                     checked={usePreviousModel}
                     onCheckedChange={(checked) => {
@@ -1348,15 +1427,15 @@ export default function AddPriceEstimation() {
                     }}
                     disabled={!customerName}
                   />
-                  <Label 
-                    htmlFor="use-previous-model" 
+                  <Label
+                    htmlFor="use-previous-model"
                     className={`cursor-pointer flex items-center gap-2 ${!customerName ? 'text-muted-foreground' : ''}`}
                   >
                     <History className="h-4 w-4" />
                     โมเดลเดิม
                   </Label>
                 </div>
-                
+
                 {/* แสดงข้อความแนะนำถ้ายังไม่ได้เลือกลูกค้า */}
                 {!customerName && (
                   <div className="flex items-center gap-2 text-muted-foreground text-sm mt-2">
@@ -1364,7 +1443,7 @@ export default function AddPriceEstimation() {
                     <span>กรุณาเลือกชื่อลูกค้าก่อน เพื่อใช้งานโมเดลเดิม</span>
                   </div>
                 )}
-                
+
                 {/* Previous Estimations List - แสดงเป็น List บนหน้าเลย */}
                 {usePreviousModel && customerName && (
                   <div className="mt-4 space-y-3">
@@ -1455,8 +1534,8 @@ export default function AddPriceEstimation() {
                 <Label htmlFor="material" className={isFieldLocked ? "text-muted-foreground" : ""}>
                   วัสดุ {isFieldLocked && <span className="text-xs px-2 py-0.5 bg-muted text-muted-foreground rounded ml-2">ล็อก</span>}
                 </Label>
-                <Select 
-                  value={material} 
+                <Select
+                  value={material}
                   onValueChange={(val) => {
                     if (!isFieldLocked) {
                       setMaterial(val);
@@ -1509,10 +1588,10 @@ export default function AddPriceEstimation() {
 
                   <div className="space-y-2">
                     <Label htmlFor="strap-pattern-count">จำนวนแบบ</Label>
-                    <Input 
-                      id="strap-pattern-count" 
-                      type="number" 
-                      placeholder="กรอกจำนวนแบบ" 
+                    <Input
+                      id="strap-pattern-count"
+                      type="number"
+                      placeholder="กรอกจำนวนแบบ"
                       value={strapPatternCount}
                       onChange={(e) => setStrapPatternCount(e.target.value)}
                     />
@@ -1521,8 +1600,8 @@ export default function AddPriceEstimation() {
 
                 <div className="space-y-3">
                   <Label>การเย็บสาย <span className="text-destructive">*</span></Label>
-                  <RadioGroup 
-                    value={sewingOption} 
+                  <RadioGroup
+                    value={sewingOption}
                     onValueChange={setSewingOption}
                     className="flex gap-6"
                   >
@@ -1542,9 +1621,9 @@ export default function AddPriceEstimation() {
             {/* รายละเอียดงานเพิ่มเติม - เต็มแถว */}
             <div className="space-y-2">
               <Label htmlFor="estimate-note">รายละเอียดงานเพิ่มเติม</Label>
-              <Textarea 
-                id="estimate-note" 
-                placeholder="กรอกรายละเอียดเพิ่มเติม" 
+              <Textarea
+                id="estimate-note"
+                placeholder="กรอกรายละเอียดเพิ่มเติม"
                 value={estimateNote}
                 onChange={(e) => setEstimateNote(e.target.value)}
               />
@@ -1565,7 +1644,7 @@ export default function AddPriceEstimation() {
               ตรวจสอบข้อมูล และแก้ไขได้เฉพาะ: สี, ขนาดสายคล้อง, จำนวนแบบสายคล้อง
             </DialogDescription>
           </DialogHeader>
-          
+
           {selectedPreviousEstimation && (
             <div className="space-y-6 py-4">
               {/* Read-only Info */}
@@ -1611,7 +1690,7 @@ export default function AddPriceEstimation() {
               {/* Editable Fields */}
               <div className="border-t border-border pt-6 space-y-4">
                 <h4 className="font-semibold text-sm text-primary">ฟิลด์ที่แก้ไขได้</h4>
-                
+
                 {/* สี - Editable */}
                 <div className="space-y-2">
                   <Label>สี (เลือกได้หลายสี)</Label>
@@ -1619,11 +1698,10 @@ export default function AddPriceEstimation() {
                     {colors.map((color) => (
                       <div
                         key={color.value}
-                        className={`px-3 py-2 rounded-md border cursor-pointer transition-colors text-sm ${
-                          modalEditColors.includes(color.value)
-                            ? 'bg-primary text-primary-foreground border-primary'
-                            : 'bg-background border-border hover:bg-muted'
-                        }`}
+                        className={`px-3 py-2 rounded-md border cursor-pointer transition-colors text-sm ${modalEditColors.includes(color.value)
+                          ? 'bg-primary text-primary-foreground border-primary'
+                          : 'bg-background border-border hover:bg-muted'
+                          }`}
                         onClick={() => toggleModalColor(color.value)}
                       >
                         {color.label}
@@ -1649,12 +1727,12 @@ export default function AddPriceEstimation() {
                       </SelectContent>
                     </Select>
                   </div>
-                  
+
                   <div className="space-y-2">
                     <Label>จำนวนแบบสายคล้อง</Label>
-                    <Input 
-                      type="number" 
-                      placeholder="กรอกจำนวนแบบ" 
+                    <Input
+                      type="number"
+                      placeholder="กรอกจำนวนแบบ"
                       value={modalEditLanyardPatterns}
                       onChange={(e) => setModalEditLanyardPatterns(e.target.value)}
                     />
@@ -1663,7 +1741,7 @@ export default function AddPriceEstimation() {
               </div>
             </div>
           )}
-          
+
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setShowPreviousOrderModal(false)}>
               ยกเลิก
@@ -1683,7 +1761,7 @@ export default function AddPriceEstimation() {
             <DialogTitle>สรุปข้อมูลการส่งตีราคา (Multi-Option Quote)</DialogTitle>
             <DialogDescription>ตรวจสอบข้อมูลก่อนยืนยันบันทึก - ข้อมูลจะถูกส่งไปยังฝ่ายจัดซื้อ</DialogDescription>
           </DialogHeader>
-          
+
           <div className="space-y-4 py-4">
             <div className="grid grid-cols-1 gap-3 text-sm">
               <div className="flex justify-between border-b border-border pb-2">
@@ -1692,21 +1770,21 @@ export default function AddPriceEstimation() {
                   {productCategory} &gt; {productsByCategory[productCategory]?.find(p => p.value === selectedProductType)?.label}
                 </span>
               </div>
-              
+
               {material && (
                 <div className="flex justify-between border-b border-border pb-2">
                   <span className="text-muted-foreground">วัสดุ:</span>
                   <span className="font-medium">{getMaterialLabel(material)}</span>
                 </div>
               )}
-              
+
               {jobName && (
                 <div className="flex justify-between border-b border-border pb-2">
                   <span className="text-muted-foreground">ชื่องาน:</span>
                   <span className="font-medium">{jobName}</span>
                 </div>
               )}
-              
+
               {/* Multi-Option: Size Options */}
               {selectedMedalSizes.length > 0 && (
                 <div className="border-b border-border pb-2">
@@ -1723,7 +1801,7 @@ export default function AddPriceEstimation() {
                   </div>
                 </div>
               )}
-              
+
               {/* Multi-Option: Thickness Options */}
               {selectedMedalThicknesses.length > 0 && (
                 <div className="border-b border-border pb-2">
@@ -1740,7 +1818,7 @@ export default function AddPriceEstimation() {
                   </div>
                 </div>
               )}
-              
+
               {/* Estimation Options for Procurement */}
               {generateEstimationOptions().length > 0 && (
                 <div className="p-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg">
@@ -1759,7 +1837,7 @@ export default function AddPriceEstimation() {
                   </div>
                 </div>
               )}
-              
+
               {/* Color Quantity Sets */}
               {colorQuantityRows.some(r => r.color) && (
                 <div className="border-b border-border pb-2">
@@ -1801,35 +1879,35 @@ export default function AddPriceEstimation() {
                   </div>
                 </div>
               )}
-              
+
               {frontDetails.length > 0 && (
                 <div className="flex justify-between border-b border-border pb-2">
                   <span className="text-muted-foreground">รายละเอียดด้านหน้า:</span>
                   <span className="font-medium text-right">{frontDetails.join(", ")}</span>
                 </div>
               )}
-              
+
               {backDetails.length > 0 && (
                 <div className="flex justify-between border-b border-border pb-2">
                   <span className="text-muted-foreground">รายละเอียดด้านหลัง:</span>
                   <span className="font-medium text-right">{backDetails.join(", ")}</span>
                 </div>
               )}
-              
+
               {lanyardSize && (
                 <div className="flex justify-between border-b border-border pb-2">
                   <span className="text-muted-foreground">ขนาดสายคล้อง:</span>
                   <span className="font-medium">{getLanyardSizeLabel(lanyardSize)}</span>
                 </div>
               )}
-              
+
               {lanyardPatterns && (
                 <div className="flex justify-between border-b border-border pb-2">
                   <span className="text-muted-foreground">จำนวนแบบสายคล้อง:</span>
                   <span className="font-medium">{lanyardPatterns}</span>
                 </div>
               )}
-              
+
               {/* แสดงเมื่อใช้โมเดลเดิม */}
               {selectedFromPreviousModel && originalOrderReference && (
                 <div className="flex justify-between border-b border-border pb-2 bg-primary/5 p-2 rounded-md -mx-2">
@@ -1839,7 +1917,7 @@ export default function AddPriceEstimation() {
               )}
             </div>
           </div>
-          
+
           <DialogFooter className="flex justify-between items-center">
             <Button variant="ghost" size="icon" onClick={copyMedalSummary} className="h-9 w-9 border border-border rounded-md hover:bg-muted">
               <Copy className="h-4 w-4 text-primary" />
@@ -1863,28 +1941,28 @@ export default function AddPriceEstimation() {
             <DialogTitle className="text-xl">สรุปข้อมูลการส่งตีราคา</DialogTitle>
             <DialogDescription>กรุณาตรวจสอบข้อมูลก่อนยืนยันการบันทึก</DialogDescription>
           </DialogHeader>
-          
+
           <div className="py-4">
             <div className="space-y-3">
               <div className="flex justify-between border-b border-border pb-2">
                 <span className="text-muted-foreground">สินค้า:</span>
                 <span className="font-medium">สินค้าสั่งผลิต &gt; โล่สั่งผลิต</span>
               </div>
-              
+
               {material && (
                 <div className="flex justify-between border-b border-border pb-2">
                   <span className="text-muted-foreground">วัสดุ:</span>
                   <span className="font-medium">{getMaterialLabel(material)}</span>
                 </div>
               )}
-              
+
               {quantity && (
                 <div className="flex justify-between border-b border-border pb-2">
                   <span className="text-muted-foreground">จำนวน:</span>
                   <span className="font-medium">{parseInt(quantity).toLocaleString()}</span>
                 </div>
               )}
-              
+
               {awardDesignDetails && (
                 <div className="flex flex-col border-b border-border pb-2">
                   <span className="text-muted-foreground mb-1">รายละเอียดงานเพิ่มเติม:</span>
@@ -1893,7 +1971,7 @@ export default function AddPriceEstimation() {
               )}
             </div>
           </div>
-          
+
           <DialogFooter className="flex justify-between items-center">
             <Button variant="ghost" size="icon" onClick={copyAwardSummary} className="h-9 w-9 border border-border rounded-md hover:bg-muted">
               <Copy className="h-4 w-4 text-primary" />
@@ -1917,49 +1995,49 @@ export default function AddPriceEstimation() {
             <DialogTitle className="text-xl">สรุปข้อมูลการส่งตีราคา</DialogTitle>
             <DialogDescription>กรุณาตรวจสอบข้อมูลก่อนยืนยันการบันทึก</DialogDescription>
           </DialogHeader>
-          
+
           <div className="py-4">
             <div className="space-y-3">
               <div className="flex justify-between border-b border-border pb-2">
                 <span className="text-muted-foreground">สินค้า:</span>
                 <span className="font-medium">สายคล้อง</span>
               </div>
-              
+
               {customerLineId && (
                 <div className="flex justify-between border-b border-border pb-2">
                   <span className="text-muted-foreground">LINE:</span>
                   <span className="font-medium">{customerLineId}</span>
                 </div>
               )}
-              
+
               {sewingOption && (
                 <div className="flex justify-between border-b border-border pb-2">
                   <span className="text-muted-foreground">รูปแบบการเย็บ:</span>
                   <span className="font-medium">{sewingOption === 'sew' ? 'เย็บสาย' : 'ไม่เย็บสาย'}</span>
                 </div>
               )}
-              
+
               {strapSize && (
                 <div className="flex justify-between border-b border-border pb-2">
                   <span className="text-muted-foreground">ขนาดสาย:</span>
                   <span className="font-medium">{getStrapSizeLabel(strapSize)}</span>
                 </div>
               )}
-              
+
               {strapPatternCount && (
                 <div className="flex justify-between border-b border-border pb-2">
                   <span className="text-muted-foreground">จำนวนแบบ:</span>
                   <span className="font-medium">{strapPatternCount}</span>
                 </div>
               )}
-              
+
               {quantity && (
                 <div className="flex justify-between border-b border-border pb-2">
                   <span className="text-muted-foreground">จำนวน:</span>
                   <span className="font-medium">{parseInt(quantity).toLocaleString()}</span>
                 </div>
               )}
-              
+
               {eventDate && (
                 <div className="flex justify-between border-b border-border pb-2">
                   <span className="text-muted-foreground">วันที่ใช้งาน:</span>
@@ -1968,7 +2046,7 @@ export default function AddPriceEstimation() {
               )}
             </div>
           </div>
-          
+
           <DialogFooter className="flex justify-between items-center">
             <Button variant="ghost" size="icon" onClick={copyLanyardSummary} className="h-9 w-9 border border-border rounded-md hover:bg-muted">
               <Copy className="h-4 w-4 text-primary" />
@@ -2030,13 +2108,12 @@ export default function AddPriceEstimation() {
                   </div>
                   <div className={`grid grid-cols-2 md:grid-cols-4 gap-3 ${isFieldLocked ? "opacity-70" : ""}`}>
                     {medalSizes.filter(s => s.value !== "other").map((size) => (
-                      <div 
-                        key={size.value} 
-                        className={`flex items-center space-x-2 p-2 rounded-lg border cursor-pointer transition-all ${
-                          selectedMedalSizes.includes(size.value) 
-                            ? "border-primary bg-primary/5" 
-                            : "border-border hover:border-primary/50"
-                        } ${isFieldLocked ? "cursor-not-allowed" : ""}`}
+                      <div
+                        key={size.value}
+                        className={`flex items-center space-x-2 p-2 rounded-lg border cursor-pointer transition-all ${selectedMedalSizes.includes(size.value)
+                          ? "border-primary bg-primary/5"
+                          : "border-border hover:border-primary/50"
+                          } ${isFieldLocked ? "cursor-not-allowed" : ""}`}
                         onClick={() => !isFieldLocked && toggleMedalSize(size.value)}
                       >
                         <Checkbox
@@ -2046,8 +2123,8 @@ export default function AddPriceEstimation() {
                           disabled={isFieldLocked}
                           className={isFieldLocked ? "cursor-not-allowed" : ""}
                         />
-                        <Label 
-                          htmlFor={`size-${size.value}`} 
+                        <Label
+                          htmlFor={`size-${size.value}`}
                           className={`text-sm ${isFieldLocked ? "cursor-not-allowed text-muted-foreground" : "cursor-pointer"}`}
                         >
                           {size.label}
@@ -2055,12 +2132,11 @@ export default function AddPriceEstimation() {
                       </div>
                     ))}
                     {/* "อื่นๆ" option */}
-                    <div 
-                      className={`flex items-center space-x-2 p-2 rounded-lg border cursor-pointer transition-all ${
-                        selectedMedalSizes.includes("other") 
-                          ? "border-primary bg-primary/5" 
-                          : "border-border hover:border-primary/50"
-                      } ${isFieldLocked ? "cursor-not-allowed" : ""}`}
+                    <div
+                      className={`flex items-center space-x-2 p-2 rounded-lg border cursor-pointer transition-all ${selectedMedalSizes.includes("other")
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:border-primary/50"
+                        } ${isFieldLocked ? "cursor-not-allowed" : ""}`}
                       onClick={() => !isFieldLocked && toggleMedalSize("other")}
                     >
                       <Checkbox
@@ -2070,8 +2146,8 @@ export default function AddPriceEstimation() {
                         disabled={isFieldLocked}
                         className={isFieldLocked ? "cursor-not-allowed" : ""}
                       />
-                      <Label 
-                        htmlFor="size-other" 
+                      <Label
+                        htmlFor="size-other"
                         className={`text-sm ${isFieldLocked ? "cursor-not-allowed text-muted-foreground" : "cursor-pointer"}`}
                       >
                         อื่นๆ
@@ -2101,13 +2177,12 @@ export default function AddPriceEstimation() {
                   </div>
                   <div className={`grid grid-cols-2 md:grid-cols-4 gap-3 ${isFieldLocked ? "opacity-70" : ""}`}>
                     {medalThicknessOptions.filter(t => t.value !== "other").map((thickness) => (
-                      <div 
-                        key={thickness.value} 
-                        className={`flex items-center space-x-2 p-2 rounded-lg border cursor-pointer transition-all ${
-                          selectedMedalThicknesses.includes(thickness.value) 
-                            ? "border-primary bg-primary/5" 
-                            : "border-border hover:border-primary/50"
-                        } ${isFieldLocked ? "cursor-not-allowed" : ""}`}
+                      <div
+                        key={thickness.value}
+                        className={`flex items-center space-x-2 p-2 rounded-lg border cursor-pointer transition-all ${selectedMedalThicknesses.includes(thickness.value)
+                          ? "border-primary bg-primary/5"
+                          : "border-border hover:border-primary/50"
+                          } ${isFieldLocked ? "cursor-not-allowed" : ""}`}
                         onClick={() => !isFieldLocked && toggleMedalThickness(thickness.value)}
                       >
                         <Checkbox
@@ -2117,8 +2192,8 @@ export default function AddPriceEstimation() {
                           disabled={isFieldLocked}
                           className={isFieldLocked ? "cursor-not-allowed" : ""}
                         />
-                        <Label 
-                          htmlFor={`thickness-${thickness.value}`} 
+                        <Label
+                          htmlFor={`thickness-${thickness.value}`}
                           className={`text-sm ${isFieldLocked ? "cursor-not-allowed text-muted-foreground" : "cursor-pointer"}`}
                         >
                           {thickness.label}
@@ -2126,12 +2201,11 @@ export default function AddPriceEstimation() {
                       </div>
                     ))}
                     {/* "อื่นๆ" option */}
-                    <div 
-                      className={`flex items-center space-x-2 p-2 rounded-lg border cursor-pointer transition-all ${
-                        selectedMedalThicknesses.includes("other") 
-                          ? "border-primary bg-primary/5" 
-                          : "border-border hover:border-primary/50"
-                      } ${isFieldLocked ? "cursor-not-allowed" : ""}`}
+                    <div
+                      className={`flex items-center space-x-2 p-2 rounded-lg border cursor-pointer transition-all ${selectedMedalThicknesses.includes("other")
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:border-primary/50"
+                        } ${isFieldLocked ? "cursor-not-allowed" : ""}`}
                       onClick={() => !isFieldLocked && toggleMedalThickness("other")}
                     >
                       <Checkbox
@@ -2141,8 +2215,8 @@ export default function AddPriceEstimation() {
                         disabled={isFieldLocked}
                         className={isFieldLocked ? "cursor-not-allowed" : ""}
                       />
-                      <Label 
-                        htmlFor="thickness-other" 
+                      <Label
+                        htmlFor="thickness-other"
                         className={`text-sm ${isFieldLocked ? "cursor-not-allowed text-muted-foreground" : "cursor-pointer"}`}
                       >
                         อื่นๆ
@@ -2215,7 +2289,7 @@ export default function AddPriceEstimation() {
                       </Button>
                     </div>
                   </div>
-                  
+
                   <div className="border border-border rounded-lg overflow-hidden">
                     <table className="w-full">
                       <thead className="bg-muted/50">
@@ -2250,7 +2324,7 @@ export default function AddPriceEstimation() {
                               <Select
                                 value={row.color}
                                 onValueChange={(value) => {
-                                  setColorQuantityRows(prev => prev.map(r => 
+                                  setColorQuantityRows(prev => prev.map(r =>
                                     r.id === row.id ? { ...r, color: value } : r
                                   ));
                                 }}
@@ -2293,7 +2367,7 @@ export default function AddPriceEstimation() {
                                 placeholder="หมายเหตุ"
                                 value={row.note}
                                 onChange={(e) => {
-                                  setColorQuantityRows(prev => prev.map(r => 
+                                  setColorQuantityRows(prev => prev.map(r =>
                                     r.id === row.id ? { ...r, note: e.target.value } : r
                                   ));
                                 }}
@@ -2344,7 +2418,7 @@ export default function AddPriceEstimation() {
                       <span className="text-xs px-2 py-0.5 bg-muted text-muted-foreground rounded">ล็อก</span>
                     )}
                   </div>
-                  
+
                   <div className="space-y-2">
                     <Label className={isFieldLocked ? "text-muted-foreground" : ""}>
                       รายละเอียดด้านหน้า (เลือกได้หลายรายการ)
@@ -2360,8 +2434,8 @@ export default function AddPriceEstimation() {
                               disabled={isFieldLocked}
                               className={isFieldLocked ? "cursor-not-allowed" : ""}
                             />
-                            <Label 
-                              htmlFor={`front-${detail}`} 
+                            <Label
+                              htmlFor={`front-${detail}`}
                               className={`text-sm ${isFieldLocked ? "cursor-not-allowed text-muted-foreground" : "cursor-pointer"}`}
                             >
                               {detail}
@@ -2405,8 +2479,8 @@ export default function AddPriceEstimation() {
                               disabled={isFieldLocked}
                               className={isFieldLocked ? "cursor-not-allowed" : ""}
                             />
-                            <Label 
-                              htmlFor={`back-${detail}`} 
+                            <Label
+                              htmlFor={`back-${detail}`}
                               className={`text-sm ${isFieldLocked ? "cursor-not-allowed text-muted-foreground" : "cursor-pointer"}`}
                             >
                               {detail}
@@ -2456,10 +2530,10 @@ export default function AddPriceEstimation() {
 
                   <div className="space-y-2">
                     <Label htmlFor="lanyard-patterns">จำนวนแบบสายคล้อง</Label>
-                    <Input 
-                      id="lanyard-patterns" 
-                      type="number" 
-                      placeholder="กรอกจำนวนแบบ" 
+                    <Input
+                      id="lanyard-patterns"
+                      type="number"
+                      placeholder="กรอกจำนวนแบบ"
                       value={lanyardPatterns}
                       onChange={(e) => setLanyardPatterns(e.target.value)}
                     />
@@ -2505,8 +2579,8 @@ export default function AddPriceEstimation() {
                   <Label htmlFor="award-design-details">
                     รายละเอียดการตีราคา <span className="text-destructive">*</span>
                   </Label>
-                  <Textarea 
-                    id="award-design-details" 
+                  <Textarea
+                    id="award-design-details"
                     placeholder="พิมพ์รายละเอียดงานโล่สั่งผลิต เช่น ขนาด/ทรง, โทนสี, โลโก้, ข้อความ, วัสดุ, จุดที่ต้องการเน้น"
                     value={awardDesignDetails}
                     onChange={(e) => setAwardDesignDetails(e.target.value)}
@@ -2519,8 +2593,8 @@ export default function AddPriceEstimation() {
                   <Label>
                     ป้ายจารึก <span className="text-destructive">*</span>
                   </Label>
-                  <RadioGroup 
-                    value={plaqueOption} 
+                  <RadioGroup
+                    value={plaqueOption}
                     onValueChange={handlePlaqueOptionChange}
                     className="flex gap-6"
                   >
@@ -2541,8 +2615,8 @@ export default function AddPriceEstimation() {
                     <Label htmlFor="plaque-text">
                       รายละเอียดป้ายจารึก <span className="text-destructive">*</span>
                     </Label>
-                    <Textarea 
-                      id="plaque-text" 
+                    <Textarea
+                      id="plaque-text"
                       placeholder="พิมพ์ข้อความบนป้าย เช่น ชื่อรายการ/ปี/อันดับ/ชื่อผู้รับ/ข้อความเพิ่มเติม"
                       value={plaqueText}
                       onChange={(e) => setPlaqueText(e.target.value)}
@@ -2557,31 +2631,31 @@ export default function AddPriceEstimation() {
       )}
 
       {/* Dynamic Form for ของใช้, ลิสแบรนด์, ของพรีเมียม - แสดงเมื่อเลือก "มีแบบ" และไม่ได้ใช้โมเดลเดิม (ยกเว้น lanyard) */}
-      {!usePreviousModel && hasDesign === "has-design" && 
-       (["ของใช้", "ของพรีเมียม"].includes(productCategory) || 
-        (productCategory === "หมวดสายคล้อง" && selectedProductType !== "lanyard")) && 
-       selectedProductType && (
-        <Card className="max-w-4xl">
-          <CardHeader>
-            <CardTitle>รายละเอียดสำหรับประเมินราคา</CardTitle>
-            <CardDescription>กรอกข้อมูลสำหรับการประเมินราคา</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="generic-design-details">
-                รายละเอียดการประเมินราคา <span className="text-destructive">*</span>
-              </Label>
-              <Textarea 
-                id="generic-design-details" 
-                placeholder="พิมพ์รายละเอียด เช่น ขนาด/สี/โลโก้/ข้อความ/ตำแหน่งงาน/วัสดุ/ตัวอย่างที่ต้องการ"
-                value={genericDesignDetails}
-                onChange={(e) => setGenericDesignDetails(e.target.value)}
-                className="min-h-[120px]"
-              />
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {!usePreviousModel && hasDesign === "has-design" &&
+        (["ของใช้", "ของพรีเมียม"].includes(productCategory) ||
+          (productCategory === "หมวดสายคล้อง" && selectedProductType !== "lanyard")) &&
+        selectedProductType && (
+          <Card className="max-w-4xl">
+            <CardHeader>
+              <CardTitle>รายละเอียดสำหรับประเมินราคา</CardTitle>
+              <CardDescription>กรอกข้อมูลสำหรับการประเมินราคา</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="generic-design-details">
+                  รายละเอียดการประเมินราคา <span className="text-destructive">*</span>
+                </Label>
+                <Textarea
+                  id="generic-design-details"
+                  placeholder="พิมพ์รายละเอียด เช่น ขนาด/สี/โลโก้/ข้อความ/ตำแหน่งงาน/วัสดุ/ตัวอย่างที่ต้องการ"
+                  value={genericDesignDetails}
+                  onChange={(e) => setGenericDesignDetails(e.target.value)}
+                  className="min-h-[120px]"
+                />
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
       {/* Dynamic Form for "ไม่มีแบบ" - แสดงเมื่อเลือก "ไม่มีแบบ" และไม่ได้ใช้โมเดลเดิม */}
       {!usePreviousModel && hasDesign === "no-design" && selectedProductType && (
@@ -2596,9 +2670,9 @@ export default function AddPriceEstimation() {
             {/* รายละเอียดการออกแบบ - สำหรับทุกสินค้า */}
             <div className="space-y-2">
               <Label htmlFor="design-description">รายละเอียดการออกแบบ</Label>
-              <Textarea 
-                id="design-description" 
-                placeholder="กรอกรายละเอียดการออกแบบที่ต้องการ เช่น แนวคิด สี รูปแบบ ฯลฯ" 
+              <Textarea
+                id="design-description"
+                placeholder="กรอกรายละเอียดการออกแบบที่ต้องการ เช่น แนวคิด สี รูปแบบ ฯลฯ"
                 value={designDescription}
                 onChange={(e) => setDesignDescription(e.target.value)}
                 rows={4}
@@ -2624,9 +2698,9 @@ export default function AddPriceEstimation() {
                 {inscriptionPlate === "receive" && (
                   <div className="space-y-2">
                     <Label htmlFor="inscription-details-no-design">รายละเอียดป้ายจารึก</Label>
-                    <Textarea 
-                      id="inscription-details-no-design" 
-                      placeholder="กรอกรายละเอียดป้ายจารึก" 
+                    <Textarea
+                      id="inscription-details-no-design"
+                      placeholder="กรอกรายละเอียดป้ายจารึก"
                       value={inscriptionDetails}
                       onChange={(e) => setInscriptionDetails(e.target.value)}
                     />
@@ -2650,12 +2724,12 @@ export default function AddPriceEstimation() {
               <Upload className="mx-auto h-12 w-12 text-muted-foreground" />
               <p className="mt-2 text-sm text-muted-foreground">อัปโหลดไฟล์</p>
               <p className="text-xs text-muted-foreground mt-1">รองรับไฟล์ PDF, รูปภาพ, AI, และอื่นๆ</p>
-              <Input 
-                type="file" 
-                className="hidden" 
-                id="file-attachment" 
-                accept="image/*,.pdf,.ai,.psd,.eps" 
-                multiple 
+              <Input
+                type="file"
+                className="hidden"
+                id="file-attachment"
+                accept="image/*,.pdf,.ai,.psd,.eps"
+                multiple
                 onChange={handleFileChange}
               />
               <Button variant="outline" className="mt-3" onClick={() => document.getElementById('file-attachment')?.click()}>
@@ -2677,9 +2751,9 @@ export default function AddPriceEstimation() {
                           ({(file.size / 1024).toFixed(1)} KB)
                         </span>
                       </div>
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         onClick={() => removeFile(index)}
                         className="h-8 w-8 p-0 text-destructive hover:text-destructive"
                       >

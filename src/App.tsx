@@ -87,6 +87,7 @@ import VehicleRequestManagement from "./pages/production/VehicleRequestManagemen
 import ProductionReports from "./pages/production/ProductionReports";
 import ProductionProductInventory from "./pages/production/ProductInventory";
 import DepartmentSelection from "./pages/DepartmentSelection";
+import Login from "./pages/Login";
 import StandalonePettyCash from "./pages/StandalonePettyCash";
 import Communication from "./pages/Communication";
 import Reports from "./pages/Reports";
@@ -107,7 +108,8 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<DepartmentSelection />} />
+          <Route path="/" element={<Login />} />
+          <Route path="/select-department" element={<DepartmentSelection />} />
           <Route path="/petty-cash" element={
             <DashboardLayout>
               <StandalonePettyCash />

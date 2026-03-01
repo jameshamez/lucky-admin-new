@@ -53,7 +53,7 @@ const loadFilters = () => {
   try {
     const saved = sessionStorage.getItem(STORAGE_KEY);
     if (saved) return JSON.parse(saved);
-  } catch {}
+  } catch { }
   return null;
 };
 
@@ -61,15 +61,20 @@ const loadFilters = () => {
 const saveFilters = (filters: Record<string, any>) => {
   try {
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(filters));
-  } catch {}
+  } catch { }
 };
+
+const API_BASE = "https://finfinphone.com/api-lucky/admin";
 
 export default function PriceEstimation() {
   const navigate = useNavigate();
-  
+
   // Load persisted filters
   const saved = loadFilters();
-  
+
+  const [estimations, setEstimations] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
   const [searchTerm, setSearchTerm] = useState(saved?.searchTerm || "");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedEstimation, setSelectedEstimation] = useState<number | null>(null);
@@ -78,11 +83,11 @@ export default function PriceEstimation() {
   const [productTypeFilter, setProductTypeFilter] = useState<string>(saved?.productTypeFilter || "all");
   const [statusFilter, setStatusFilter] = useState<string>(saved?.statusFilter || "all");
   const [revisionDialogOpen, setRevisionDialogOpen] = useState(false);
-  const [revisionEstimation, setRevisionEstimation] = useState<typeof estimations[0] | null>(null);
+  const [revisionEstimation, setRevisionEstimation] = useState<any | null>(null);
   const [revisionNote, setRevisionNote] = useState("");
   const [revisionReasons, setRevisionReasons] = useState<string[]>([]);
   const [captureDialogOpen, setCaptureDialogOpen] = useState(false);
-  const [captureEstimation, setCaptureEstimation] = useState<typeof estimations[0] | null>(null);
+  const [captureEstimation, setCaptureEstimation] = useState<any | null>(null);
 
   // Column header filters
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>(saved?.columnFilters || {});
@@ -118,45 +123,50 @@ export default function PriceEstimation() {
     "เสนอลูกค้า", "ยืนยันเรียบร้อย", "ยกเลิก"
   ];
 
-  // Mock data for price estimations
-  const estimations = [
-    {
-      id: 1, estimateId: "EST-240115001", date: "2024-01-15", lineName: "customer_line_001",
-      productType: "เหรียญสั่งผลิต", quantity: 100, price: 15000, status: "ยื่นคำขอประเมิน",
-      revisionCount: 0, salesOwner: "สมหญิง ใจดี",
-      material: "ซิงค์อัลลอย", finish: "Shiny Gold", notes: "ลูกค้าต้องการด่วน",
-    },
-    {
-      id: 2, estimateId: "EST-240114001", date: "2024-01-14", lineName: "customer_line_002",
-      productType: "เหรียญสั่งผลิต", quantity: 50, price: 25000, status: "เสนอราคา",
-      revisionCount: 0, salesOwner: "พนักงานขาย B",
-      material: "ทองเหลือง", finish: "Antique Bronze", notes: "",
-    },
-    {
-      id: 3, estimateId: "EST-240113001", date: "2024-01-13", lineName: "customer_line_003",
-      productType: "โล่สั่งผลิต", quantity: 200, price: 8000, status: "ยกเลิก",
-      revisionCount: 0, salesOwner: "วิภา รักษ์ดี",
-      material: "อะคริลิค", finish: "UV Print", notes: "ยกเลิกเนื่องจากเปลี่ยนใจ",
-    },
-    {
-      id: 4, estimateId: "EST-240112001", date: "2024-01-12", lineName: "customer_line_004",
-      productType: "กระเป๋า", quantity: 150, price: 18000, status: "อยู่ระหว่างการประเมินราคา",
-      revisionCount: 0, salesOwner: "สมหญิง ใจดี",
-      material: "ผ้าแคนวาส", finish: "สกรีน", notes: "พิมพ์ลายตามแบบลูกค้า",
-    },
-    {
-      id: 5, estimateId: "EST-240111001", date: "2024-01-11", lineName: "customer_line_005",
-      productType: "แก้ว", quantity: 75, price: 32000, status: "เสนอลูกค้า",
-      revisionCount: 1, salesOwner: "พนักงานขาย B",
-      material: "เซรามิก", finish: "Sublimation", notes: "มีโลโก้ 2 ด้าน",
-    },
-    {
-      id: 6, estimateId: "EST-240116001", date: "2024-01-16", lineName: "nun",
-      productType: "เหรียญสั่งผลิต", quantity: 100, price: 20000, status: "ยืนยันเรียบร้อย",
-      revisionCount: 0, salesOwner: "วิภา รักษ์ดี",
-      material: "ซิงค์อัลลอย", finish: "Shiny Silver", notes: "",
+  // Fetch actual data from API
+  const fetchEstimations = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const res = await fetch(`${API_BASE}/price_estimations.php`);
+      if (!res.ok) throw new Error("Failed to fetch");
+      const json = await res.json();
+      if (json.status === "success" && json.data) {
+        const mappedData = json.data.map((item: any) => {
+          let detailObj = {};
+          try {
+            detailObj = typeof item.details === 'string' ? JSON.parse(item.details) : (item.details || {});
+            if (typeof detailObj !== 'object' || detailObj === null) detailObj = {};
+          } catch (e) { }
+
+          return {
+            id: item.id,
+            estimateId: item.estimate_id,
+            date: item.estimation_date,
+            lineName: item.customer_line || item.customer_name || "-", // fallback string
+            productType: (detailObj as any)?.productCategoryText || item.product_category || item.product_type || "-",
+            quantity: item.quantity || 0,
+            price: item.price || 0,
+            status: String(item.status) === "0" ? "ยื่นคำขอประเมิน" : item.status,
+            revisionCount: item.revision_count || 0,
+            salesOwner: item.sales_owner_id || "ระบบ", // normally fetch name
+            material: (detailObj as any)?.material || "-",
+            finish: (detailObj as any)?.finish || "-",
+            notes: item.notes || ""
+          };
+        });
+        setEstimations(mappedData);
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("ดึงข้อมูลการประเมินราคาล้มเหลว");
+    } finally {
+      setIsLoading(false);
     }
-  ];
+  }, []);
+
+  useEffect(() => {
+    fetchEstimations();
+  }, [fetchEstimations]);
 
   const productTypes = productTypesList;
 
@@ -167,7 +177,7 @@ export default function PriceEstimation() {
     quoted: estimations.filter(e => e.status === "เสนอราคา").length,
     proposed: estimations.filter(e => e.status === "เสนอลูกค้า").length,
     confirmed: estimations.filter(e => e.status === "ยืนยันเรียบร้อย").length,
-  }), []);
+  }), [estimations]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -182,7 +192,7 @@ export default function PriceEstimation() {
   };
 
   // Deep search across all fields
-  const deepSearch = useCallback((estimation: typeof estimations[0], term: string): boolean => {
+  const deepSearch = useCallback((estimation: any, term: string): boolean => {
     if (!term) return true;
     const lowerTerm = term.toLowerCase();
     return Object.values(estimation).some(value => {
@@ -206,21 +216,32 @@ export default function PriceEstimation() {
     return estimations.filter(estimation => {
       // Global deep search
       const matchesSearch = deepSearch(estimation, searchTerm);
-      
+
       // Main date range filter
       const estimationDate = new Date(estimation.date);
-      const matchesDateRange = (!startDate || estimationDate >= startDate) && (!endDate || estimationDate <= endDate);
-      
+      estimationDate.setHours(0, 0, 0, 0);
+      let matchesDateRange = true;
+      if (startDate) {
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        if (estimationDate < start) matchesDateRange = false;
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        if (estimationDate > end) matchesDateRange = false;
+      }
+
       // Main dropdown filters
-      const matchesProductType = productTypeFilter === "all" || estimation.productType === productTypeFilter;
+      const matchesProductType = productTypeFilter === "all" || (estimation.productType || "").toLowerCase().includes(productTypeFilter.toLowerCase());
       const matchesStatus = statusFilter === "all" || estimation.status === statusFilter;
 
       // Column header filters
-      const matchesColEstimateId = !columnFilters.estimateId || estimation.estimateId.toLowerCase().includes(columnFilters.estimateId.toLowerCase());
-      const matchesColLineName = !columnFilters.lineName || estimation.lineName.toLowerCase().includes(columnFilters.lineName.toLowerCase());
-      const matchesColProductType = !columnFilters.productType || columnFilters.productType === "all" || estimation.productType === columnFilters.productType;
-      const matchesColSalesOwner = !columnFilters.salesOwner || estimation.salesOwner.toLowerCase().includes(columnFilters.salesOwner.toLowerCase());
-      const matchesColQuantity = !columnFilters.quantity || estimation.quantity.toString().includes(columnFilters.quantity);
+      const matchesColEstimateId = !columnFilters.estimateId || (estimation.estimateId || "").toLowerCase().includes(columnFilters.estimateId.toLowerCase());
+      const matchesColLineName = !columnFilters.lineName || (estimation.lineName || "").toLowerCase().includes(columnFilters.lineName.toLowerCase());
+      const matchesColProductType = !columnFilters.productType || columnFilters.productType === "all" || (estimation.productType || "").toLowerCase().includes(columnFilters.productType.toLowerCase());
+      const matchesColSalesOwner = !columnFilters.salesOwner || (estimation.salesOwner || "").toLowerCase().includes(columnFilters.salesOwner.toLowerCase());
+      const matchesColQuantity = !columnFilters.quantity || String(estimation.quantity || "").includes(columnFilters.quantity);
 
       // Status multi-select column filter
       const matchesStatusMulti = statusMultiFilter.length === 0 || statusMultiFilter.includes(estimation.status);
@@ -241,9 +262,9 @@ export default function PriceEstimation() {
         matchesColEstimateId && matchesColLineName && matchesColProductType &&
         matchesColSalesOwner && matchesColQuantity && matchesStatusMulti && matchesColDate;
     });
-  }, [searchTerm, startDate, endDate, productTypeFilter, statusFilter, columnFilters, statusMultiFilter, columnDateRange, deepSearch]);
+  }, [estimations, searchTerm, startDate, endDate, productTypeFilter, statusFilter, columnFilters, statusMultiFilter, columnDateRange, deepSearch]);
 
-  const hasActiveFilters = searchTerm || startDate || endDate || productTypeFilter !== "all" || statusFilter !== "all" || 
+  const hasActiveFilters = searchTerm || startDate || endDate || productTypeFilter !== "all" || statusFilter !== "all" ||
     Object.values(columnFilters).some(v => v && v !== "all") || statusMultiFilter.length > 0 || columnDateRange?.from || columnDateRange?.to;
 
   const clearFilters = () => {
@@ -380,22 +401,50 @@ export default function PriceEstimation() {
     setDeleteDialogOpen(true);
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (selectedEstimation) {
-      toast.success("ลบรายการประเมินราคาเรียบร้อยแล้ว");
-      setDeleteDialogOpen(false);
-      setSelectedEstimation(null);
+      try {
+        const res = await fetch(`${API_BASE}/price_estimations.php?id=${selectedEstimation}`, {
+          method: 'DELETE'
+        });
+        if (!res.ok) throw new Error("Failed to delete");
+
+        toast.success("ลบรายการประเมินราคาเรียบร้อยแล้ว");
+        setDeleteDialogOpen(false);
+        setSelectedEstimation(null);
+        fetchEstimations(); // Refresh data
+      } catch (err) {
+        console.error(err);
+        toast.error("เกิดข้อผิดพลาดในการลบรายการ");
+      }
     }
   };
 
-  const handleCreateOrder = (estimation: typeof estimations[0]) => {
-    navigate("/sales/create-order", { 
+  const handleCreateOrder = (estimation: any) => {
+    navigate("/sales/create-order", {
       state: { fromEstimation: true, estimationId: estimation.id, estimationData: estimation }
     });
   };
 
+  const updateStatus = async (id: number, newStatus: string) => {
+    try {
+      const payload = { status: newStatus };
+      const res = await fetch(`${API_BASE}/price_estimations.php/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new Error("Failed update");
+      toast.success(`เปลี่ยนสถานะเป็น '${newStatus}' เรียบร้อยแล้ว`);
+      fetchEstimations();
+    } catch (err) {
+      console.error(err);
+      toast.error("เกิดข้อผิดพลาดในการเปลี่ยนสถานะ");
+    }
+  };
+
   // Render action buttons based on status (Sales side)
-  const renderActionButtons = (estimation: typeof estimations[0]) => {
+  const renderActionButtons = (estimation: any) => {
     const { status, id } = estimation;
 
     const ViewButton = () => (
@@ -415,7 +464,7 @@ export default function PriceEstimation() {
         return (
           <div className="flex items-center justify-start gap-3">
             <ViewButton />
-            <Button variant="outline" size="sm" onClick={() => toast.success("ยกเลิกคำขอประเมินราคาเรียบร้อยแล้ว")} className="gap-2 border-red-500 text-red-600 hover:bg-red-50 hover:text-red-700">
+            <Button variant="outline" size="sm" onClick={() => updateStatus(id, "ยกเลิก")} className="gap-2 border-red-500 text-red-600 hover:bg-red-50 hover:text-red-700">
               <XCircle className="h-4 w-4" />
               ยกเลิกคำขอ
             </Button>
@@ -432,7 +481,7 @@ export default function PriceEstimation() {
         return (
           <div className="flex items-center justify-start gap-3">
             <ViewButton />
-            <Button size="sm" onClick={() => toast.success("เปลี่ยนสถานะเป็น 'เสนอลูกค้า' เรียบร้อยแล้ว")} className="gap-2 bg-purple-600 text-white hover:bg-purple-700">
+            <Button size="sm" onClick={() => updateStatus(id, "เสนอลูกค้า")} className="gap-2 bg-purple-600 text-white hover:bg-purple-700">
               <Send className="h-4 w-4" />
               ส่งเสนอลูกค้าแล้ว
             </Button>
@@ -482,7 +531,7 @@ export default function PriceEstimation() {
 
       {/* Status Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <Card 
+        <Card
           className={cn("cursor-pointer transition-all hover:shadow-md border-l-4 border-l-blue-500", statusFilter === "ยื่นคำขอประเมิน" && "ring-2 ring-blue-500")}
           onClick={() => setStatusFilter(statusFilter === "ยื่นคำขอประเมิน" ? "all" : "ยื่นคำขอประเมิน")}
         >
@@ -497,7 +546,7 @@ export default function PriceEstimation() {
           </CardContent>
         </Card>
 
-        <Card 
+        <Card
           className={cn("cursor-pointer transition-all hover:shadow-md border-l-4 border-l-orange-500", statusFilter === "อยู่ระหว่างการประเมินราคา" && "ring-2 ring-orange-500")}
           onClick={() => setStatusFilter(statusFilter === "อยู่ระหว่างการประเมินราคา" ? "all" : "อยู่ระหว่างการประเมินราคา")}
         >
@@ -512,7 +561,7 @@ export default function PriceEstimation() {
           </CardContent>
         </Card>
 
-        <Card 
+        <Card
           className={cn("cursor-pointer transition-all hover:shadow-md border-l-4 border-l-purple-500", statusFilter === "เสนอราคา" && "ring-2 ring-purple-500")}
           onClick={() => setStatusFilter(statusFilter === "เสนอราคา" ? "all" : "เสนอราคา")}
         >
@@ -527,7 +576,7 @@ export default function PriceEstimation() {
           </CardContent>
         </Card>
 
-        <Card 
+        <Card
           className={cn("cursor-pointer transition-all hover:shadow-md border-l-4 border-l-amber-500", statusFilter === "เสนอลูกค้า" && "ring-2 ring-amber-500")}
           onClick={() => setStatusFilter(statusFilter === "เสนอลูกค้า" ? "all" : "เสนอลูกค้า")}
         >
@@ -542,7 +591,7 @@ export default function PriceEstimation() {
           </CardContent>
         </Card>
 
-        <Card 
+        <Card
           className={cn("cursor-pointer transition-all hover:shadow-md border-l-4 border-l-green-500", statusFilter === "ยืนยันเรียบร้อย" && "ring-2 ring-green-500")}
           onClick={() => setStatusFilter(statusFilter === "ยืนยันเรียบร้อย" ? "all" : "ยืนยันเรียบร้อย")}
         >
@@ -580,14 +629,14 @@ export default function PriceEstimation() {
                 </Button>
               )}
             </div>
-            
+
             {/* Main Filters */}
             <div className="flex flex-wrap items-center gap-3">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Filter className="h-4 w-4" />
                 <span>ตัวกรอง:</span>
               </div>
-              
+
               {/* Date Range Filter */}
               <div className="flex items-center gap-2">
                 <Popover>
@@ -803,26 +852,38 @@ export default function PriceEstimation() {
 
               <div className="space-y-2">
                 <Label className="text-sm font-medium">รายละเอียดเพิ่มเติม</Label>
-                <Textarea placeholder="ระบุรายละเอียดที่ต้องการแก้ไข เช่น งบประมาณใหม่ วัสดุที่ต้องการ..." value={revisionNote} onChange={(e) => setRevisionNote(e.target.value)} rows={3} />
+                <Textarea value={revisionNote} onChange={(e) => setRevisionNote(e.target.value)} placeholder="เช่น ลูกค้ามีงบเพียง xxx บาท หรือ ต้องการเปลี่ยนวัสดุจากอะคริลิคเป็นไม้..." className="h-20 resize-none text-sm" />
               </div>
             </div>
           )}
 
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter className="mt-4">
             <Button variant="outline" onClick={() => setRevisionDialogOpen(false)}>ยกเลิก</Button>
-            <Button
-              onClick={() => {
-                if (revisionReasons.length === 0 && !revisionNote.trim()) {
-                  toast.error("กรุณาระบุสาเหตุหรือรายละเอียดที่ต้องการแก้ไข");
-                  return;
+            <Button onClick={async () => {
+              if (revisionEstimation) {
+                try {
+                  const payload = {
+                    status: "อยู่ระหว่างการประเมินราคา",
+                    revision_count: (revisionEstimation.revisionCount || 0) + 1,
+                    notes: `${revisionEstimation.notes ? revisionEstimation.notes + "\n" : ""}การขอแก้ราคา: ${revisionReasons.join(", ")} ${revisionNote ? `- ${revisionNote}` : ""}`
+                  };
+                  const res = await fetch(`${API_BASE}/price_estimations.php/${revisionEstimation.id}`, {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                  });
+                  if (!res.ok) throw new Error("Failed to revise");
+                  toast.success("ส่งคำขอแก้ไขราคาเรียบร้อยแล้ว");
+                  setRevisionDialogOpen(false);
+                  fetchEstimations();
+                } catch (err) {
+                  console.error(err);
+                  toast.error("เกิดข้อผิดพลาดในการขอแก้ราคา");
                 }
-                toast.success("ส่งคำขอแก้ไขราคาไปยังฝ่ายจัดซื้อเรียบร้อยแล้ว");
-                setRevisionDialogOpen(false);
-              }}
-              className="gap-2 bg-orange-500 text-white hover:bg-orange-600"
-            >
+              }
+            }} className="gap-2 bg-orange-500 hover:bg-orange-600">
               <RotateCcw className="h-4 w-4" />
-              ขอแก้ไขราคา
+              ยืนยันการขอแก้ราคา
             </Button>
           </DialogFooter>
         </DialogContent>

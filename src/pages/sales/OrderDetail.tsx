@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { 
+import {
   ArrowLeft,
   AlertTriangle,
   Clock,
@@ -31,6 +31,7 @@ import {
   MapPin,
   ThumbsUp
 } from "lucide-react";
+import { toast } from "sonner";
 import artworkSample from "@/assets/artwork-sample.png";
 import QCVerificationCards from "@/components/sales/QCVerificationCards";
 import LogisticsDeliveryCards from "@/components/sales/LogisticsDeliveryCards";
@@ -109,7 +110,7 @@ interface Order {
   orderItems: OrderItem[];
 }
 
-const orders: Order[] = [
+const mockOrders: Order[] = [
   {
     id: "JOB-2024-001",
     customer: "บริษัท เอบีซี จำกัด",
@@ -441,7 +442,7 @@ const getStatusIndex = (status: string) => {
 const getSlowestItem = (items: OrderItem[]) => {
   let slowestIndex = Infinity;
   let slowestItem: OrderItem | null = null;
-  
+
   items.forEach(item => {
     const index = getStatusIndex(item.currentStatus);
     if (index < slowestIndex && index >= 0) {
@@ -449,7 +450,7 @@ const getSlowestItem = (items: OrderItem[]) => {
       slowestItem = item;
     }
   });
-  
+
   return slowestItem;
 };
 
@@ -479,7 +480,123 @@ export default function OrderDetail() {
     vehicleInfo: null as { driverName?: string; vehiclePlate?: string; contactPhone?: string } | null,
   };
 
-  const order = orders.find(o => o.id === orderId);
+  const [order, setOrder] = useState<Order | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchOrderDetail = async () => {
+      if (!orderId) return;
+      setIsLoading(true);
+      try {
+        let finalOrderId = orderId;
+
+        // If orderId is not numeric (is a job_id like JOB-xxx), find the numeric order_id first
+        if (isNaN(Number(orderId))) {
+          const searchRes = await fetch(`https://finfinphone.com/api-lucky/admin/orders.php?search=${orderId}`);
+          const searchJson = await searchRes.json();
+          if (searchJson.status === "success" && searchJson.data && searchJson.data.length > 0) {
+            // Find exact match by job_id
+            const match = searchJson.data.find((d: any) => d.job_id === orderId);
+            if (match) {
+              finalOrderId = String(match.order_id);
+            }
+          }
+        }
+
+        // Fetch full detail using numeric id (actually uses order_id param if my fix at line 57 works or search works)
+        // Since I fixed line 57 to order_id = ?, I'll try to find a way to pass it.
+        // Actually, let's use the param name that works: order_id
+        const res = await fetch(`https://finfinphone.com/api-lucky/admin/orders.php?order_id=${finalOrderId}`);
+        const json = await res.json();
+
+        if (json.status === "success" && json.data) {
+          // The API might return the array from search or single object from detail
+          const apiData = Array.isArray(json.data) ? json.data[0] : json.data;
+
+          if (!apiData) {
+            setOrder(null);
+            return;
+          }
+
+          // Broad status mapping
+          let broadStatus = "pending_approval";
+          const os = apiData.order_status;
+          if (["กำลังผลิต", "ตรวจสอบ Artwork จากโรงงาน", "ตรวจสอบ CNC", "อัปเดทปั้มชิ้นงาน", "อัปเดตสาย"].includes(os)) {
+            broadStatus = "in_production";
+          } else if (["อัปเดตชิ้นงานก่อนจัดส่ง", "งานเสร็จสมบูรณ์"].includes(os)) {
+            broadStatus = "ready_to_ship";
+          } else if (["อยู่ระหว่างขนส่ง", "สินค้ามาส่งที่ร้าน", "จัดส่งเรียบร้อย"].includes(os)) {
+            broadStatus = "shipped";
+          }
+
+          // Map order items
+          const mappedItems: OrderItem[] = (apiData.items || []).map((item: any) => ({
+            id: item.id || item.item_id,
+            name: item.product_name || apiData.job_name || "สินค้า",
+            description: item.notes || apiData.notes || "-",
+            quantity: parseInt(item.quantity) || 1,
+            currentStatus: item.status || apiData.order_status || "รอคำสั่งซื้อ",
+            statusHistory: [],
+            productType: apiData.product_category === "readymade" ? "readymade" : "madeToOrder",
+            material: item.details?.material || "-",
+            model: item.details?.model || "-",
+            modelSize: item.details?.size || "-",
+          }));
+
+          // Fallback if no items array
+          if (mappedItems.length === 0) {
+            mappedItems.push({
+              id: 1,
+              name: apiData.job_name || "สินค้า",
+              description: apiData.notes || "-",
+              quantity: 1,
+              currentStatus: apiData.order_status || "รอคำสั่งซื้อ",
+              statusHistory: [],
+              productType: apiData.product_category === "readymade" ? "readymade" : "madeToOrder"
+            });
+          }
+
+          setOrder({
+            id: apiData.job_id || String(apiData.order_id),
+            customer: apiData.customer_name || "ไม่ระบุชื่อ",
+            items: apiData.job_name || "ไม่ระบุรายการ",
+            orderDate: (apiData.order_date || "").split(" ")[0],
+            dueDate: apiData.delivery_date || apiData.usage_date || "-",
+            status: broadStatus,
+            value: parseFloat(apiData.total_amount) || 0,
+            progress: 0,
+            type: apiData.product_category || "internal",
+            location: apiData.event_location || "domestic",
+            department: apiData.responsible_person || "-",
+            lineId: apiData.customer_line || "-",
+            phone: apiData.customer_phone || "-",
+            email: apiData.customer_email || "-",
+            address: apiData.customer_address || apiData.delivery_address || "-",
+            taxId: apiData.tax_id || "-",
+            orderItems: mappedItems
+          });
+        }
+      } catch (err) {
+        console.error(err);
+        toast.error("ดึงข้อมูลคำสั่งซื้อล้มเหลว");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchOrderDetail();
+  }, [orderId]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-[#F7F7F7] p-6 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-muted-foreground">กำลังโหลดรายละเอียดพื้นฐาน...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!order) {
     return (
@@ -488,8 +605,8 @@ export default function OrderDetail() {
           <div className="bg-white rounded-lg shadow-sm border p-12 text-center">
             <Package className="w-16 h-16 text-muted-foreground mx-auto mb-4 opacity-50" />
             <p className="text-muted-foreground">ไม่พบคำสั่งซื้อที่ต้องการ</p>
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               className="mt-4"
               onClick={() => navigate('/sales/track-orders')}
             >
@@ -505,7 +622,7 @@ export default function OrderDetail() {
   const getStatusBadge = (status: string) => {
     const config = statusConfig[status as keyof typeof statusConfig];
     const IconComponent = config.icon;
-    
+
     return (
       <Badge className={`${config.color} ${config.textColor} border-0 flex items-center gap-1.5 px-3 py-1`}>
         <IconComponent className="w-3 h-3" />
@@ -518,13 +635,13 @@ export default function OrderDetail() {
     const index = getStatusIndex(status);
     const total = productStatusList.length;
     const progress = total > 0 ? ((index + 1) / total) * 100 : 0;
-    
+
     let bgColor = "bg-gray-100 text-gray-800";
     if (progress >= 90) bgColor = "bg-green-100 text-green-800";
     else if (progress >= 60) bgColor = "bg-blue-100 text-blue-800";
     else if (progress >= 30) bgColor = "bg-amber-100 text-amber-800";
     else bgColor = "bg-gray-100 text-gray-800";
-    
+
     return (
       <Badge className={`${bgColor} font-medium`}>
         {status}
@@ -542,8 +659,8 @@ export default function OrderDetail() {
           {/* Header */}
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-lg shadow-sm">
             <div className="flex items-center gap-4">
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 size="sm"
                 onClick={() => navigate('/sales/track-orders')}
               >
@@ -610,7 +727,7 @@ export default function OrderDetail() {
               <div>
                 <p className="text-sm text-muted-foreground">ประเภทสินค้า / สินค้า</p>
                 <p className="font-medium">
-                  {(order.orderItems[0] as any)?.productType === "readymade" 
+                  {(order.orderItems[0] as any)?.productType === "readymade"
                     ? `สินค้าสำเร็จรูป > ${order.orderItems[0]?.name || '-'}`
                     : `สินค้าสั่งผลิต > ${order.orderItems[0]?.name || '-'}`
                   }
@@ -629,17 +746,17 @@ export default function OrderDetail() {
                 <p className="text-sm text-muted-foreground">จำนวน</p>
                 <p className="font-medium">{order.orderItems.reduce((sum, item) => sum + item.quantity, 0)} ชิ้น</p>
               </div>
-          </div>
+            </div>
 
-          {/* Production Progress Bar */}
-          <ProductionProgressBar currentStatus={order.orderItems[0]?.currentStatus || ""} />
+            {/* Production Progress Bar */}
+            <ProductionProgressBar currentStatus={order.orderItems[0]?.currentStatus || ""} />
           </div>
 
           {/* Product Details - Dynamic based on product type */}
           {(() => {
             const currentItem = order.orderItems[0] as any;
             const isReadymadeTrophy = currentItem?.productType === "readymade" && currentItem?.name?.includes("ถ้วยรางวัล");
-            
+
             if (isReadymadeTrophy) {
               // Trophy size details for table display
               const trophySizes = [
@@ -647,11 +764,11 @@ export default function OrderDetail() {
                 { size: "B", quantity: 30 },
                 { size: "C", quantity: 30 },
               ];
-              
+
               return (
                 <div className="bg-white rounded-lg shadow-sm border p-6">
                   <h2 className="text-lg font-semibold mb-4">รายละเอียดสินค้า</h2>
-                  
+
                   {/* Trophy Product Table */}
                   <div className="rounded-lg border overflow-hidden mb-6">
                     <Table>
@@ -681,7 +798,7 @@ export default function OrderDetail() {
                       </TableBody>
                     </Table>
                   </div>
-                  
+
                   {/* Additional Trophy Details */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div>
@@ -700,17 +817,17 @@ export default function OrderDetail() {
                 </div>
               );
             }
-            
+
             // Check if it's a readymade medal
             const isReadymadeMedal = currentItem?.productType === "readymade" && currentItem?.name?.includes("เหรียญสำเร็จรูป");
-            
+
             if (isReadymadeMedal) {
               const colorQuantities = [
                 { color: "ทอง", quantity: 100 },
                 { color: "เงิน", quantity: 50 },
                 { color: "ทองแดง", quantity: 70 },
               ];
-              
+
               return (
                 <div className="bg-white rounded-lg shadow-sm border p-6">
                   <h2 className="text-lg font-semibold mb-6">รายละเอียดสินค้า</h2>
@@ -749,7 +866,7 @@ export default function OrderDetail() {
                 </div>
               );
             }
-            
+
             // Default product details for other product types (made-to-order)
             return (
               <div className="bg-white rounded-lg shadow-sm border p-6">
@@ -799,21 +916,21 @@ export default function OrderDetail() {
           {/* Artwork Info */}
           <div className="bg-white rounded-lg shadow-sm border p-6">
             <h2 className="text-lg font-semibold mb-4">ข้อมูล Artwork</h2>
-            
+
             {/* Artwork Image */}
             <div className="mb-6">
               <p className="text-sm text-muted-foreground mb-3">รูป Artwork</p>
               <div className="border rounded-lg p-4 bg-muted/20">
                 <div className="flex justify-center">
-                  <img 
-                    src={artworkSample} 
-                    alt="Artwork Preview" 
+                  {/* <img
+                    src={artworkSample}
+                    alt="Artwork Preview"
                     className="max-w-full h-auto max-h-96 object-contain cursor-pointer hover:opacity-90 transition-opacity"
-                  />
+                  /> */}
                 </div>
-                <p className="text-sm text-primary text-center mt-3 cursor-pointer hover:underline">
+                {/* <p className="text-sm text-primary text-center mt-3 cursor-pointer hover:underline">
                   คลิกที่รูปเพื่อขยายเต็มจอ
-                </p>
+                </p> */}
               </div>
             </div>
 
@@ -822,12 +939,12 @@ export default function OrderDetail() {
               <p className="text-sm text-muted-foreground mb-3">ไฟล์งานออกแบบ</p>
               <div className="border rounded-lg p-4 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
+                  {/* <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
                     <FileText className="w-5 h-5 text-orange-600" />
-                  </div>
+                  </div> */}
                   <div>
-                    <p className="font-medium">artwork_final_v3.ai</p>
-                    <p className="text-sm text-muted-foreground">18/1/2567 14:32:15 • สมชาย กราฟิก</p>
+                    {/* <p className="font-medium">artwork_final_v3.ai</p>
+                    <p className="text-sm text-muted-foreground">18/1/2567 14:32:15 • สมชาย กราฟิก</p> */}
                   </div>
                 </div>
                 <Button variant="outline" size="sm" onClick={() => setShowUploadHistory(true)}>
@@ -844,7 +961,7 @@ export default function OrderDetail() {
               <DialogHeader>
                 <DialogTitle>ประวัติการอัพโหลดไฟล์</DialogTitle>
               </DialogHeader>
-              <div className="space-y-3">
+              {/* <div className="space-y-3">
                 <div className="border rounded-lg p-3 bg-primary/5">
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 bg-orange-100 rounded flex items-center justify-center">
@@ -879,7 +996,7 @@ export default function OrderDetail() {
                     </div>
                   </div>
                 </div>
-              </div>
+              </div> */}
             </DialogContent>
           </Dialog>
 
@@ -890,7 +1007,7 @@ export default function OrderDetail() {
             const currentItem = order.orderItems[0] as any;
             const isReadymadeTrophy = currentItem?.productType === "readymade" && currentItem?.name?.includes("ถ้วยรางวัล");
             const isReadymadeMedal = currentItem?.productType === "readymade" && currentItem?.name?.includes("เหรียญสำเร็จรูป");
-            
+
             // Define production steps based on product type
             const productionSteps = isReadymadeTrophy ? [
               { key: "จัดหา", label: "จัดหา" },
@@ -922,7 +1039,7 @@ export default function OrderDetail() {
 
             // Get current item's status
             const currentStatus = currentItem?.currentStatus || "";
-            
+
             // Find which step we're at
             const currentStepIndex = productionSteps.findIndex(s => s.key === currentStatus);
             const completedSteps = currentStepIndex >= 0 ? currentStepIndex + 1 : 0;
@@ -932,7 +1049,7 @@ export default function OrderDetail() {
 
             // Check if production has started
             const statusHistory = currentItem?.statusHistory || [];
-            const hasStartedProduction = statusHistory.some((h: any) => 
+            const hasStartedProduction = statusHistory.some((h: any) =>
               productionSteps.some(s => s.key === h.status)
             );
 
@@ -958,8 +1075,8 @@ export default function OrderDetail() {
                 <div className="flex items-center gap-3 mb-3">
                   <div className="flex-1">
                     <div className="w-full bg-muted rounded-full h-1.5">
-                      <div 
-                        className={`${isCompleted ? 'bg-green-500' : 'bg-amber-500'} h-1.5 rounded-full transition-all duration-300`} 
+                      <div
+                        className={`${isCompleted ? 'bg-green-500' : 'bg-amber-500'} h-1.5 rounded-full transition-all duration-300`}
                         style={{ width: `${progressPercent}%` }}
                       ></div>
                     </div>
@@ -1002,8 +1119,8 @@ export default function OrderDetail() {
                           <Clock className="w-4 h-4 text-amber-500" />
                         )}
                         <span className="text-sm font-medium">ขั้นตอนทั้งหมด</span>
-                        <Badge 
-                          variant="secondary" 
+                        <Badge
+                          variant="secondary"
                           className={`text-xs h-5 ${isCompleted ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}
                         >
                           {completedSteps}/{totalSteps}
@@ -1021,8 +1138,8 @@ export default function OrderDetail() {
                           const approvalList = multiApprovalData[step.key] || [];
 
                           return (
-                            <div 
-                              key={step.key} 
+                            <div
+                              key={step.key}
                               className={`py-1.5 ${idx > 0 ? 'border-t' : ''}`}
                             >
                               <div className="flex items-center gap-3">
@@ -1033,9 +1150,9 @@ export default function OrderDetail() {
                                 ) : (
                                   <Circle className="w-4 h-4 text-gray-300 flex-shrink-0" />
                                 )}
-                                
+
                                 {!isFinalStep && (
-                                  <div 
+                                  <div
                                     className={`w-10 h-10 ${isStepCompleted || isCurrentStep ? 'bg-muted' : 'bg-gray-100'} rounded overflow-hidden flex-shrink-0 ${isStepCompleted ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
                                     onClick={() => isStepCompleted && setEnlargedImage(artworkSample)}
                                   >
@@ -1044,7 +1161,7 @@ export default function OrderDetail() {
                                     )}
                                   </div>
                                 )}
-                                
+
                                 <div className="flex-1 min-w-0">
                                   <p className={`text-sm font-medium ${!isStepCompleted && !isCurrentStep ? 'text-gray-400' : ''}`}>
                                     {step.label}
@@ -1078,8 +1195,8 @@ export default function OrderDetail() {
                               {isCurrentStep && hasMultiApproval && approvalList.length > 0 && (
                                 <div className="ml-14 mt-2 space-y-2">
                                   {approvalList.map((approval, aIdx) => (
-                                    <div 
-                                      key={aIdx} 
+                                    <div
+                                      key={aIdx}
                                       className={`flex items-center gap-3 p-2 rounded-lg ${approval.approved ? 'bg-green-50 border border-green-200' : 'bg-amber-50 border border-amber-200'}`}
                                     >
                                       {approval.approved ? (
@@ -1087,7 +1204,7 @@ export default function OrderDetail() {
                                       ) : (
                                         <Circle className="w-4 h-4 text-amber-500 flex-shrink-0" />
                                       )}
-                                      
+
                                       <div className="flex-1 min-w-0">
                                         <p className="text-sm font-medium">
                                           แผนก{approval.department}
@@ -1100,7 +1217,7 @@ export default function OrderDetail() {
                                           <p className="text-xs text-amber-600">รอตรวจสอบ</p>
                                         )}
                                       </div>
-                                      
+
                                       {approval.approved ? (
                                         <Badge className="bg-green-100 text-green-700 hover:bg-green-100 text-xs h-5">
                                           ผ่าน
@@ -1141,7 +1258,7 @@ export default function OrderDetail() {
           {order.id === "JOB-2024-001" && (
             <div className="bg-white rounded-lg shadow-sm border p-6">
               <h2 className="text-lg font-semibold mb-4">ข้อมูลออเดอร์และการจัดส่ง (จากแผนกจัดซื้อ)</h2>
-              <ProductionOrderInfoReadOnly 
+              <ProductionOrderInfoReadOnly
                 data={{
                   orderer: "สมชาย สุขใจ",
                   poNumber: "PO-2567-001",
@@ -1173,12 +1290,12 @@ export default function OrderDetail() {
             const currentItem = order.orderItems[0] as any;
             const isReadymadeTrophy = currentItem?.productType === "readymade" && currentItem?.name?.includes("ถ้วยรางวัล");
             const isReadymadeMedal = currentItem?.productType === "readymade" && currentItem?.name?.includes("เหรียญสำเร็จรูป");
-            
+
             // Don't show international shipping for readymade products (trophy & medal)
             if (isReadymadeTrophy || isReadymadeMedal) {
               return null;
             }
-            
+
             return (
               <div className="bg-white rounded-lg shadow-sm border p-4">
                 <div className="flex items-center gap-3 mb-3">
@@ -1189,17 +1306,17 @@ export default function OrderDetail() {
                     <h2 className="text-lg font-semibold">สถานะการขนส่งระหว่างประเทศ</h2>
                     <p className="text-xs text-muted-foreground">การขนส่งจากโรงงานต่างประเทศ</p>
                   </div>
-                  <Badge className="bg-green-500 text-white">เสร็จสิ้น</Badge>
+                  <Badge className="bg-amber-500 text-white">รอดำเนินการ</Badge>
                 </div>
 
-                {/* Progress bar - 100% */}
+                {/* Progress bar - 0% */}
                 <div className="flex items-center gap-3 mb-3">
                   <div className="flex-1">
                     <div className="w-full bg-muted rounded-full h-1.5">
-                      <div className="bg-green-500 h-1.5 rounded-full transition-all duration-300" style={{ width: '100%' }}></div>
+                      <div className="bg-amber-500 h-1.5 rounded-full transition-all duration-300" style={{ width: '0%' }}></div>
                     </div>
                   </div>
-                  <span className="text-sm font-medium text-green-600">100%</span>
+                  <span className="text-sm font-medium text-muted-foreground">0%</span>
                 </div>
 
                 {/* Timeline - Accordion */}
@@ -1207,46 +1324,44 @@ export default function OrderDetail() {
                   <AccordionItem value="shipping" className="border rounded-lg">
                     <AccordionTrigger className="px-3 py-2 hover:no-underline">
                       <div className="flex items-center gap-2">
-                        <CheckCircle2 className="w-4 h-4 text-green-500" />
+                        <Clock className="w-4 h-4 text-amber-500" />
                         <span className="text-sm font-medium">ขั้นตอนทั้งหมด</span>
-                        <Badge variant="secondary" className="text-xs h-5 bg-green-100 text-green-700">3/3</Badge>
+                        <Badge variant="secondary" className="text-xs h-5 bg-amber-100 text-amber-700">0/3</Badge>
                       </div>
                     </AccordionTrigger>
                     <AccordionContent className="px-3 pb-2">
                       <div className="space-y-2">
                         {/* Step 1 - ส่งออกจากโรงงาน */}
                         <div className="flex items-center gap-3 py-1.5">
-                          <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
+                          <Circle className="w-4 h-4 text-muted-foreground flex-shrink-0" />
                           <Factory className="w-4 h-4 text-muted-foreground flex-shrink-0" />
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium">ส่งออกจากโรงงาน</p>
-                            <p className="text-xs text-muted-foreground">30/12/2567 08:00 • ฝ่ายจัดซื้อ</p>
-                            <p className="text-xs text-blue-600">เอกสาร: Invoice, Packing List</p>
+                            <p className="text-xs text-muted-foreground">-</p>
                           </div>
-                          <Badge className="bg-green-100 text-green-700 hover:bg-green-100 text-xs h-5">เสร็จสิ้น</Badge>
+                          <Badge className="bg-gray-100 text-gray-500 hover:bg-gray-100 text-xs h-5">ยังไม่เริ่ม</Badge>
                         </div>
 
                         {/* Step 2 - อยู่ระหว่างขนส่ง */}
                         <div className="flex items-center gap-3 py-1.5 border-t">
-                          <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
+                          <Circle className="w-4 h-4 text-muted-foreground flex-shrink-0" />
                           <Ship className="w-4 h-4 text-muted-foreground flex-shrink-0" />
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium">อยู่ระหว่างขนส่ง</p>
-                            <p className="text-xs text-muted-foreground">วิธีขนส่ง: ทางเรือ • ETA: 8/1/2568</p>
+                            <p className="text-xs text-muted-foreground">-</p>
                           </div>
-                          <Badge className="bg-green-100 text-green-700 hover:bg-green-100 text-xs h-5">เสร็จสิ้น</Badge>
+                          <Badge className="bg-gray-100 text-gray-500 hover:bg-gray-100 text-xs h-5">ยังไม่เริ่ม</Badge>
                         </div>
 
                         {/* Step 3 - ถึงประเทศไทย */}
                         <div className="flex items-center gap-3 py-1.5 border-t">
-                          <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
+                          <Circle className="w-4 h-4 text-muted-foreground flex-shrink-0" />
                           <MapPin className="w-4 h-4 text-muted-foreground flex-shrink-0" />
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium">ถึงประเทศไทย</p>
-                            <p className="text-xs text-muted-foreground">8/1/2568 14:00 • ท่าเรือแหลมฉบัง</p>
-                            <p className="text-xs text-green-600">ผ่านพิธีการศุลกากรแล้ว</p>
+                            <p className="text-xs text-muted-foreground">-</p>
                           </div>
-                          <Badge className="bg-green-100 text-green-700 hover:bg-green-100 text-xs h-5">เสร็จสิ้น</Badge>
+                          <Badge className="bg-gray-100 text-gray-500 hover:bg-gray-100 text-xs h-5">ยังไม่เริ่ม</Badge>
                         </div>
                       </div>
                     </AccordionContent>
@@ -1259,30 +1374,31 @@ export default function OrderDetail() {
           {/* ============================== */}
           {/* Logistics & Delivery Cards - for JOB-2024-001 (หลัง International Shipping) */}
           {/* ============================== */}
-          {order.id === "JOB-2024-001" && (
+          {/* Logistics & Delivery Cards - shown when ready to ship or shipped */}
+          {(order.status === "shipped" || order.status === "ready_to_ship") && (
             <LogisticsDeliveryCards orderId={order.id} userRole="เซลล์" />
           )}
 
           {/* ============================== */}
-          {/* สถานะคลังสินค้า & QC - Shown for orders other than JOB-2024-001 */}
+          {/* สถานะคลังสินค้า & QC - Shown for non-shipped orders or after production */}
           {/* ============================== */}
-          {order.id !== "JOB-2024-001" && (() => {
+          {order.status !== "pending_approval" && (() => {
             const currentItem = order.orderItems[0] as any;
             const isReadymadeMedal = currentItem?.productType === "readymade" && currentItem?.name?.includes("เหรียญสำเร็จรูป");
             const isReadymadeTrophy = currentItem?.productType === "readymade" && currentItem?.name?.includes("ถ้วยรางวัล");
             const isReadymadeProduct = isReadymadeMedal || isReadymadeTrophy;
-            
+
             // Warehouse steps - simplified for ready-made products (no โกดัง steps)
             const warehouseSteps = isReadymadeProduct ? [
-              { key: "qc", label: "ตรวจนับ & QC ที่ร้าน", icon: "clipboard", detail: "10/1/2568 14:00 • QC: วิภา", subDetail: isReadymadeMedal ? "ผ่าน QC ครบ 150 ชิ้น" : "ผ่าน QC ครบ 100 ชิ้น", badge: "ผ่าน QC" },
-              { key: "ready", label: "พร้อมจัดส่งให้ลูกค้า", icon: "send", detail: "11/1/2568 09:00 • เตรียมแพ็คสินค้า", badge: "Ready" },
-              { key: "delivered", label: "จัดส่งสำเร็จ", icon: "thumbsup", detail: "12/1/2568 10:30 • ลูกค้ารับสินค้าเรียบร้อย", subDetail: isReadymadeMedal ? "ผู้รับ: คุณสมชาย (โรงเรียนอัสสัมชัญ)" : "ผู้รับ: คุณสมชาย (บริษัท เอบีซี จำกัด)", badge: "สำเร็จ", isClickable: true },
+              { key: "qc", label: "ตรวจนับ & QC ที่ร้าน", icon: "clipboard", detail: `${order.dueDate} 14:00 • QC: วิภา`, subDetail: isReadymadeMedal ? `ผ่าน QC ครบ ${order.orderItems[0].quantity} ชิ้น` : `ผ่าน QC ครบ ${order.orderItems[0].quantity} ชิ้น`, badge: "ผ่าน QC" },
+              { key: "ready", label: "พร้อมจัดส่งให้ลูกค้า", icon: "send", detail: `${order.dueDate} 09:00 • เตรียมแพ็คสินค้า`, badge: "Ready" },
+              { key: "delivered", label: "จัดส่งสำเร็จ", icon: "thumbsup", detail: `${order.dueDate} 10:30 • ลูกค้ารับสินค้าเรียบร้อย`, subDetail: `ผู้รับ: ${order.customer}`, badge: "สำเร็จ", isClickable: true },
             ] : [
-              { key: "warehouse", label: "รับเข้าโกดังไทย", icon: "warehouse", detail: "9/1/2568 10:00 • คลังสินค้า กรุงเทพ", subDetail: "จำนวนรับจริง: 100 ชิ้น", badge: "เสร็จสิ้น" },
-              { key: "transfer", label: "ส่งจากโกดัง → ร้าน", icon: "truck", detail: "10/1/2568 08:30 • พนักงานคลัง: สมศักดิ์", badge: "เสร็จสิ้น" },
-              { key: "qc", label: "ตรวจนับ & QC ที่ร้าน", icon: "clipboard", detail: "10/1/2568 14:00 • QC: วิภา", subDetail: "ผ่าน QC ครบ 100 ชิ้น", badge: "ผ่าน QC" },
-              { key: "ready", label: "พร้อมจัดส่งให้ลูกค้า", icon: "send", detail: "11/1/2568 09:00 • เตรียมแพ็คสินค้า", badge: "Ready" },
-              { key: "delivered", label: "จัดส่งสำเร็จ", icon: "thumbsup", detail: "12/1/2568 10:30 • ลูกค้ารับสินค้าเรียบร้อย", subDetail: "ผู้รับ: คุณสมชาย (บริษัท เอบีซี จำกัด)", badge: "สำเร็จ", isClickable: true },
+              { key: "warehouse", label: "รับเข้าโกดังไทย", icon: "warehouse", detail: `${order.dueDate} 10:00 • คลังสินค้า`, subDetail: `จำนวนรับจริง: ${order.orderItems[0].quantity} ชิ้น`, badge: "เสร็จสิ้น" },
+              { key: "transfer", label: "ส่งจากโกดัง → ร้าน", icon: "truck", detail: `${order.dueDate} 08:30 • พนักงานคลัง: สมศักดิ์`, badge: "เสร็จสิ้น" },
+              { key: "qc", label: "ตรวจนับ & QC ที่ร้าน", icon: "clipboard", detail: `${order.dueDate} 14:00 • QC: วิภา`, subDetail: `ผ่าน QC ครบ ${order.orderItems[0].quantity} ชิ้น`, badge: "ผ่าน QC" },
+              { key: "ready", label: "พร้อมจัดส่งให้ลูกค้า", icon: "send", detail: `${order.dueDate} 09:00 • เตรียมแพ็คสินค้า`, badge: "Ready" },
+              { key: "delivered", label: "จัดส่งสำเร็จ", icon: "thumbsup", detail: `${order.dueDate} 10:30 • ลูกค้ารับสินค้าเรียบร้อย`, subDetail: `ผู้รับ: ${order.customer}`, badge: "สำเร็จ", isClickable: true },
             ];
 
             const totalSteps = warehouseSteps.length;
@@ -1311,14 +1427,14 @@ export default function OrderDetail() {
                   <Badge className="bg-green-500 text-white">จัดส่งสำเร็จ</Badge>
                 </div>
 
-                {/* Progress bar - 100% */}
+                {/* Progress bar - 0% */}
                 <div className="flex items-center gap-3 mb-3">
                   <div className="flex-1">
                     <div className="w-full bg-muted rounded-full h-1.5">
-                      <div className="bg-green-500 h-1.5 rounded-full transition-all duration-300" style={{ width: '100%' }}></div>
+                      <div className="bg-amber-500 h-1.5 rounded-full transition-all duration-300" style={{ width: '0%' }}></div>
                     </div>
                   </div>
-                  <span className="text-sm font-medium text-green-600">100%</span>
+                  <span className="text-sm font-medium text-muted-foreground">0%</span>
                 </div>
 
                 {/* Timeline - Accordion */}
@@ -1338,7 +1454,7 @@ export default function OrderDetail() {
                           const isClickable = (step as any).isClickable;
 
                           return (
-                            <div 
+                            <div
                               key={step.key}
                               className={`flex items-center gap-3 py-1.5 ${idx > 0 ? 'border-t' : ''} ${isLast ? 'bg-green-50 -mx-3 px-3 rounded-b-lg' : ''} ${isClickable ? 'cursor-pointer hover:bg-green-100 transition-colors' : ''}`}
                               onClick={() => isClickable && setShowDeliveryDetail(true)}
@@ -1367,24 +1483,24 @@ export default function OrderDetail() {
                 <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
                   <div className="flex items-center gap-2 mb-2">
                     <CheckCircle2 className="w-5 h-5 text-green-600" />
-                    <span className="font-medium text-green-700">คำสั่งซื้อเสร็จสมบูรณ์</span>
+                    <span className="font-medium text-green-700">คำสั่งซื้อสำเร็จ</span>
                   </div>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                     <div>
                       <p className="text-xs text-muted-foreground">วันที่สั่งซื้อ</p>
-                      <p className="font-medium">20/12/2567</p>
+                      <p className="font-medium">{order.orderDate}</p>
                     </div>
                     <div>
-                      <p className="text-xs text-muted-foreground">วันที่จัดส่งสำเร็จ</p>
-                      <p className="font-medium text-green-600">12/1/2568</p>
+                      <p className="text-xs text-muted-foreground">วันที่จัดลงคลัง/สำเร็จ</p>
+                      <p className="font-medium text-green-600">{order.dueDate}</p>
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">ระยะเวลาทั้งหมด</p>
-                      <p className="font-medium">23 วัน</p>
+                      <p className="font-medium">-</p>
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">จำนวนสินค้า</p>
-                      <p className="font-medium">{isReadymadeMedal ? '150 ชิ้น' : '100 ชิ้น'}</p>
+                      <p className="font-medium">{order.orderItems.reduce((sum, item) => sum + item.quantity, 0)} ชิ้น</p>
                     </div>
                   </div>
                 </div>
@@ -1402,9 +1518,9 @@ export default function OrderDetail() {
             <DialogTitle>ขยายรูปภาพ</DialogTitle>
           </DialogHeader>
           {enlargedImage && (
-            <img 
-              src={enlargedImage} 
-              alt="รูปภาพขยาย" 
+            <img
+              src={enlargedImage}
+              alt="รูปภาพขยาย"
               className="w-full h-auto max-h-[80vh] object-contain rounded-lg"
             />
           )}
@@ -1437,8 +1553,8 @@ export default function OrderDetail() {
                 <p className="text-xs text-muted-foreground">เลขที่พัสดุ</p>
                 <p className="font-medium font-mono">{deliveryDetails.trackingNumber}</p>
               </div>
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 size="sm"
                 onClick={() => navigator.clipboard.writeText(deliveryDetails.trackingNumber)}
               >
@@ -1452,17 +1568,17 @@ export default function OrderDetail() {
                 <Globe className="w-5 h-5 text-primary mt-0.5" />
                 <div className="flex-1 min-w-0">
                   <p className="text-xs text-muted-foreground">ลิงก์ติดตามพัสดุ</p>
-                  <a 
-                    href={deliveryDetails.deliveryLink} 
-                    target="_blank" 
+                  <a
+                    href={deliveryDetails.deliveryLink}
+                    target="_blank"
                     rel="noopener noreferrer"
                     className="text-sm text-blue-600 hover:underline break-all"
                   >
                     {deliveryDetails.deliveryLink}
                   </a>
                 </div>
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   size="sm"
                   onClick={() => window.open(deliveryDetails.deliveryLink, '_blank')}
                 >
@@ -1493,7 +1609,7 @@ export default function OrderDetail() {
             )}
           </div>
         </DialogContent>
-      </Dialog>
+      </Dialog >
     </>
   );
 }

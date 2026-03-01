@@ -8,13 +8,15 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { Edit, Eye, Plus, Rocket, Ban, Search, SlidersHorizontal, ChevronDown, X, CheckCircle, Download, Filter, FileSpreadsheet, ShoppingCart, CreditCard, DollarSign, ClipboardList, CalendarIcon, Palette, ShoppingBag, Factory } from "lucide-react";
+import { Edit, Eye, Plus, Rocket, Search, SlidersHorizontal, ChevronDown, X, CheckCircle, FileSpreadsheet, Palette, ShoppingBag, Factory, Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import CreateOrderForm from "@/components/sales/CreateOrderForm";
+
+const API_BASE = "https://finfinphone.com/api-lucky/admin";
 
 export default function CreateOrder() {
   const location = useLocation();
@@ -24,7 +26,17 @@ export default function CreateOrder() {
   const [showOrderDetails, setShowOrderDetails] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [estimationData, setEstimationData] = useState<any>(null);
-  
+
+  // --- API state ---
+  const [orders, setOrders] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [summary, setSummary] = useState({
+    statusCounts: { request: 0, draft: 0, confirmed: 0, jobCreated: 0 },
+    paymentCounts: { partial: 0, pending: 0, credit: 0 },
+    totalRevenue: 0,
+    totalPaid: 0,
+  });
+
   // Search & Filter states
   const [searchTerm, setSearchTerm] = useState("");
   const [showAdvancedFilter, setShowAdvancedFilter] = useState(false);
@@ -69,7 +81,61 @@ export default function CreateOrder() {
     }
   }, [location.state]);
 
-  // Mock data for existing orders
+  // --- Fetch orders from API ---
+  const fetchOrders = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/orders.php?limit=200`);
+      const json = await res.json();
+      if (json.status === "success") {
+        // Map snake_case DB fields → camelCase used in the UI
+        const mapped = json.data.map((o: any) => ({
+          id: o.id,
+          jobId: o.job_id,
+          orderDate: o.order_date,
+          customerName: o.customer_name,
+          lineName: o.customer_line,
+          customerPhone: o.customer_phone,
+          customerEmail: o.customer_email,
+          customerAddress: o.customer_address,
+          product: o.job_name,
+          productCategory: o.product_category,
+          productType: o.product_type,
+          salesChannel: o.sales_channel,
+          deliveryDate: o.delivery_date,
+          deliveryMethod: o.delivery_method,
+          deliveryCost: parseFloat(o.delivery_cost ?? 0),
+          paymentMethod: o.payment_method,
+          paymentStatus: o.payment_status,
+          orderStatus: o.order_status,
+          jobCreated: Boolean(o.job_created),
+          departments: o.departments ?? [],
+          totalAmount: parseFloat(o.total_amount ?? 0),
+          subtotal: parseFloat(o.subtotal ?? 0),
+          vatAmount: parseFloat(o.vat_amount ?? 0),
+          totalWithVat: parseFloat(o.total_amount ?? 0),
+          paidAmount: parseFloat(o.paid_amount ?? 0),
+          taxInvoice: Boolean(o.require_tax_invoice),
+          taxCompanyName: o.tax_payer_name,
+          taxId: o.tax_id,
+          responsiblePerson: o.responsible_person,
+          savedProducts: [],
+        }));
+        setOrders(mapped);
+        if (json.summary) {
+          setSummary(json.summary);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to fetch orders:", e);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchOrders(); }, [fetchOrders]);
+
+  // Mock data for existing orders (fallback while loading / if API is empty)
   const mockOrders = [
     {
       id: 1, jobId: "JOB-2024-001", orderDate: "2024-01-15", lineName: "customer_line1",
@@ -215,13 +281,32 @@ export default function CreateOrder() {
     setShowDeptModal(true);
   };
 
-  const handleConfirmCreateJob = () => {
+  const handleConfirmCreateJob = async () => {
     if (!pendingOrder || selectedDepts.length === 0) {
       toast({ title: "กรุณาเลือกแผนก", description: "กรุณาเลือกอย่างน้อย 1 แผนกเพื่อส่งงาน", variant: "destructive" });
       return;
     }
 
     const deptLabels = selectedDepts.join(", ");
+
+    // PATCH order in API (if it has a real DB id)
+    if (pendingOrder.id && orders.some(o => o.id === pendingOrder.id)) {
+      try {
+        await fetch(`${API_BASE}/orders.php?id=${pendingOrder.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            order_status: "สร้างงานแล้ว",
+            job_created: 1,
+            departments: selectedDepts,
+          }),
+        });
+        fetchOrders(); // รีเฟรชข้อมูล
+      } catch (e) {
+        console.error("Failed to patch order:", e);
+      }
+    }
+
     setCreatedJobs(prev => new Set(prev).add(pendingOrder.id));
     setJobDepartments(prev => ({ ...prev, [pendingOrder.id]: selectedDepts }));
     setShowDeptModal(false);
@@ -253,8 +338,145 @@ export default function CreateOrder() {
     });
   };
 
-  const handleFormSubmit = (data: any) => {
-    console.log(isEditing ? "Order updated:" : "Order created:", data);
+  const handleFormSubmit = async (data: any) => {
+    try {
+      const method = isEditing && selectedOrder?.id ? "PUT" : "POST";
+      const url = isEditing && selectedOrder?.id
+        ? `${API_BASE}/orders.php?id=${selectedOrder.id}`
+        : `${API_BASE}/orders.php`;
+
+      // Map camelCase form fields → snake_case API payload
+      const deliveryInfo = data.deliveryInfo ?? {};
+      const payload: Record<string, any> = {
+        // ข้อมูลพนักงาน
+        responsible_person: data.responsiblePerson ?? "",
+
+        // ข้อมูลลูกค้า
+        customer_name: data.customerName ?? "",
+        customer_phone: data.customerPhone ?? "",
+        customer_line: data.customerLine ?? "",
+        customer_email: data.customerEmail ?? "",
+        customer_address: data.customerAddress ?? null,
+
+        // ภาษี
+        require_tax_invoice: data.requireTaxInvoice ? 1 : 0,
+        tax_payer_name: data.taxPayerName ?? null,
+        tax_id: data.taxId ?? null,
+        tax_address: data.taxAddress ?? null,
+
+        // ออร์เดอร์
+        job_id: data.jobId ?? null,
+        quotation_number: data.quotationNumber ?? null,
+        urgency_level: data.urgencyLevel ?? "ปกติ",
+        job_name: data.jobName ?? "",
+        event_location: data.eventLocation ?? null,
+        sales_channel: data.salesChannel ?? null,
+        order_date: data.orderDate
+          ? (data.orderDate instanceof Date
+            ? data.orderDate.toISOString().split("T")[0]
+            : data.orderDate)
+          : new Date().toISOString().split("T")[0],
+        usage_date: data.usageDate
+          ? (data.usageDate instanceof Date
+            ? data.usageDate.toISOString().split("T")[0]
+            : data.usageDate)
+          : null,
+        delivery_date: data.deliveryDate
+          ? (data.deliveryDate instanceof Date
+            ? data.deliveryDate.toISOString().split("T")[0]
+            : data.deliveryDate)
+          : null,
+
+        // สินค้า
+        product_category: data.productCategory ?? "",
+        product_type: data.productType ?? "",
+        material: data.material ?? null,
+        budget: data.budget ? parseFloat(data.budget) : null,
+
+        // ราคา
+        subtotal: parseFloat(data.subtotal ?? 0),
+        delivery_cost: parseFloat(data.deliveryCost ?? 0),
+        vat_amount: parseFloat(data.vatAmount ?? 0),
+        total_amount: parseFloat(data.totalAmount ?? 0),
+
+        // ชำระเงิน
+        payment_method: deliveryInfo.paymentMethod ?? data.paymentMethod ?? "",
+        payment_status: data.paymentStatus ?? "รอชำระเงิน",
+        paid_amount: parseFloat(data.paidAmount ?? 0),
+
+        // จัดส่ง
+        delivery_type: data.deliveryType ?? "parcel",
+        delivery_recipient: deliveryInfo.recipientName ?? null,
+        delivery_phone: deliveryInfo.recipientPhone ?? null,
+        delivery_address: [
+          deliveryInfo.address,
+          deliveryInfo.subdistrict,
+          deliveryInfo.district,
+          deliveryInfo.province,
+          deliveryInfo.postalCode,
+        ].filter(Boolean).join(" ") || null,
+        preferred_delivery_date: deliveryInfo.preferredDeliveryDate
+          ? (deliveryInfo.preferredDeliveryDate instanceof Date
+            ? deliveryInfo.preferredDeliveryDate.toISOString().split("T")[0]
+            : deliveryInfo.preferredDeliveryDate)
+          : null,
+
+        // สถานะ
+        order_status: data.orderStatus ?? "สร้างคำสั่งซื้อใหม่",
+        job_created: data.jobCreated ? 1 : 0,
+        notes: data.notes ?? null,
+
+        // รายการสินค้า (order_items)
+        items: (data.savedProducts ?? data.items ?? []).map((item: any) => ({
+          product_id: item.product_id ?? null,
+          item_type: item.itemType ?? item.item_type ?? "custom",
+          product_name: item.productType ?? item.product_name ?? item.label ?? "",
+          product_code: item.product_code ?? null,
+          material: item.material ?? null,
+          size: item.size ?? null,
+          color: item.color ?? null,
+          quantity: parseInt(item.quantity ?? 1),
+          unit_price: parseFloat(item.unitPrice ?? item.unit_price ?? item.price ?? 0),
+          total_price: parseFloat(item.totalPrice ?? item.total_price ??
+            ((item.quantity ?? 1) * (item.unitPrice ?? item.price ?? 0))),
+          details: item.details ?? null,
+        })),
+
+        // ประวัติชำระเงิน (order_payments)
+        payments: (data.paymentItems ?? data.payments ?? []).map((p: any) => ({
+          type: p.type ?? "deposit",
+          typeLabel: p.typeLabel ?? p.type ?? null,
+          amount: parseFloat(p.amount ?? 0),
+          transferDate: p.transferDate
+            ? (p.transferDate instanceof Date
+              ? p.transferDate.toISOString().split("T")[0]
+              : p.transferDate)
+            : null,
+          slipUrl: p.slipUrl ?? null,
+          additionalDetails: p.additionalDetails ?? null,
+        })),
+      };
+
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json();
+
+      if (json.status === "success") {
+        toast({
+          title: isEditing ? "อัปเดตคำสั่งซื้อสำเร็จ" : "สร้างคำสั่งซื้อสำเร็จ",
+          description: json.job_id ? `JOB ID: ${json.job_id}` : undefined,
+        });
+        fetchOrders();
+      } else {
+        toast({ title: "เกิดข้อผิดพลาด", description: json.message, variant: "destructive" });
+      }
+    } catch (e) {
+      console.error("Order submit error:", e);
+      toast({ title: "ไม่สามารถเชื่อมต่อ API ได้", variant: "destructive" });
+    }
     setShowCreateForm(false);
     setIsEditing(false);
     setSelectedOrder(null);
@@ -298,24 +520,35 @@ export default function CreateOrder() {
     return searchInValue(order);
   }, []);
 
-  // --- Summary stats ---
+  // --- Summary stats (use API summary when available, fallback to local calc) ---
   const summaryStats = useMemo(() => {
-    const orders = mockOrders; // In real app, filter by period
-    const statusCounts = {
-      request: orders.filter(o => o.orderStatus === "ส่งคำขอสั่งซื้อ").length,
-      draft: orders.filter(o => o.orderStatus === "สร้างคำสั่งซื้อใหม่").length,
-      confirmed: orders.filter(o => o.orderStatus === "ยืนยันคำสั่งซื้อ").length,
-      jobCreated: orders.filter(o => o.orderStatus === "สร้างงานแล้ว").length,
+    // If API has returned summary data, use it
+    if (summary.totalRevenue > 0 || orders.length > 0) {
+      // Use live data from API
+      const displayOrders = orders.length > 0 ? orders : mockOrders;
+      const statusCounts = {
+        request: displayOrders.filter(o => o.orderStatus === "ส่งคำขอสั่งซื้อ").length,
+        draft: displayOrders.filter(o => o.orderStatus === "สร้างคำสั่งซื้อใหม่").length,
+        confirmed: displayOrders.filter(o => o.orderStatus === "ยืนยันคำสั่งซื้อ").length,
+        jobCreated: displayOrders.filter(o => o.orderStatus === "สร้างงานแล้ว").length,
+      };
+      const paymentCounts = {
+        partial: displayOrders.filter(o => o.paymentStatus === "ชำระบางส่วน").length,
+        pending: displayOrders.filter(o => o.paymentStatus === "รอชำระเงิน").length,
+        credit: displayOrders.filter(o => o.paymentStatus === "เครดิต").length,
+      };
+      const totalRevenue = displayOrders.reduce((s, o) => s + (o.totalAmount || 0), 0);
+      const totalPaid = displayOrders.reduce((s, o) => s + (o.paidAmount || 0), 0);
+      return { statusCounts, paymentCounts, totalRevenue, totalPaid };
+    }
+    // Fallback mock
+    return {
+      statusCounts: summary.statusCounts,
+      paymentCounts: summary.paymentCounts,
+      totalRevenue: summary.totalRevenue,
+      totalPaid: summary.totalPaid,
     };
-    const paymentCounts = {
-      partial: orders.filter(o => o.paymentStatus === "ชำระบางส่วน").length,
-      pending: orders.filter(o => o.paymentStatus === "รอชำระเงิน").length,
-      credit: orders.filter(o => o.paymentStatus === "เครดิต").length,
-    };
-    const totalRevenue = orders.reduce((s, o) => s + (o.totalAmount || 0), 0);
-    const totalPaid = orders.reduce((s, o) => s + (o.paidAmount || 0), 0);
-    return { statusCounts, paymentCounts, totalRevenue, totalPaid };
-  }, [summaryPeriod]);
+  }, [orders, summary, summaryPeriod]);
 
   // --- Filters ---
   const hasActiveFilters = filterOrderStatus !== "all" || filterPaymentStatus !== "all" || filterDeliveryMethod !== "all" || filterPaymentMethod !== "all" || filterProductCategory !== "all" || advancedSearchTerm.trim() !== "" || cardFilter !== null;
@@ -341,8 +574,11 @@ export default function CreateOrder() {
     setCardFilter(null);
   };
 
+  // Use real API orders when available, fallback to mock
+  const displayOrders = orders.length > 0 ? orders : mockOrders;
+
   const filteredOrders = useMemo(() => {
-    return mockOrders.filter(order => {
+    return displayOrders.filter(order => {
       // Card filter
       if (cardFilter) {
         const cardMatch = (() => {
@@ -386,7 +622,7 @@ export default function CreateOrder() {
 
       return true;
     });
-  }, [mockOrders, searchTerm, advancedSearchTerm, filterOrderStatus, filterPaymentStatus, filterDeliveryMethod, filterPaymentMethod, filterProductCategory, colFilterJobId, colFilterDate, colFilterChannel, colFilterCustomer, colFilterCategory, colFilterOrderStatus, colFilterPaymentStatus, colFilterDelivery, colFilterDeliveryDate, deepSearch, cardFilter]);
+  }, [displayOrders, searchTerm, advancedSearchTerm, filterOrderStatus, filterPaymentStatus, filterDeliveryMethod, filterPaymentMethod, filterProductCategory, colFilterJobId, colFilterDate, colFilterChannel, colFilterCustomer, colFilterCategory, colFilterOrderStatus, colFilterPaymentStatus, colFilterDelivery, colFilterDeliveryDate, deepSearch, cardFilter]);
 
   // Reset page when filters change
   useEffect(() => { setCurrentPage(1); }, [searchTerm, advancedSearchTerm, filterOrderStatus, filterPaymentStatus, filterDeliveryMethod, filterPaymentMethod, filterProductCategory, colFilterJobId, colFilterDate, colFilterChannel, colFilterCustomer, colFilterCategory, colFilterOrderStatus, colFilterPaymentStatus, colFilterDelivery, colFilterDeliveryDate, cardFilter]);

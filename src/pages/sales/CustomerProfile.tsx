@@ -1,7 +1,5 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-
-const API_BASE_URL = "https://finfinphone.com/api-lucky/admin";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ActivityForm } from "@/components/sales/ActivityForm";
 import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -47,164 +46,20 @@ import {
   Palette,
   CreditCard,
   Video,
-  Presentation
+  Presentation,
+  X,
+  Loader2
 } from "lucide-react";
 
-// Mock activity timeline data
-const activityTimeline = [
-  {
-    id: 1,
-    type: "call",
-    title: "โทรศัพท์ติดตาม",
-    description: "ติดตามสถานะใบเสนอราคา Q2024-001",
-    date: "2024-01-15 14:30",
-    status: "สมบูรณ์",
-    result: "ลูกค้าสนใจ รอตัดสินใจ"
-  },
-  {
-    id: 2,
-    type: "email",
-    title: "ส่งใบเสนอราคา",
-    description: "ส่งใบเสนอราคาโครงการป้ายพรีเมียม 50 ป้าย",
-    date: "2024-01-12 10:15",
-    status: "สมบูรณ์",
-    result: "ส่งเรียบร้อย รอลูกค้าตอบกลับ"
-  },
-  {
-    id: 3,
-    type: "meeting",
-    title: "การประชุมพรีเซนต์",
-    description: "นำเสนอแผนการผลิตป้ายและไทม์ไลน์การส่งมอบ",
-    date: "2024-01-10 09:00",
-    status: "สมบูรณ์",
-    result: "ลูกค้าขอแก้ไขแบบ 2 รายการ"
-  },
-  {
-    id: 4,
-    type: "visit",
-    title: "เข้าพบลูกค้า",
-    description: "สำรวจพื้นที่และขอบเขตงานเบื้องต้น",
-    date: "2024-01-08 13:30",
-    status: "สมบูรณ์",
-    result: "ได้ข้อมูลครบถ้วน พร้อมเสนอราคา"
-  }
-];
+const API_BASE_URL = "https://finfinphone.com/api-lucky/admin";
 
-// (Mock CRM ถูกแทนที่ด้วยข้อมูลจริงจาก API แล้ว)
-
-// Mock orders data
-const orderHistory = [
-  {
-    id: "ORD-001",
-    title: "ป้ายพรีเมียมสำหรับงานกิจกรรม",
-    amount: 85000,
-    paidAmount: 50000,
-    status: "กำลังผลิต",
-    date: "2024-01-10",
-    items: 25
-  },
-  {
-    id: "ORD-002",
-    title: "ป้ายแสตนดี้สำหรับประชุม",
-    amount: 45000,
-    paidAmount: 45000,
-    status: "ส่งมอบแล้ว",
-    date: "2023-12-15",
-    items: 15
-  },
-  {
-    id: "ORD-003",
-    title: "ป้ายไวนิลขนาดใหญ่",
-    amount: 120000,
-    paidAmount: 120000,
-    status: "ส่งมอบแล้ว",
-    date: "2023-11-20",
-    items: 10
-  }
-];
-
-// Mock design files data with versions
-const designFiles = [
-  {
-    id: 1,
-    name: "เหรียญรางวัลกีฬาสี 2024",
-    version: "Final",
-    thumbnail: "/placeholder.svg",
-    date: "2024-01-18",
-    uploadedBy: "กราฟิก",
-    department: "design"
-  },
-  {
-    id: 2,
-    name: "โล่เกียรติคุณ VIP",
-    version: "V2",
-    thumbnail: "/placeholder.svg",
-    date: "2024-01-15",
-    uploadedBy: "สมชาย",
-    department: "sales"
-  },
-  {
-    id: 3,
-    name: "ถ้วยรางวัลการแข่งขัน",
-    version: "V1",
-    thumbnail: "/placeholder.svg",
-    date: "2024-01-12",
-    uploadedBy: "กราฟิก",
-    department: "design"
-  },
-  {
-    id: 4,
-    name: "เสื้อทีมกีฬา",
-    version: "Final",
-    thumbnail: "/placeholder.svg",
-    date: "2024-01-10",
-    uploadedBy: "ลูกค้า",
-    department: "customer"
-  }
-];
-
-// Calculate outstanding balance
-const calculateOutstandingBalance = () => {
-  return orderHistory.reduce((total, order) => {
-    return total + (order.amount - order.paidAmount);
-  }, 0);
-};
-
-// Mock VIP status
+// VIP status helper
 const customerImportance = (totalValue: number): { level: 'VIP' | 'General'; color: string } => {
   if (totalValue >= 200000) {
     return { level: 'VIP', color: 'bg-amber-100 text-amber-800 border-amber-300' };
   }
   return { level: 'General', color: 'bg-gray-100 text-gray-800 border-gray-200' };
 };
-
-// Mock documents data
-const documents = [
-  {
-    id: 1,
-    name: "สัญญาการผลิตป้าย 2024",
-    type: "PDF",
-    size: "2.4 MB",
-    date: "2024-01-05",
-    category: "สัญญา"
-  },
-  {
-    id: 2,
-    name: "ใบเสนอราคา Q2024-001",
-    type: "PDF",
-    size: "1.2 MB",
-    date: "2024-01-12",
-    category: "ใบเสนอราคา"
-  },
-  {
-    id: 3,
-    name: "แบบร่างป้าย Premium Series",
-    type: "PNG",
-    size: "5.8 MB",
-    date: "2024-01-08",
-    category: "แบบร่าง"
-  }
-];
 
 export default function CustomerProfile() {
   const { id } = useParams();
@@ -221,20 +76,19 @@ export default function CustomerProfile() {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [editForm, setEditForm] = useState<any>({});
-  const [notes, setNotes] = useState([
-    {
-      id: 1,
-      content: "ลูกค้ามีความต้องการป้ายคุณภาพสูง เน้นความทนทาน",
-      date: "2024-01-15 14:45",
-      author: "สมชาย (เซลล์)"
-    },
-    {
-      id: 2,
-      content: "ต้องการการส่งมอบแบบเร่งด่วน สำหรับงานกิจกรรมเดือนหน้า",
-      date: "2024-01-10 11:20",
-      author: "สมหญิง (เซลล์)"
-    }
-  ]);
+  // --- API-backed state ---
+  const [notes, setNotes] = useState<any[]>([]);
+  const [orderHistory, setOrderHistory] = useState<any[]>([]);
+  const [designFiles, setDesignFiles] = useState<any[]>([]);
+  const [noteSubmitting, setNoteSubmitting] = useState(false);
+  // --- Upload dialog state ---
+  const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadPreview, setUploadPreview] = useState<string | null>(null);
+  const [uploadName, setUploadName] = useState("");
+  const [uploadVersion, setUploadVersion] = useState("V1");
+  const [uploadDept, setUploadDept] = useState("sales");
+  const [isUploading, setIsUploading] = useState(false);
 
   // Fetch activities from PHP API
   const fetchActivities = async () => {
@@ -246,6 +100,107 @@ export default function CustomerProfile() {
       setActivities(json.data || []);
     } catch (error) {
       console.error('Error fetching activities:', error);
+    }
+  };
+
+  // Fetch orders
+  const fetchOrders = async () => {
+    if (!id) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/customer_orders.php?customer_id=${id}`);
+      const json = await res.json();
+      if (json.status === 'success') setOrderHistory(json.data || []);
+    } catch (e) { console.error(e); }
+  };
+
+  // Fetch design files
+  const fetchDesignFiles = async () => {
+    if (!id) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/customer_design_files.php?customer_id=${id}`);
+      const json = await res.json();
+      if (json.status === 'success') setDesignFiles(json.data || []);
+    } catch (e) { console.error(e); }
+  };
+
+  // Fetch notes
+  const fetchNotes = async () => {
+    if (!id) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/customer_notes.php?customer_id=${id}`);
+      const json = await res.json();
+      if (json.status === 'success') setNotes(json.data || []);
+    } catch (e) { console.error(e); }
+  };
+
+  // Handle file select for upload
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadFile(file);
+    if (!uploadName) setUploadName(file.name.replace(/\.[^.]+$/, ''));
+    if (file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (ev) => setUploadPreview(ev.target?.result as string);
+      reader.readAsDataURL(file);
+    } else {
+      setUploadPreview(null);
+    }
+  };
+
+  // Handle upload submit
+  const handleUploadSubmit = async () => {
+    if (!uploadFile || !uploadName.trim() || !id) {
+      toast({ title: 'กรุณาเลือกไฟล์และกรอกชื่อ', variant: 'destructive' });
+      return;
+    }
+    setIsUploading(true);
+    try {
+      // --- Try multipart upload (new PHP required on server) ---
+      const formData = new FormData();
+      formData.append('file', uploadFile);
+      formData.append('customer_id', id);
+      formData.append('name', uploadName.trim());
+      formData.append('version', uploadVersion);
+      formData.append('department', uploadDept);
+      formData.append('uploaded_by', 'AdminSale');
+
+      let res = await fetch(`${API_BASE_URL}/customer_design_files.php`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      // --- Fallback: if server has old PHP (400), send JSON without file ---
+      if (res.status === 400) {
+        const fallbackRes = await fetch(`${API_BASE_URL}/customer_design_files.php`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            customer_id: parseInt(id),
+            name: uploadName.trim(),
+            version: uploadVersion,
+            department: uploadDept,
+            uploaded_by: 'AdminSale',
+            file_url: null,
+          }),
+        });
+        res = fallbackRes;
+      }
+
+      const json = await res.json();
+      if (json.status === 'success') {
+        toast({ title: 'บันทึกสำเร็จ', description: `บันทึกไฟล์ "${uploadName}" แล้ว` });
+        setIsUploadOpen(false);
+        setUploadFile(null); setUploadPreview(null); setUploadName(''); setUploadVersion('V1'); setUploadDept('sales');
+        fetchDesignFiles();
+      } else {
+        toast({ title: 'เกิดข้อผิดพลาด', description: json.message || 'ไม่สามารถบันทึกได้', variant: 'destructive' });
+      }
+    } catch {
+
+      toast({ title: 'เกิดข้อผิดพลาด', description: 'เชื่อมต่อ API ไม่ได้', variant: 'destructive' });
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -321,6 +276,9 @@ export default function CustomerProfile() {
 
     fetchCustomer();
     fetchActivities();
+    fetchOrders();
+    fetchDesignFiles();
+    fetchNotes();
   }, [id]);
 
   const openEdit = () => {
@@ -391,16 +349,38 @@ export default function CustomerProfile() {
     }
   };
 
-  const addNote = () => {
-    if (newNote.trim()) {
-      const note = {
-        id: notes.length + 1,
-        content: newNote,
-        date: new Date().toLocaleString('th-TH'),
-        author: "ผู้ใช้ปัจจุบัน"
-      };
-      setNotes([note, ...notes]);
-      setNewNote("");
+  const addNote = async () => {
+    if (!newNote.trim() || !id) return;
+    setNoteSubmitting(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/customer_notes.php`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customer_id: parseInt(id), content: newNote.trim(), author: 'AdminSale' }),
+      });
+      const json = await res.json();
+      if (json.status === 'success') {
+        setNewNote("");
+        fetchNotes();
+        toast({ title: 'บันทึกหมายเหตุแล้ว' });
+      }
+    } catch (e) {
+      toast({ title: 'เกิดข้อผิดพลาด', variant: 'destructive' });
+    } finally {
+      setNoteSubmitting(false);
+    }
+  };
+
+  const deleteNote = async (noteId: number) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/customer_notes.php?id=${noteId}`, { method: 'DELETE' });
+      const json = await res.json();
+      if (json.status === 'success') {
+        fetchNotes();
+        toast({ title: 'ลบหมายเหตุแล้ว' });
+      }
+    } catch (e) {
+      toast({ title: 'เกิดข้อผิดพลาด', variant: 'destructive' });
     }
   };
 
@@ -443,7 +423,7 @@ export default function CustomerProfile() {
     return <Badge className="bg-blue-100 text-blue-800 border-blue-200">{version}</Badge>;
   };
 
-  const outstandingBalance = calculateOutstandingBalance();
+  const outstandingBalance = orderHistory.reduce((total, order) => total + ((order.amount || 0) - (order.paid_amount || 0)), 0);
   const importance = customerImportance(customer?.total_value || 0);
 
   // Check if customer has complete data for actions
@@ -940,7 +920,12 @@ export default function CustomerProfile() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {orderHistory.map((order) => (
+                {orderHistory.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Package className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                    <p>ยังไม่มีประวัติคำสั่งซื้อ</p>
+                  </div>
+                ) : orderHistory.map((order) => (
                   <div key={order.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent/50 transition-colors">
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-2">
@@ -950,14 +935,17 @@ export default function CustomerProfile() {
                         </Badge>
                       </div>
                       <div className="flex items-center gap-6 text-sm text-muted-foreground">
-                        <span>รหัส: {order.id}</span>
+                        <span>รหัส: {order.order_code}</span>
                         <span>จำนวน: {order.items} รายการ</span>
-                        <span>วันที่: {new Date(order.date).toLocaleDateString('th-TH')}</span>
+                        <span>วันที่: {new Date(order.order_date).toLocaleDateString('th-TH')}</span>
                       </div>
                     </div>
                     <div className="flex items-center gap-4">
                       <div className="text-right">
-                        <p className="text-lg font-semibold">฿{order.amount.toLocaleString()}</p>
+                        <p className="text-lg font-semibold">฿{Number(order.amount).toLocaleString()}</p>
+                        {(order.amount - order.paid_amount) > 0 && (
+                          <p className="text-xs text-red-500">ค้างชำระ ฿{(order.amount - order.paid_amount).toLocaleString()}</p>
+                        )}
                       </div>
                       <Button
                         variant="outline"
@@ -987,7 +975,7 @@ export default function CustomerProfile() {
                   <Palette className="w-5 h-5" />
                   ไฟล์ออกแบบ (Mockup)
                 </CardTitle>
-                <Button variant="outline" size="sm" className="flex items-center gap-2">
+                <Button variant="outline" size="sm" className="flex items-center gap-2" onClick={() => setIsUploadOpen(true)}>
                   <Upload className="w-4 h-4" />
                   อัพโหลดไฟล์
                 </Button>
@@ -1000,19 +988,29 @@ export default function CustomerProfile() {
                     <div key={file.id} className="border rounded-lg overflow-hidden hover:border-primary transition-colors cursor-pointer group">
                       {/* Thumbnail */}
                       <div className="relative aspect-square bg-muted flex items-center justify-center">
-                        <Image className="w-12 h-12 text-muted-foreground/50" />
+                        {file.file_url ? (
+                          <img src={file.file_url} alt={file.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <Image className="w-12 h-12 text-muted-foreground/50" />
+                        )}
                         {/* Version Badge */}
                         <div className="absolute top-2 right-2">
                           {getVersionBadge(file.version)}
                         </div>
                         {/* Hover Overlay */}
                         <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                          <Button size="sm" variant="secondary">
-                            <Eye className="w-4 h-4 mr-1" />
-                            ดู
-                          </Button>
-                          <Button size="sm" variant="secondary">
-                            <Download className="w-4 h-4" />
+                          {file.file_url && (
+                            <Button size="sm" variant="secondary" onClick={() => window.open(file.file_url, '_blank')}>
+                              <Eye className="w-4 h-4 mr-1" />
+                              ดู
+                            </Button>
+                          )}
+                          <Button size="sm" variant="secondary" className="bg-red-100 hover:bg-red-200 text-red-700" onClick={async () => {
+                            const res = await fetch(`${API_BASE_URL}/customer_design_files.php?id=${file.id}`, { method: 'DELETE' });
+                            const json = await res.json();
+                            if (json.status === 'success') fetchDesignFiles();
+                          }}>
+                            <Trash2 className="w-4 h-4" />
                           </Button>
                         </div>
                       </div>
@@ -1020,10 +1018,10 @@ export default function CustomerProfile() {
                       <div className="p-3 space-y-1">
                         <p className="font-medium text-sm truncate">{file.name}</p>
                         <div className="flex items-center justify-between text-xs text-muted-foreground">
-                          <span>{new Date(file.date).toLocaleDateString('th-TH')}</span>
+                          <span>{new Date(file.created_at).toLocaleDateString('th-TH')}</span>
                           {getDepartmentBadge(file.department)}
                         </div>
-                        <p className="text-xs text-muted-foreground">โดย: {file.uploadedBy}</p>
+                        <p className="text-xs text-muted-foreground">โดย: {file.uploaded_by}</p>
                       </div>
                     </div>
                   ))}
@@ -1060,18 +1058,25 @@ export default function CustomerProfile() {
                   onChange={(e) => setNewNote(e.target.value)}
                   className="flex-1"
                 />
-                <Button onClick={addNote} className="self-end">
+                <Button onClick={addNote} className="self-end" disabled={noteSubmitting}>
                   <Save className="w-4 h-4" />
                 </Button>
               </div>
 
               <div className="space-y-3">
-                {notes.map((note) => (
+                {notes.length === 0 ? (
+                  <p className="text-center text-muted-foreground text-sm py-4">ยังไม่มีหมายเหตุ</p>
+                ) : notes.map((note) => (
                   <div key={note.id} className="p-4 border rounded-lg">
                     <p className="mb-2">{note.content}</p>
-                    <div className="flex justify-between text-xs text-muted-foreground">
+                    <div className="flex justify-between items-center text-xs text-muted-foreground">
                       <span>{note.author}</span>
-                      <span>{note.date}</span>
+                      <div className="flex items-center gap-2">
+                        <span>{new Date(note.created_at).toLocaleString('th-TH')}</span>
+                        <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-400 hover:text-red-600" onClick={() => deleteNote(note.id)}>
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -1341,6 +1346,117 @@ export default function CustomerProfile() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ===== Upload Design File Dialog ===== */}
+      <Dialog open={isUploadOpen} onOpenChange={(open) => {
+        if (!open) { setUploadFile(null); setUploadPreview(null); setUploadName(''); setUploadVersion('V1'); setUploadDept('sales'); }
+        setIsUploadOpen(open);
+      }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Upload className="w-5 h-5" />
+              อัพโหลดไฟล์ออกแบบ
+            </DialogTitle>
+            <DialogDescription>รองรับไฟล์รูปภาพ (JPG, PNG, GIF, WebP) และ PDF ขนาดไม่เกิน 10MB</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* File Drop Zone */}
+            <div
+              className="border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover:border-primary transition-colors"
+              onClick={() => document.getElementById('design-file-input')?.click()}
+            >
+              {uploadPreview ? (
+                <div className="relative">
+                  <img src={uploadPreview} alt="preview" className="max-h-48 mx-auto rounded-md object-contain" />
+                  <button
+                    className="absolute top-1 right-1 bg-black/60 text-white rounded-full p-1"
+                    onClick={(e) => { e.stopPropagation(); setUploadFile(null); setUploadPreview(null); }}
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ) : uploadFile ? (
+                <div className="flex flex-col items-center gap-2">
+                  <FileText className="w-12 h-12 text-muted-foreground/60" />
+                  <p className="text-sm font-medium">{uploadFile.name}</p>
+                  <p className="text-xs text-muted-foreground">{(uploadFile.size / 1024).toFixed(1)} KB</p>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                  <Upload className="w-10 h-10 opacity-50" />
+                  <p className="text-sm font-medium">คลิกเพื่อเลือกไฟล์</p>
+                  <p className="text-xs">JPG, PNG, GIF, WebP, PDF (max 10MB)</p>
+                </div>
+              )}
+              <input
+                id="design-file-input"
+                type="file"
+                className="hidden"
+                accept="image/jpeg,image/png,image/gif,image/webp,application/pdf"
+                onChange={handleFileSelect}
+              />
+            </div>
+
+            {/* File Name */}
+            <div className="space-y-1">
+              <Label htmlFor="upload-name">ชื่อไฟล์ / งาน *</Label>
+              <Input
+                id="upload-name"
+                placeholder="เช่น Logo ลูกค้า ABC, Mockup ป้ายด้านหน้า"
+                value={uploadName}
+                onChange={e => setUploadName(e.target.value)}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              {/* Version */}
+              <div className="space-y-1">
+                <Label>เวอร์ชั่น</Label>
+                <Select value={uploadVersion} onValueChange={setUploadVersion}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="V1">V1 (ร่างแรก)</SelectItem>
+                    <SelectItem value="V2">V2</SelectItem>
+                    <SelectItem value="V3">V3</SelectItem>
+                    <SelectItem value="Final">Final (อนุมัติแล้ว)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Department */}
+              <div className="space-y-1">
+                <Label>แผนกที่อัพโหลด</Label>
+                <Select value={uploadDept} onValueChange={setUploadDept}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="sales">เซลล์</SelectItem>
+                    {/* <SelectItem value="design">กราฟิก</SelectItem>
+                    <SelectItem value="production">ผลิต</SelectItem>
+                    <SelectItem value="customer">ลูกค้า</SelectItem> */}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2 border-t">
+            <Button variant="outline" onClick={() => setIsUploadOpen(false)} disabled={isUploading}>ยกเลิก</Button>
+            <Button onClick={handleUploadSubmit} disabled={isUploading || !uploadFile} className="flex items-center gap-2">
+              {isUploading ? (
+                <><Loader2 className="w-4 h-4 animate-spin" />กำลังอัพโหลด...</>
+              ) : (
+                <><Upload className="w-4 h-4" />อัพโหลดไฟล์</>
+              )}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

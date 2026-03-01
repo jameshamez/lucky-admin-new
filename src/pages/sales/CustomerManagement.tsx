@@ -1488,6 +1488,7 @@ export default function CustomerManagement() {
                         <SelectContent className="bg-background">
                           <SelectItem value="ลูกค้าใหม่">ลูกค้าใหม่</SelectItem>
                           <SelectItem value="ลูกค้าเก่า">ลูกค้าเก่า</SelectItem>
+                          <SelectItem value="ลูกค้า VIP">ลูกค้า VIP</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>

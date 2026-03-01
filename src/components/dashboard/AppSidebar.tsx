@@ -71,7 +71,7 @@ const salesItems = [
   { title: "จัดการสินค้า", url: "/sales/product-inventory", icon: Boxes },
   { title: "เบิกการใช้งาน", url: "/sales/internal-requests", icon: FileText },
   { title: "การตั้งค่า", url: "/sales/settings", icon: Settings },
-  { title: "คู่มือการทำงาน", url: "/sales/user-manual", icon: BookOpen },
+  // { title: "คู่มือการทำงาน", url: "/sales/user-manual", icon: BookOpen },
   { title: "รายงานผล", url: "/sales/reports", icon: FileBarChart }
 ];
 
@@ -380,7 +380,7 @@ export function AppSidebar() {
           <>
             {/* Regular User Mode */}
             {/* Main Menu Section */}
-            <SidebarGroup>
+            {/* <SidebarGroup>
               <SidebarGroupLabel>หลัก</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
@@ -389,7 +389,7 @@ export function AppSidebar() {
                   ))}
                 </SidebarMenu>
               </SidebarGroupContent>
-            </SidebarGroup>
+            </SidebarGroup> */}
 
             {/* Department Section */}
             {currentDepartmentItems.length > 0 && (
