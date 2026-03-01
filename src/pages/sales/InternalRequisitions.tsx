@@ -40,12 +40,32 @@ interface Material {
   note: string;
 }
 
+interface VehicleReservation {
+  id: number;
+  vehicle_type: string;
+  purpose: string;
+  start_datetime: string;
+  end_datetime: string;
+  requester: string;
+  status: string;
+  created_at: string;
+}
+
 export default function InternalRequisitions() {
   const [materialDate, setMaterialDate] = useState<Date>();
   const [pickupDate, setPickupDate] = useState<Date>();
   const [vehicleStartDate, setVehicleStartDate] = useState<Date>();
   const [vehicleEndDate, setVehicleEndDate] = useState<Date>();
   const [isVehicleDialogOpen, setIsVehicleDialogOpen] = useState(false);
+
+  const [vehicleType, setVehicleType] = useState("");
+  const [vehiclePurpose, setVehiclePurpose] = useState("");
+  const [vehicleStartTime, setVehicleStartTime] = useState("");
+  const [vehicleEndTime, setVehicleEndTime] = useState("");
+  const [vehicleRequester, setVehicleRequester] = useState("ผู้ใช้งานปัจจุบัน");
+  const [vehicleSubmitting, setVehicleSubmitting] = useState(false);
+  const [vehicleHistory, setVehicleHistory] = useState<VehicleReservation[]>([]);
+  const [vehicleLoading, setVehicleLoading] = useState(false);
 
   // --- Purchase requests state ---
   const [purchaseHistory, setPurchaseHistory] = useState<MaterialRequest[]>([]);
@@ -108,9 +128,26 @@ export default function InternalRequisitions() {
     }
   };
 
+  // --- Fetch vehicle history ---
+  const fetchVehicleHistory = async () => {
+    setVehicleLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/vehicle_reservations.php`);
+      const json = await res.json();
+      if (json.status === "success") {
+        setVehicleHistory(json.data || []);
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setVehicleLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchPurchaseHistory();
     fetchMaterials();
+    fetchVehicleHistory();
   }, []);
 
   // --- Submit purchase request (เบิกซื้อ) ---
@@ -188,6 +225,49 @@ export default function InternalRequisitions() {
       toast({ title: "เกิดข้อผิดพลาด", description: "เชื่อมต่อ API ไม่ได้", variant: "destructive" });
     } finally {
       setUsageSubmitting(false);
+    }
+  };
+
+  // --- Submit vehicle reservation ---
+  const handleSubmitVehicle = async () => {
+    if (!vehicleType || !vehiclePurpose || !vehicleStartDate || !vehicleStartTime || !vehicleEndDate || !vehicleEndTime || !vehicleRequester) {
+      toast({ title: "กรุณากรอกข้อมูลให้ครบ", description: "ประเภทรถ, วัตถุประสงค์, วันที่และเวลา", variant: "destructive" });
+      return;
+    }
+    setVehicleSubmitting(true);
+    try {
+      const startDateTime = `${format(vehicleStartDate, "yyyy-MM-dd")} ${vehicleStartTime}:00`;
+      const endDateTime = `${format(vehicleEndDate, "yyyy-MM-dd")} ${vehicleEndTime}:00`;
+
+      const payload = {
+        vehicle_type: vehicleType,
+        purpose: vehiclePurpose,
+        start_datetime: startDateTime,
+        end_datetime: endDateTime,
+        requester: vehicleRequester,
+      };
+
+      const res = await fetch(`${API_BASE}/vehicle_reservations.php`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const json = await res.json();
+      if (json.status === "success") {
+        toast({ title: "ส่งคำขอจองรถสำเร็จ", description: "คำขอจองรถถูกบันทึกแล้ว รอการอนุมัติ" });
+        setIsVehicleDialogOpen(false);
+        setVehicleType(""); setVehiclePurpose("");
+        setVehicleStartDate(undefined); setVehicleStartTime("");
+        setVehicleEndDate(undefined); setVehicleEndTime("");
+        fetchVehicleHistory();
+      } else {
+        toast({ title: "เกิดข้อผิดพลาด", description: json.message || "ไม่สามารถส่งคำขอได้", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "เกิดข้อผิดพลาด", description: "เชื่อมต่อ API ไม่ได้", variant: "destructive" });
+    } finally {
+      setVehicleSubmitting(false);
     }
   };
 
@@ -431,12 +511,12 @@ export default function InternalRequisitions() {
                           <SelectValue placeholder="เลือกแผนก" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="ขาย">ขาย</SelectItem>
-                          <SelectItem value="กราฟิก">กราฟิก</SelectItem>
+                          <SelectItem value="ขาย">ฝ่ายขาย</SelectItem>
+                          {/* <SelectItem value="กราฟิก">กราฟิก</SelectItem>
                           <SelectItem value="จัดซื้อ">จัดซื้อ</SelectItem>
                           <SelectItem value="ผลิตและจัดส่ง">ผลิตและจัดส่ง</SelectItem>
                           <SelectItem value="บัญชี">บัญชี</SelectItem>
-                          <SelectItem value="บุคคล">บุคคล</SelectItem>
+                          <SelectItem value="บุคคล">บุคคล</SelectItem> */}
                         </SelectContent>
                       </Select>
                     </div>
@@ -543,7 +623,7 @@ export default function InternalRequisitions() {
                   <div className="space-y-4">
                     <div className="space-y-2">
                       <Label htmlFor="vehicle-type">ประเภทรถที่ต้องการ *</Label>
-                      <Select>
+                      <Select value={vehicleType} onValueChange={setVehicleType}>
                         <SelectTrigger id="vehicle-type">
                           <SelectValue placeholder="เลือกประเภทรถ" />
                         </SelectTrigger>
@@ -556,7 +636,7 @@ export default function InternalRequisitions() {
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="vehicle-purpose">วัตถุประสงค์ในการใช้ *</Label>
-                      <Textarea id="vehicle-purpose" placeholder="กรอกวัตถุประสงค์ในการใช้รถ" rows={3} />
+                      <Textarea id="vehicle-purpose" placeholder="กรอกวัตถุประสงค์ในการใช้รถ" rows={3} value={vehiclePurpose} onChange={e => setVehiclePurpose(e.target.value)} />
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
@@ -572,7 +652,7 @@ export default function InternalRequisitions() {
                             <Calendar mode="single" selected={vehicleStartDate} onSelect={setVehicleStartDate} initialFocus className="pointer-events-auto" />
                           </PopoverContent>
                         </Popover>
-                        <Input type="time" className="mt-2" />
+                        <Input type="time" className="mt-2" value={vehicleStartTime} onChange={e => setVehicleStartTime(e.target.value)} />
                       </div>
                       <div className="space-y-2">
                         <Label>วันที่และเวลาที่สิ้นสุด *</Label>
@@ -587,21 +667,18 @@ export default function InternalRequisitions() {
                             <Calendar mode="single" selected={vehicleEndDate} onSelect={setVehicleEndDate} initialFocus className="pointer-events-auto" />
                           </PopoverContent>
                         </Popover>
-                        <Input type="time" className="mt-2" />
+                        <Input type="time" className="mt-2" value={vehicleEndTime} onChange={e => setVehicleEndTime(e.target.value)} />
                       </div>
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="vehicle-requester">ผู้ขอเบิกใช้รถ *</Label>
-                      <Input id="vehicle-requester" placeholder="กรอกชื่อผู้ขอใช้รถ" />
+                      <Input id="vehicle-requester" placeholder="กรอกชื่อผู้ขอใช้รถ" value={vehicleRequester} onChange={e => setVehicleRequester(e.target.value)} />
                     </div>
                     <Button
                       className="w-full"
-                      onClick={() => {
-                        toast({ title: "ส่งคำขอจองรถสำเร็จ", description: "คำขอจองรถของคุณถูกส่งเรียบร้อยแล้ว รอการอนุมัติ" });
-                        setIsVehicleDialogOpen(false);
-                      }}
+                      onClick={handleSubmitVehicle} disabled={vehicleSubmitting}
                     >
-                      ส่งคำขอจองรถ
+                      {vehicleSubmitting ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />กำลังส่ง...</> : "ส่งคำขอจองรถ"}
                     </Button>
                   </div>
                 </DialogContent>
@@ -627,11 +704,31 @@ export default function InternalRequisitions() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      <TableRow>
-                        <TableCell colSpan={5} className="text-center text-muted-foreground py-6">
-                          ยังไม่มีประวัติการจองรถ (รอเชื่อม API)
-                        </TableCell>
-                      </TableRow>
+                      {vehicleLoading ? (
+                        <TableRow>
+                          <TableCell colSpan={5} className="text-center py-6"><Loader2 className="w-5 h-5 animate-spin mx-auto text-muted-foreground" /></TableCell>
+                        </TableRow>
+                      ) : vehicleHistory.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={5} className="text-center text-muted-foreground py-6">
+                            ยังไม่มีประวัติการจองรถ
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        vehicleHistory.map((item) => (
+                          <TableRow key={item.id}>
+                            <TableCell>
+                              {item.vehicle_type === 'van' ? 'รถตู้' : item.vehicle_type === 'pickup' ? 'รถกระบะ' : item.vehicle_type === 'sedan' ? 'รถเก๋ง' : item.vehicle_type}
+                            </TableCell>
+                            <TableCell className="max-w-[200px] truncate">{item.purpose}</TableCell>
+                            <TableCell>{format(new Date(item.start_datetime), "dd/MM/yyyy HH:mm")}</TableCell>
+                            <TableCell>{format(new Date(item.end_datetime), "dd/MM/yyyy HH:mm")}</TableCell>
+                            <TableCell>
+                              <Badge className={getStatusColor(item.status)}>{item.status}</Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
                     </TableBody>
                   </Table>
                 </div>

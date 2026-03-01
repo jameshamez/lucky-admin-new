@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
@@ -14,22 +14,82 @@ import {
 } from "@/components/ui/select";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ShoppingCart, Package, Car, CalendarIcon, Plus } from "lucide-react";
+import { ShoppingCart, Package, Car, CalendarIcon, Plus, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+
+const API_BASE = "https://finfinphone.com/api-lucky/admin";
 
 export default function RequisitionCenter() {
   const [usageDate, setUsageDate] = useState<Date>();
   const [startDateTime, setStartDateTime] = useState<Date>();
   const [endDateTime, setEndDateTime] = useState<Date>();
 
+  // Equipment Form State
+  const [equipments, setEquipments] = useState<any[]>([]);
+  const [loadingEq, setLoadingEq] = useState(false);
+  const [eqName, setEqName] = useState("");
+  const [eqQty, setEqQty] = useState("");
+  const [eqDept, setEqDept] = useState("");
+  const [eqRequester] = useState("ชื่อผู้ใช้งาน (อัตโนมัติ)");
+  const [eqReason, setEqReason] = useState("");
+  const [isEqSubmitting, setIsEqSubmitting] = useState(false);
+
+  useEffect(() => {
+    fetchEquipments();
+  }, []);
+
+  const fetchEquipments = async () => {
+    setLoadingEq(true);
+    try {
+      const res = await fetch(`${API_BASE}/equipments.php`);
+      const json = await res.json();
+      if (json.status === "success") {
+        setEquipments(json.data || []);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingEq(false);
+    }
+  };
+
   const handleMaterialRequest = () => {
     toast.success("ส่งคำขอเบิกซื้อวัสดุอุปกรณ์เรียบร้อย");
   };
 
-  const handleEquipmentRequest = () => {
-    toast.success("ส่งคำขอเบิกใช้อุปกรณ์เรียบร้อย");
+  const handleEquipmentRequest = async () => {
+    if (!eqName || !eqQty || !eqDept) {
+      toast.error("กรุณากรอกข้อมูล หมวดอุปกรณ์, จำนวน และแผนก ให้ครบถ้วน");
+      return;
+    }
+    setIsEqSubmitting(true);
+    try {
+      const res = await fetch(`${API_BASE}/equipment_requests.php`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          equipment_name: eqName,
+          qty: parseInt(eqQty),
+          department: eqDept,
+          requester: eqRequester,
+          remark: eqReason
+        })
+      });
+      const json = await res.json();
+      if (json.status === "success") {
+        toast.success("ส่งคำขอเบิกใช้อุปกรณ์เรียบร้อย");
+        setEqName(""); setEqQty(""); setEqDept(""); setEqReason("");
+        fetchEquipments(); // Refresh stock
+      } else {
+        toast.error(json.message || "เกิดข้อผิดพลาดในการบันทึก");
+      }
+    } catch {
+      toast.error("เกิดข้อผิดพลาดในการเชื่อมต่อ API");
+    } finally {
+      setIsEqSubmitting(false);
+    }
   };
 
   const handleVehicleBooking = () => {
@@ -143,16 +203,21 @@ export default function RequisitionCenter() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <Label>รายการสินค้า *</Label>
-                <Select>
-                  <SelectTrigger>
+                <Label>รายการสินค้า * {loadingEq && <Loader2 className="w-3 h-3 inline animate-spin ml-1" />}</Label>
+                <Select value={eqName} onValueChange={setEqName}>
+                  <SelectTrigger className="w-full">
                     <SelectValue placeholder="ค้นหาและเลือกสินค้า" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="pen">ปากกาเจล สีน้ำเงิน</SelectItem>
-                    <SelectItem value="paper">กระดาษ A4</SelectItem>
-                    <SelectItem value="mouse">เมาส์ไร้สาย</SelectItem>
-                    <SelectItem value="notebook">สมุดบันทึก</SelectItem>
+                    {equipments.length === 0 ? (
+                      <SelectItem value="__none" disabled>ไม่มีรายการอุปกรณ์</SelectItem>
+                    ) : (
+                      equipments.map(eq => (
+                        <SelectItem key={eq.id} value={eq.equipment_name}>
+                          {eq.equipment_name} (คงเหลือ: {eq.current_qty} {eq.unit})
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
               </div>
@@ -160,12 +225,12 @@ export default function RequisitionCenter() {
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
                   <Label>จำนวนที่ต้องการ *</Label>
-                  <Input type="number" placeholder="ระบุจำนวน" required />
+                  <Input type="number" placeholder="ระบุจำนวน" required value={eqQty} onChange={e => setEqQty(e.target.value)} />
                 </div>
                 <div>
-                  <Label>แผนกผู้เบิก</Label>
-                  <Select>
-                    <SelectTrigger>
+                  <Label>แผนกผู้เบิก *</Label>
+                  <Select value={eqDept} onValueChange={setEqDept}>
+                    <SelectTrigger className="w-full">
                       <SelectValue placeholder="เลือกแผนก" />
                     </SelectTrigger>
                     <SelectContent>
@@ -180,16 +245,16 @@ export default function RequisitionCenter() {
 
               <div>
                 <Label>ผู้เบิก</Label>
-                <Input value="ชื่อผู้ใช้งาน (อัตโนมัติ)" disabled />
+                <Input value={eqRequester} disabled />
               </div>
 
               <div>
                 <Label>เหตุผลในการเบิก</Label>
-                <Textarea placeholder="ระบุเหตุผลในการเบิก..." rows={3} />
+                <Textarea placeholder="ระบุเหตุผลในการเบิก..." rows={3} value={eqReason} onChange={e => setEqReason(e.target.value)} />
               </div>
 
-              <Button onClick={handleEquipmentRequest} className="w-full">
-                ส่งคำขอเบิกใช้
+              <Button onClick={handleEquipmentRequest} className="w-full" disabled={isEqSubmitting}>
+                {isEqSubmitting ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />กำลังส่ง...</> : "ส่งคำขอเบิกใช้"}
               </Button>
             </CardContent>
           </Card>
