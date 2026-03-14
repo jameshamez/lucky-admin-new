@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,22 +13,8 @@ import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, L
 import { Download, Search, Eye, FileText, AlertCircle, ShieldCheck, FilePlus, ArrowUpDown, FileCheck, Printer, Paperclip, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { Label } from "@/components/ui/label";
-
-// Mockup data for revenue chart (12 months)
-const revenueChartData = [
-  { month: "ม.ค.", actual: 450000, target: 400000, custom: 280000, readymade: 170000 },
-  { month: "ก.พ.", actual: 380000, target: 400000, custom: 220000, readymade: 160000 },
-  { month: "มี.ค.", actual: 520000, target: 450000, custom: 350000, readymade: 170000 },
-  { month: "เม.ย.", actual: 480000, target: 450000, custom: 300000, readymade: 180000 },
-  { month: "พ.ค.", actual: 610000, target: 500000, custom: 420000, readymade: 190000 },
-  { month: "มิ.ย.", actual: 580000, target: 500000, custom: 380000, readymade: 200000 },
-  { month: "ก.ค.", actual: 650000, target: 550000, custom: 450000, readymade: 200000 },
-  { month: "ส.ค.", actual: 620000, target: 550000, custom: 410000, readymade: 210000 },
-  { month: "ก.ย.", actual: 690000, target: 600000, custom: 480000, readymade: 210000 },
-  { month: "ต.ค.", actual: 720000, target: 600000, custom: 500000, readymade: 220000 },
-  { month: "พ.ย.", actual: 680000, target: 650000, custom: 460000, readymade: 220000 },
-  { month: "ธ.ค.", actual: 750000, target: 700000, custom: 520000, readymade: 230000 },
-];
+import { accountingService } from "@/services/accountingService";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface OrderData {
   id: string;
@@ -61,7 +47,6 @@ interface OrderData {
   productionStaff?: string;
   productionDeadline?: string;
   productionStatus?: string;
-  // Payment proof from sales
   paymentProof?: {
     slipUrl: string;
     transferDate: string;
@@ -70,140 +55,6 @@ interface OrderData {
   }[];
 }
 
-// Mockup data for orders
-const initialOrdersData: OrderData[] = [
-  {
-    id: "ORD-2025-001",
-    orderType: "สั่งผลิตภายนอก",
-    quotationNo: "QT-2025-001",
-    customerName: "บริษัท ABC จำกัด",
-    lineId: "@abc_company",
-    address: "123 ถนนสุขุมวิท กรุงเทพฯ 10110",
-    phone: "02-123-4567",
-    email: "contact@abc.co.th",
-    orderDate: "2025-01-15",
-    usageDate: "2025-02-01",
-    deliveryDate: "2025-01-30",
-    deliveryMethod: "ขนส่งเอกชน",
-    taxInvoice: true,
-    companyName: "บริษัท ABC จำกัด",
-    taxId: "0123456789012",
-    jobName: "ปากกาพรีเมี่ยม 1000 ชิ้น",
-    jobType: "สกรีน",
-    tags: "#ปากกา #พรีเมี่ยม",
-    totalAmount: 85000,
-    paidAmount: 85000,
-    outstandingAmount: 0,
-    paymentStatus: "ชำระครบ",
-    isClosed: true,
-    urgency: "ปกติ",
-    orderChannel: "ลูกค้าเก่า",
-    shippingFee: 500,
-    productionDetail: "สกรีนโลโก้ 2 สี",
-    productionStaff: "วิชัย ช่างพิมพ์",
-    productionDeadline: "2025-01-28",
-    productionStatus: "เสร็จสิ้น",
-    paymentProof: [
-      { slipUrl: "/placeholder.svg", transferDate: "2025-01-15", transferAmount: 42500, bankName: "ธ.กสิกรไทย" },
-      { slipUrl: "/placeholder.svg", transferDate: "2025-01-20", transferAmount: 42500, bankName: "ธ.กสิกรไทย" },
-    ]
-  },
-  {
-    id: "ORD-2025-002",
-    orderType: "สินค้าสำเร็จรูป",
-    quotationNo: "QT-2025-002",
-    customerName: "คุณสมชาย ใจดี",
-    lineId: "@somchai99",
-    address: "456 ซอยอารีย์ กรุงเทพฯ 10400",
-    phone: "081-234-5678",
-    email: "somchai@email.com",
-    orderDate: "2025-01-16",
-    usageDate: "2025-01-20",
-    deliveryDate: "2025-01-19",
-    deliveryMethod: "Messenger",
-    taxInvoice: false,
-    jobName: "กระเป๋าผ้า 50 ใบ",
-    jobType: "สินค้าสำเร็จรูป",
-    tags: "#กระเป๋า #ผ้า",
-    totalAmount: 12500,
-    paidAmount: 12500,
-    outstandingAmount: 0,
-    paymentStatus: "ชำระครบ",
-    isClosed: true,
-    urgency: "ด่วน 1 วัน",
-    orderChannel: "LINE",
-    shippingFee: 150,
-    paymentProof: [
-      { slipUrl: "/placeholder.svg", transferDate: "2025-01-16", transferAmount: 12500, bankName: "ธ.ไทยพาณิชย์" },
-    ]
-  },
-  {
-    id: "ORD-2025-003",
-    orderType: "สั่งผลิตภายใน",
-    quotationNo: "QT-2025-003",
-    customerName: "บริษัท XYZ จำกัด",
-    lineId: "@xyz_corp",
-    address: "789 ถนนพระราม 4 กรุงเทพฯ 10500",
-    phone: "02-987-6543",
-    email: "sales@xyz.co.th",
-    orderDate: "2025-01-18",
-    usageDate: "2025-02-15",
-    deliveryDate: "2025-02-10",
-    deliveryMethod: "หน้าร้าน",
-    taxInvoice: true,
-    companyName: "บริษัท XYZ จำกัด",
-    taxId: "9876543210987",
-    jobName: "แก้วเซรามิค 500 ชิ้น",
-    jobType: "พิมพ์ภาพ",
-    tags: "#แก้ว #เซรามิค",
-    totalAmount: 125000,
-    paidAmount: 50000,
-    outstandingAmount: 75000,
-    paymentStatus: "มัดจำ",
-    isClosed: false,
-    urgency: "ปกติ",
-    orderChannel: "เว็บไซต์",
-    shippingFee: 0,
-    productionDetail: "พิมพ์ภาพสีเต็มรูป",
-    productionStaff: "สมหญิง ช่างพิมพ์",
-    productionDeadline: "2025-02-08",
-    productionStatus: "กำลังผลิต",
-    paymentProof: [
-      { slipUrl: "/placeholder.svg", transferDate: "2025-01-18", transferAmount: 50000, bankName: "ธ.กรุงเทพ" },
-    ]
-  },
-  {
-    id: "ORD-2025-004",
-    orderType: "สั่งผลิตภายนอก",
-    quotationNo: "QT-2025-004",
-    customerName: "คุณวิภา นักธุรกิจ",
-    lineId: "@wipa_biz",
-    address: "321 ถนนลาดพร้าว กรุงเทพฯ 10230",
-    phone: "089-123-4567",
-    email: "wipa@business.com",
-    orderDate: "2025-01-20",
-    usageDate: "2025-02-20",
-    deliveryDate: "2025-02-18",
-    deliveryMethod: "ลูกค้ารับเอง",
-    taxInvoice: false,
-    jobName: "พวงกุญแจอะคริลิค 2000 ชิ้น",
-    jobType: "ตัดเลเซอร์",
-    tags: "#พวงกุญแจ #อะคริลิค",
-    totalAmount: 48000,
-    paidAmount: 0,
-    outstandingAmount: 48000,
-    paymentStatus: "รอชำระ",
-    isClosed: false,
-    urgency: "ด่วน 2 วัน",
-    orderChannel: "โทร",
-    shippingFee: 0,
-    productionDetail: "ตัดเลเซอร์ + พิมพ์UV",
-    productionStaff: "ประยุทธ์ ช่างเลเซอร์",
-    productionDeadline: "2025-02-15",
-    productionStatus: "รอวัตถุดิบ"
-  }
-];
-
 type SortKey = "orderDate" | "deliveryDate" | "totalAmount" | "paidAmount" | "outstandingAmount" | null;
 type SortDir = "asc" | "desc";
 
@@ -211,6 +62,9 @@ export default function Revenue() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
+  const [orders, setOrders] = useState<OrderData[]>([]);
+  const [chartData, setChartData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [verifiedOrders, setVerifiedOrders] = useState<Set<string>>(new Set());
   const [documentCreated, setDocumentCreated] = useState<Set<string>>(new Set());
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -222,6 +76,25 @@ export default function Revenue() {
   const [verifyAmount, setVerifyAmount] = useState("");
   const [verifyFile, setVerifyFile] = useState<File | null>(null);
 
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const res = await accountingService.getRevenueData();
+      if (res.status === 'success') {
+        setOrders(res.data.orders);
+        setChartData(res.data.chartData);
+      }
+    } catch (error) {
+      toast.error("ไม่สามารถโหลดข้อมูลรายรับได้");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
       setSortDir(prev => prev === "asc" ? "desc" : "asc");
@@ -232,11 +105,12 @@ export default function Revenue() {
   };
 
   const filteredOrders = useMemo(() => {
-    let result = initialOrdersData.filter(order => {
+    let result = orders.filter(order => {
       const matchesSearch = order.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           order.customerName.toLowerCase().includes(searchTerm.toLowerCase());
+        order.customerName.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesType = filterType === "all" || order.orderType === filterType;
-      const matchesStatus = filterStatus === "all" || order.paymentStatus === filterStatus;
+      // Map frontend status to matches (e.g. 'รอชำระ' might be 'รอชำระเงิน' in API)
+      const matchesStatus = filterStatus === "all" || (order.paymentStatus && order.paymentStatus.includes(filterStatus));
       return matchesSearch && matchesType && matchesStatus;
     });
 
@@ -244,9 +118,9 @@ export default function Revenue() {
       result = [...result].sort((a, b) => {
         let valA: string | number, valB: string | number;
         if (sortKey === "orderDate" || sortKey === "deliveryDate") {
-          valA = a[sortKey]; valB = b[sortKey];
+          valA = a[sortKey as keyof OrderData] as string; valB = b[sortKey as keyof OrderData] as string;
         } else {
-          valA = a[sortKey]; valB = b[sortKey];
+          valA = a[sortKey as keyof OrderData] as number; valB = b[sortKey as keyof OrderData] as number;
         }
         if (valA < valB) return sortDir === "asc" ? -1 : 1;
         if (valA > valB) return sortDir === "asc" ? 1 : -1;
@@ -254,25 +128,25 @@ export default function Revenue() {
       });
     }
     return result;
-  }, [searchTerm, filterType, filterStatus, sortKey, sortDir]);
+  }, [orders, searchTerm, filterType, filterStatus, sortKey, sortDir]);
 
-  const totalRevenue = initialOrdersData.reduce((sum, order) => sum + order.totalAmount, 0);
-  const avgMonthlyRevenue = totalRevenue / 12;
-  const pendingPayments = initialOrdersData.filter(o => o.paymentStatus === "รอชำระ").length;
+  const totalRevenue = useMemo(() => orders.reduce((sum, order) => sum + order.totalAmount, 0), [orders]);
+  const avgMonthlyRevenue = chartData.length > 0 ? totalRevenue / chartData.length : 0;
+  const pendingPayments = useMemo(() => orders.filter(o => o.paymentStatus && o.paymentStatus.includes("รอชำระ")).length, [orders]);
 
   const getStatusColor = (status: string) => {
-    switch (status) {
-      case "ชำระครบ": return "default";
-      case "มัดจำ": return "secondary";
-      case "รอชำระ": return "destructive";
-      default: return "outline";
-    }
+    if (status.includes("ชำระครบ")) return "default";
+    if (status.includes("มัดจำ")) return "secondary";
+    if (status.includes("รอชำระ")) return "destructive";
+    return "outline";
   };
 
   const getUrgencyColor = (urgency: string) => {
+    if (!urgency) return "outline";
     if (urgency.includes("3-5")) return "destructive";
     if (urgency.includes("1 วัน")) return "destructive";
     if (urgency.includes("2 วัน")) return "secondary";
+    if (urgency.includes("ด่วน")) return "destructive";
     return "outline";
   };
 
@@ -391,7 +265,7 @@ export default function Revenue() {
           <CardContent>
             <div className="h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={revenueChartData}>
+                <LineChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                   <XAxis dataKey="month" tick={{ fill: 'hsl(var(--muted-foreground))' }} stroke="hsl(var(--border))" />
                   <YAxis tick={{ fill: 'hsl(var(--muted-foreground))' }} stroke="hsl(var(--border))" />
@@ -413,7 +287,7 @@ export default function Revenue() {
           <CardContent>
             <div className="h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={revenueChartData}>
+                <BarChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                   <XAxis dataKey="month" tick={{ fill: 'hsl(var(--muted-foreground))' }} stroke="hsl(var(--border))" />
                   <YAxis tick={{ fill: 'hsl(var(--muted-foreground))' }} stroke="hsl(var(--border))" />
@@ -493,7 +367,13 @@ export default function Revenue() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredOrders.map((order) => {
+                {loading ? (
+                  Array(5).fill(0).map((_, i) => (
+                    <TableRow key={i}>
+                      <TableCell colSpan={13}><Skeleton className="h-12 w-full" /></TableCell>
+                    </TableRow>
+                  ))
+                ) : filteredOrders.map((order) => {
                   const isVerified = verifiedOrders.has(order.id);
                   const hasDocument = documentCreated.has(order.id);
 

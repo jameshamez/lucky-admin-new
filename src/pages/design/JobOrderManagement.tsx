@@ -13,8 +13,11 @@ import { Search, Filter, Clock, AlertCircle, ChevronDown, FileText, Copy, Eye } 
 import { toast } from "sonner";
 import { JobUpdateDrawer } from "@/components/design/JobUpdateDrawer";
 import { JobDetailDrawer } from "@/components/design/JobDetailDrawer";
+import { designJobService } from "@/services/designJobService";
+import { useEffect } from "react";
 
 interface JobOrder {
+  id?: number;
   job_id: string;
   client_name: string;
   job_type: string;
@@ -322,7 +325,31 @@ const mockJobs: JobOrder[] = [
 ];
 
 export default function JobOrderManagement() {
-  const [jobs] = useState<JobOrder[]>(mockJobs);
+  const [jobs, setJobs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchJobs = async () => {
+    try {
+      setLoading(true);
+      const res = await designJobService.getJobs();
+      if (res.status === "success") {
+        const mapped = res.data.map((j: any) => ({
+          ...j,
+          job_id: j.job_code,
+          assignee: j.designer
+        }));
+        setJobs(mapped);
+      }
+    } catch (e) {
+      toast.error('ไม่สามารถดึงข้อมูลงานได้');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchJobs();
+  }, []);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterJobType, setFilterJobType] = useState<string>("all");
   const [filterAssignee, setFilterAssignee] = useState<string>("all");
@@ -405,18 +432,27 @@ export default function JobOrderManagement() {
     setIsAssignDialogOpen(true);
   };
 
-  const handleConfirmAssignment = () => {
+  const handleConfirmAssignment = async () => {
     if (!selectedJob) return;
 
+    let assignee = selectedDesigner;
     if (assignmentType === "random") {
-      const randomDesigner = designers[Math.floor(Math.random() * designers.length)];
-      toast.success(`มอบหมายงาน ${selectedJob.job_id} ให้ ${randomDesigner} เรียบร้อยแล้ว`);
-    } else {
-      if (!selectedDesigner) {
-        toast.error("กรุณาเลือกพนักงาน");
-        return;
-      }
-      toast.success(`มอบหมายงาน ${selectedJob.job_id} ให้ ${selectedDesigner} เรียบร้อยแล้ว`);
+      assignee = designers[Math.floor(Math.random() * designers.length)];
+    } else if (!assignee) {
+      toast.error("กรุณาเลือกพนักงาน");
+      return;
+    }
+
+    try {
+      await designJobService.updateJob(selectedJob.id!, {
+        designer: assignee,
+        status: "กำลังดำเนินการ",
+        assigned_at: new Date().toISOString()
+      });
+      toast.success(`มอบหมายงาน ${selectedJob.job_id} ให้ ${assignee} เรียบร้อยแล้ว`);
+      fetchJobs();
+    } catch (e) {
+      toast.error("เกิดข้อผิดพลาดในการมอบหมายงาน");
     }
 
     setIsAssignDialogOpen(false);
@@ -424,12 +460,32 @@ export default function JobOrderManagement() {
     setAssignmentType("random");
   };
 
-  const handleStartJob = (jobId: string) => {
-    toast.success(`เริ่มทำงาน ${jobId} เรียบร้อยแล้ว`);
+  const handleStartJob = async (jobId: string, id?: number) => {
+    if (!id) return;
+    try {
+      await designJobService.updateJob(id, {
+        status: "กำลังดำเนินการ",
+        started_at: new Date().toISOString()
+      });
+      toast.success(`เริ่มทำงาน ${jobId} เรียบร้อยแล้ว`);
+      fetchJobs();
+    } catch (e) {
+      toast.error("เกิดข้อผิดพลาด");
+    }
   };
 
-  const handleSubmitForReview = (jobId: string) => {
-    toast.success(`ส่งงาน ${jobId} เพื่อตรวจสอบเรียบร้อยแล้ว`);
+  const handleSubmitForReview = async (jobId: string, id?: number) => {
+    if (!id) return;
+    try {
+      await designJobService.updateJob(id, {
+        status: "รอตรวจสอบ",
+        artwork_status: "pending_review"
+      });
+      toast.success(`ส่งงาน ${jobId} เพื่อตรวจสอบเรียบร้อยแล้ว`);
+      fetchJobs();
+    } catch (e) {
+      toast.error("เกิดข้อผิดพลาด");
+    }
   };
 
   const handleOpenUpdateDialog = (job: JobOrder) => {
@@ -437,11 +493,17 @@ export default function JobOrderManagement() {
     setIsUpdateDialogOpen(true);
   };
 
-  const handleUpdateJobSubmit = (data: any) => {
-    console.log("Update job data:", data);
-    toast.success(`อัพเดทงาน ${selectedJobForUpdate?.job_id} เรียบร้อยแล้ว`);
-    setIsUpdateDialogOpen(false);
-    setSelectedJobForUpdate(null);
+  const handleUpdateJobSubmit = async (data: any) => {
+    if (!selectedJobForUpdate?.id) return;
+    try {
+      await designJobService.updateJob(selectedJobForUpdate.id, data);
+      toast.success(`อัพเดทงาน ${selectedJobForUpdate.job_id} เรียบร้อยแล้ว`);
+      setIsUpdateDialogOpen(false);
+      setSelectedJobForUpdate(null);
+      fetchJobs();
+    } catch (e) {
+      toast.error("เกิดข้อผิดพลาดในการอัปเดต");
+    }
   };
 
   const handleViewAllFiles = (job: JobOrder) => {
@@ -459,21 +521,53 @@ export default function JobOrderManagement() {
     setIsJobDetailDrawerOpen(true);
   };
 
-  const handleAssignJob = (employeeId: string) => {
-    if (selectedJobForDetail) {
-      toast.success(`มอบหมายงาน ${selectedJobForDetail.job_id} ให้ ${employeeId} เรียบร้อยแล้ว`);
+  const handleAssignJob = async (employeeId: string) => {
+    if (selectedJobForDetail?.id) {
+      try {
+        await designJobService.updateJob(selectedJobForDetail.id, {
+          designer: employeeId,
+          status: "กำลังดำเนินการ",
+          assigned_at: new Date().toISOString()
+        });
+        toast.success(`มอบหมายงาน ${selectedJobForDetail.job_id} ให้ ${employeeId} เรียบร้อยแล้ว`);
+        fetchJobs();
+        setIsJobDetailDrawerOpen(false);
+      } catch (e) {
+        toast.error("เกิดข้อผิดพลาด");
+      }
     }
   };
 
-  const handleStartJobFromDrawer = () => {
-    if (selectedJobForDetail) {
-      toast.success(`เริ่มทำงาน ${selectedJobForDetail.job_id} เรียบร้อยแล้ว`);
+  const handleStartJobFromDrawer = async () => {
+    if (selectedJobForDetail?.id) {
+      try {
+        await designJobService.updateJob(selectedJobForDetail.id, {
+          status: "กำลังดำเนินการ",
+          started_at: new Date().toISOString()
+        });
+        toast.success(`เริ่มทำงาน ${selectedJobForDetail.job_id} เรียบร้อยแล้ว`);
+        fetchJobs();
+        setIsJobDetailDrawerOpen(false);
+      } catch (e) {
+        toast.error("เกิดข้อผิดพลาด");
+      }
     }
   };
 
-  const handleRejectJob = (reason: string) => {
-    if (selectedJobForDetail) {
-      toast.info(`ปฏิเสธงาน ${selectedJobForDetail.job_id}\nเหตุผล: ${reason}\nข้อมูลจะถูกส่งกลับไปยังแผนกเซลล์`);
+  const handleRejectJob = async (reason: string) => {
+    if (selectedJobForDetail?.id) {
+      try {
+        await designJobService.updateJob(selectedJobForDetail.id, {
+          status: "รอรับงาน",
+          feedback: reason,
+          designer: null
+        });
+        toast.info(`ปฏิเสธงาน ${selectedJobForDetail.job_id}\nเหตุผล: ${reason}\nข้อมูลจะถูกส่งกลับ`);
+        fetchJobs();
+        setIsJobDetailDrawerOpen(false);
+      } catch (e) {
+        toast.error("เกิดข้อผิดพลาด");
+      }
     }
   };
 
@@ -498,7 +592,7 @@ export default function JobOrderManagement() {
       job.revision_rounds || 0,
       job.feedback || "-"
     ]);
-    
+
     const csvContent = [headers, ...rows].map(row => row.join(",")).join("\n");
     const blob = new Blob(["\ufeff" + csvContent], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
@@ -625,9 +719,8 @@ export default function JobOrderManagement() {
                     return (
                       <TableRow
                         key={job.job_id}
-                        className={`${
-                          daysLeft < 0 ? "bg-red-50 dark:bg-red-950/20" : ""
-                        } ${job.urgency === "เร่งด่วน 3-5 ชั่วโมง" ? "border-l-4 border-l-red-600" : ""}`}
+                        className={`${daysLeft < 0 ? "bg-red-50 dark:bg-red-950/20" : ""
+                          } ${job.urgency === "เร่งด่วน 3-5 ชั่วโมง" ? "border-l-4 border-l-red-600" : ""}`}
                       >
                         <TableCell className="font-medium sticky left-0 bg-background whitespace-nowrap text-center">
                           <a href="#" className="text-primary hover:underline">
@@ -683,9 +776,8 @@ export default function JobOrderManagement() {
                     return (
                       <TableRow
                         key={job.job_id}
-                        className={`${
-                          daysLeft < 0 ? "bg-red-50 dark:bg-red-950/20" : ""
-                        } ${job.urgency === "เร่งด่วน 3-5 ชั่วโมง" ? "border-l-4 border-l-red-600" : ""}`}
+                        className={`${daysLeft < 0 ? "bg-red-50 dark:bg-red-950/20" : ""
+                          } ${job.urgency === "เร่งด่วน 3-5 ชั่วโมง" ? "border-l-4 border-l-red-600" : ""}`}
                       >
                         <TableCell className="font-medium sticky left-0 bg-background whitespace-nowrap text-center">
                           <a href="#" className="text-primary hover:underline">
@@ -756,9 +848,8 @@ export default function JobOrderManagement() {
                     return (
                       <TableRow
                         key={job.job_id}
-                        className={`${
-                          daysLeft < 0 ? "bg-red-50 dark:bg-red-950/20" : ""
-                        } ${job.urgency === "เร่งด่วน 3-5 ชั่วโมง" ? "border-l-4 border-l-red-600" : ""}`}
+                        className={`${daysLeft < 0 ? "bg-red-50 dark:bg-red-950/20" : ""
+                          } ${job.urgency === "เร่งด่วน 3-5 ชั่วโมง" ? "border-l-4 border-l-red-600" : ""}`}
                       >
                         <TableCell className="font-medium sticky left-0 bg-background whitespace-nowrap text-center">
                           <a href="#" className="text-primary hover:underline">
@@ -833,7 +924,7 @@ export default function JobOrderManagement() {
                   {completedJobs.map((job) => {
                     const delayDays = job.finish_date ? calculateDelayDays(job.due_date, job.finish_date) : 0;
                     const rowColorClass = delayDays > 0 ? "bg-red-50 dark:bg-red-950/20" : "";
-                    
+
                     return (
                       <TableRow key={job.job_id} className={rowColorClass}>
                         <TableCell className="font-medium sticky left-0 bg-background whitespace-nowrap text-center">
@@ -929,8 +1020,8 @@ export default function JobOrderManagement() {
                 <div>
                   <label className="text-sm font-medium text-muted-foreground">วันที่เหลือ</label>
                   <p className={`text-lg ${getDaysLeftColor(calculateDaysLeft(selectedJob.due_date))}`}>
-                    {calculateDaysLeft(selectedJob.due_date) < 0 
-                      ? `เกิน ${Math.abs(calculateDaysLeft(selectedJob.due_date))} วัน` 
+                    {calculateDaysLeft(selectedJob.due_date) < 0
+                      ? `เกิน ${Math.abs(calculateDaysLeft(selectedJob.due_date))} วัน`
                       : `${calculateDaysLeft(selectedJob.due_date)} วัน`}
                   </p>
                 </div>
@@ -965,8 +1056,8 @@ export default function JobOrderManagement() {
                   <div className="grid grid-cols-3 gap-2">
                     {selectedJob.reference_images.map((img, idx) => (
                       <div key={idx} className="relative aspect-video rounded-md overflow-hidden bg-muted">
-                        <img 
-                          src={img} 
+                        <img
+                          src={img}
                           alt={`Reference ${idx + 1}`}
                           className="w-full h-full object-cover cursor-pointer hover:opacity-80 transition-opacity"
                           onClick={() => window.open(img, '_blank')}
@@ -984,8 +1075,8 @@ export default function JobOrderManagement() {
                   </label>
                   <div className="space-y-2">
                     {selectedJob.reference_files.map((file, idx) => (
-                      <div 
-                        key={idx} 
+                      <div
+                        key={idx}
                         className="flex items-center gap-2 p-2 bg-muted rounded-md hover:bg-muted/80 cursor-pointer transition-colors"
                       >
                         <div className="w-8 h-8 bg-primary/10 rounded flex items-center justify-center">
@@ -1086,8 +1177,8 @@ export default function JobOrderManagement() {
                     {selectedJobForFiles.reference_files && selectedJobForFiles.reference_files.length > 0 ? (
                       <div className="space-y-2">
                         {selectedJobForFiles.reference_files.map((file, idx) => (
-                          <div 
-                            key={idx} 
+                          <div
+                            key={idx}
                             className="flex items-center justify-between p-3 bg-muted rounded-md hover:bg-muted/80 cursor-pointer transition-colors"
                           >
                             <div className="flex items-center gap-3">
@@ -1115,8 +1206,8 @@ export default function JobOrderManagement() {
                       <div className="grid grid-cols-3 gap-3">
                         {selectedJobForFiles.reference_images.map((img, idx) => (
                           <div key={idx} className="relative aspect-video rounded-md overflow-hidden bg-muted group">
-                            <img 
-                              src={img} 
+                            <img
+                              src={img}
                               alt={`Reference ${idx + 1}`}
                               className="w-full h-full object-cover cursor-pointer group-hover:opacity-80 transition-opacity"
                               onClick={() => window.open(img, '_blank')}

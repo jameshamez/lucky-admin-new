@@ -1,7 +1,10 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useNavigate } from "react-router-dom";
-import { 
+import { useEffect, useState } from "react";
+import { accountingService } from "@/services/accountingService";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
   Calculator,
   Receipt,
   Users,
@@ -64,6 +67,24 @@ const accountingModules = [
 
 export default function AccountingMain() {
   const navigate = useNavigate();
+  const [stats, setStats] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const res = await accountingService.getDashboardData();
+        if (res.status === 'success') {
+          setStats(res.data.stats);
+        }
+      } catch (error) {
+        console.error("Failed to fetch accounting stats", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchStats();
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -78,8 +99,8 @@ export default function AccountingMain() {
         {accountingModules.map((module) => {
           const IconComponent = module.icon;
           return (
-            <Card 
-              key={module.id} 
+            <Card
+              key={module.id}
               className="group hover:shadow-lg transition-all duration-200 cursor-pointer border-2 hover:border-primary/20"
               onClick={() => navigate(module.path)}
             >
@@ -97,8 +118,8 @@ export default function AccountingMain() {
                 </div>
               </CardHeader>
               <CardContent>
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   className="w-full group-hover:bg-primary group-hover:text-primary-foreground transition-colors"
                 >
                   เข้าสู่ระบบ
@@ -117,7 +138,9 @@ export default function AccountingMain() {
           <Card>
             <CardContent className="pt-6">
               <div className="text-center">
-                <div className="text-2xl font-bold text-green-600">฿850,000</div>
+                <div className="text-2xl font-bold text-green-600">
+                  {loading ? <Skeleton className="h-8 w-24 mx-auto" /> : `฿${(stats?.monthlyIncome || 0).toLocaleString()}`}
+                </div>
                 <p className="text-sm text-muted-foreground">รายรับเดือนนี้</p>
               </div>
             </CardContent>
@@ -125,7 +148,9 @@ export default function AccountingMain() {
           <Card>
             <CardContent className="pt-6">
               <div className="text-center">
-                <div className="text-2xl font-bold text-red-600">฿520,000</div>
+                <div className="text-2xl font-bold text-red-600">
+                  {loading ? <Skeleton className="h-8 w-24 mx-auto" /> : `฿${(stats?.monthlyExpense || 0).toLocaleString()}`}
+                </div>
                 <p className="text-sm text-muted-foreground">รายจ่ายเดือนนี้</p>
               </div>
             </CardContent>
@@ -133,7 +158,9 @@ export default function AccountingMain() {
           <Card>
             <CardContent className="pt-6">
               <div className="text-center">
-                <div className="text-2xl font-bold text-blue-600">12</div>
+                <div className="text-2xl font-bold text-blue-600">
+                  {loading ? <Skeleton className="h-8 w-12 mx-auto" /> : (stats?.pendingPayments || 0)}
+                </div>
                 <p className="text-sm text-muted-foreground">รอการชำระ</p>
               </div>
             </CardContent>
@@ -141,7 +168,9 @@ export default function AccountingMain() {
           <Card>
             <CardContent className="pt-6">
               <div className="text-center">
-                <div className="text-2xl font-bold text-orange-600">8</div>
+                <div className="text-2xl font-bold text-orange-600">
+                  {loading ? <Skeleton className="h-8 w-12 mx-auto" /> : (stats?.pendingRequests || 0)}
+                </div>
                 <p className="text-sm text-muted-foreground">คำขอรออนุมัติ</p>
               </div>
             </CardContent>

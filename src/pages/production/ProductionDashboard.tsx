@@ -4,9 +4,9 @@ import { Button } from "@/components/ui/button";
 import { StatsCard } from "@/components/dashboard/StatsCard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { 
-  Package, 
-  Truck, 
+import {
+  Package,
+  Truck,
   CheckCircle,
   Car,
   Calendar,
@@ -14,131 +14,61 @@ import {
 } from "lucide-react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, LineChart, Line } from "recharts";
 
-// ข้อมูลประสิทธิภาพการผลิต
-const dailyProductionData = [
-  { period: "จ.", completed: 45 },
-  { period: "อ.", completed: 52 },
-  { period: "พ.", completed: 48 },
-  { period: "พฤ.", completed: 55 },
-  { period: "ศ.", completed: 49 },
-  { period: "ส.", completed: 42 },
-  { period: "อา.", completed: 38 },
-];
-
-const weeklyProductionData = [
-  { period: "สัปดาห์ 1", completed: 320 },
-  { period: "สัปดาห์ 2", completed: 350 },
-  { period: "สัปดาห์ 3", completed: 290 },
-  { period: "สัปดาห์ 4", completed: 380 },
-];
-
-const monthlyProductionData = [
-  { period: "ม.ค.", completed: 1340 },
-  { period: "ก.พ.", completed: 1280 },
-  { period: "มี.ค.", completed: 1450 },
-  { period: "เม.ย.", completed: 1520 },
-  { period: "พ.ค.", completed: 1380 },
-  { period: "มิ.ย.", completed: 1600 },
-];
-
-// งานประจำวันของแต่ละรายคน
-const dailyTasks = [
-  { 
-    id: 1, 
-    dateTime: "2024-01-20 08:00", 
-    employeeName: "สมชาย ใจดี", 
-    taskDetails: "แพ็กสินค้าเหรียญทอง 500 ชิ้น", 
-    taskCount: 500, 
-    taskType: "งานแพ็กสินค้า" 
-  },
-  { 
-    id: 2, 
-    dateTime: "2024-01-20 09:00", 
-    employeeName: "สมหญิง รักงาน", 
-    taskDetails: "ประกอบถ้วยรางวัล 50 ชิ้น", 
-    taskCount: 50, 
-    taskType: "งานประกอบ" 
-  },
-  { 
-    id: 3, 
-    dateTime: "2024-01-20 10:00", 
-    employeeName: "วิชัย มานะ", 
-    taskDetails: "จัดหาวัสดุสำหรับงานวันนี้", 
-    taskCount: 10, 
-    taskType: "งานจัดหา" 
-  },
-  { 
-    id: 4, 
-    dateTime: "2024-01-20 13:00", 
-    employeeName: "สุดา สวยงาม", 
-    taskDetails: "ผูกโบว์ของขวัญ 200 ชิ้น", 
-    taskCount: 200, 
-    taskType: "งานผูกโบว์" 
-  },
-  { 
-    id: 5, 
-    dateTime: "2024-01-20 14:00", 
-    employeeName: "ประยุทธ แข็งแรง", 
-    taskDetails: "จัดส่งสินค้าไปยังลูกค้า ABC", 
-    taskCount: 3, 
-    taskType: "งานจัดส่ง" 
-  },
-];
-
-// ออเดอร์ที่กำลังดำเนินการ
-const activeOrders = [
-  { 
-    id: "ORD-001", 
-    customerName: "บริษัท ABC จำกัด", 
-    jobName: "เหรียญรางวัลการแข่งขัน", 
-    jobDetails: "เหรียญทอง 500 ชิ้น, เหรียญเงิน 300 ชิ้น", 
-    salesPerson: "นภา ขายดี", 
-    shipping: "Air Freight", 
-    nearDue: true, 
-    urgency: "ด่วนมาก" 
-  },
-  { 
-    id: "ORD-002", 
-    customerName: "โรงเรียนสายรุ้ง", 
-    jobName: "ถ้วยรางวัลกีฬาสี", 
-    jobDetails: "ถ้วยทอง 10 ชิ้น, โล่เกียรติยศ 50 ชิ้น", 
-    salesPerson: "สมศรี ใส่ใจ", 
-    shipping: "EK Freight", 
-    nearDue: false, 
-    urgency: "ปกติ" 
-  },
-  { 
-    id: "ORD-003", 
-    customerName: "บริษัท XYZ Corporation", 
-    jobName: "คริสตัลของที่ระลึก", 
-    jobDetails: "คริสตัลแกะสลัก 100 ชิ้น", 
-    salesPerson: "วิไล รับใช้", 
-    shipping: "Sea Freight", 
-    nearDue: true, 
-    urgency: "ด่วน" 
-  },
-  { 
-    id: "ORD-004", 
-    customerName: "มหาวิทยาลัยการกีฬา", 
-    jobName: "เหรียญมหาวิทยาลัย", 
-    jobDetails: "เหรียญทองแดง 1000 ชิ้น", 
-    salesPerson: "นภา ขายดี", 
-    shipping: "Air Freight", 
-    nearDue: false, 
-    urgency: "ปกติ" 
-  },
-];
-
-const vehicleRequests = [
-  { id: "VEH-001", purpose: "จัดส่งสินค้าลูกค้า ABC", requestDate: "2024-01-20", status: "รออนุมัติ" },
-  { id: "VEH-002", purpose: "รับวัสดุจากซัพพลายเออร์", requestDate: "2024-01-21", status: "อนุมัติแล้ว" },
-  { id: "VEH-003", purpose: "จัดส่งสินค้าไปโรงเรียน", requestDate: "2024-01-21", status: "อนุมัติแล้ว" },
-];
+import { useState, useEffect } from "react";
+import { productionService } from "@/services/productionService";
+import { toast } from "sonner";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function ProductionDashboard() {
-  const totalOrders = activeOrders.length;
-  const completedToday = dailyProductionData[dailyProductionData.length - 1]?.completed || 0;
-  const pendingVehicleRequests = vehicleRequests.filter(req => req.status === "รออนุมัติ").length;
+  const [dashboardData, setDashboardData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchDashboard = async () => {
+    setLoading(true);
+    try {
+      const res = await productionService.getDashboardData();
+      if (res.status === 'success') {
+        setDashboardData(res.data);
+      }
+    } catch (error) {
+      console.error("Failed to fetch production dashboard:", error);
+      toast.error("ไม่สามารถโหลดข้อมูลแดชบอร์ดได้");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDashboard();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <Skeleton className="h-10 w-[300px]" />
+        </div>
+        <div className="grid gap-4 md:grid-cols-3">
+          <Skeleton className="h-[120px]" />
+          <Skeleton className="h-[120px]" />
+          <Skeleton className="h-[120px]" />
+        </div>
+        <Skeleton className="h-[400px] w-full" />
+      </div>
+    );
+  }
+
+  const stats = dashboardData?.stats || {
+    totalOrders: 0,
+    nearDueOrders: 0,
+    completedToday: 0,
+    pendingVehicleRequests: 0
+  };
+
+  const dailyProductionData = dashboardData?.dailyTrend || [];
+  const dailyTasks = dashboardData?.dailyTasks || [];
+  const activeOrders = dashboardData?.activeOrders || [];
+  const vehicleRequests = dashboardData?.vehicleRequests || []; // API endpoint might need update to return this
 
   return (
     <div className="space-y-6">
@@ -153,14 +83,14 @@ export default function ProductionDashboard() {
       <div className="grid gap-4 md:grid-cols-3">
         <StatsCard
           title="งานทั้งหมด"
-          value={totalOrders.toString()}
-          change={`${activeOrders.filter(o => o.nearDue).length} งานใกล้ครบกำหนด`}
+          value={stats.totalOrders.toString()}
+          change={`${stats.nearDueOrders} งานใกล้ครบกำหนด`}
           icon={<Package className="h-4 w-4" />}
           trend="neutral"
         />
         <StatsCard
           title="งานที่ผลิตเสร็จภายในวัน"
-          value={completedToday.toString()}
+          value={stats.completedToday.toString()}
           change="ชิ้นงาน"
           icon={<CheckCircle className="h-4 w-4" />}
           trend="up"
@@ -168,7 +98,7 @@ export default function ProductionDashboard() {
         <StatsCard
           title="สถานะการขอใช้รถ"
           value={vehicleRequests.length.toString()}
-          change={`${pendingVehicleRequests} รายการรออนุมัติ`}
+          change={`${stats.pendingVehicleRequests} รายการรออนุมัติ`}
           icon={<Car className="h-4 w-4" />}
           trend="neutral"
         />
@@ -186,7 +116,7 @@ export default function ProductionDashboard() {
               <TabsTrigger value="weekly">รายสัปดาห์</TabsTrigger>
               <TabsTrigger value="monthly">รายเดือน</TabsTrigger>
             </TabsList>
-            
+
             <TabsContent value="daily" className="mt-4">
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={dailyProductionData}>
@@ -198,28 +128,28 @@ export default function ProductionDashboard() {
                 </BarChart>
               </ResponsiveContainer>
             </TabsContent>
-            
+
             <TabsContent value="weekly" className="mt-4">
               <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={weeklyProductionData}>
+                <LineChart data={dailyProductionData}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="period" />
                   <YAxis />
                   <Tooltip />
-                  <Line 
-                    type="monotone" 
-                    dataKey="completed" 
-                    stroke="hsl(var(--primary))" 
+                  <Line
+                    type="monotone"
+                    dataKey="completed"
+                    stroke="hsl(var(--primary))"
                     strokeWidth={2}
-                    name="สินค้าผลิตเสร็จ" 
+                    name="สินค้าผลิตเสร็จ"
                   />
                 </LineChart>
               </ResponsiveContainer>
             </TabsContent>
-            
+
             <TabsContent value="monthly" className="mt-4">
               <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={monthlyProductionData}>
+                <BarChart data={dailyProductionData}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="period" />
                   <YAxis />
@@ -314,11 +244,11 @@ export default function ProductionDashboard() {
                     )}
                   </TableCell>
                   <TableCell className="text-center">
-                    <Badge 
+                    <Badge
                       variant={
-                        order.urgency === "ด่วนมาก" ? "destructive" : 
-                        order.urgency === "ด่วน" ? "secondary" : 
-                        "outline"
+                        order.urgency === "ด่วนมาก" ? "destructive" :
+                          order.urgency === "ด่วน" ? "secondary" :
+                            "outline"
                       }
                     >
                       {order.urgency}

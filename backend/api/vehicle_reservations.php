@@ -16,7 +16,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
 
 require '../condb.php';
 /** @var mysqli $conn */
-$conn->select_db('finfinph_lcukycompany'); 
+$conn->select_db('finfinph_lcukycompany');
 // เช็คการเชื่อมต่อ
 if ($conn->connect_error) {
     http_response_code(500);
@@ -34,7 +34,18 @@ switch ($method) {
         $reservations = [];
         if ($result && $result->num_rows > 0) {
             while ($row = $result->fetch_assoc()) {
-                $reservations[] = $row;
+                $reservations[] = [
+                    "id" => $row['id'],
+                    "customerLineName" => $row['customer_name'],
+                    "product" => $row['product_detail'],
+                    "deliveryBy" => $row['requester'],
+                    "deliveryDate" => $row['start_datetime'],
+                    "deliveryLocation" => $row['delivery_location'],
+                    "address" => $row['address'],
+                    "notes" => $row['notes'],
+                    "status" => $row['status'],
+                    "imageUrl" => $row['image_url']
+                ];
             }
         }
 
@@ -47,17 +58,35 @@ switch ($method) {
     case 'POST':
         $data = json_decode(file_get_contents("php://input"));
 
-        if (empty($data->vehicle_type) || empty($data->purpose) || empty($data->start_datetime) || empty($data->end_datetime) || empty($data->requester)) {
+        if (empty($data->customerLineName) || empty($data->deliveryDate)) {
             http_response_code(400);
-            echo json_encode(["status" => "error", "message" => "All fields are required"]);
+            echo json_encode(["status" => "error", "message" => "Required fields missing"]);
             exit();
         }
 
-        $sql = "INSERT INTO vehicle_reservations (vehicle_type, purpose, start_datetime, end_datetime, requester, status) VALUES (?, ?, ?, ?, ?, ?)";
+        $sql = "INSERT INTO vehicle_reservations (customer_name, product_detail, vehicle_type, purpose, delivery_location, address, start_datetime, end_datetime, requester, notes, status, image_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         $stmt = $conn->prepare($sql);
 
         $status = 'รออนุมัติ';
-        $stmt->bind_param("ssssss", $data->vehicle_type, $data->purpose, $data->start_datetime, $data->end_datetime, $data->requester, $status);
+        $v_type = $data->vehicle_type ?? 'กระบะ';
+        $purpose = $data->purpose ?? 'ส่งสินค้า';
+        $end_date = $data->end_datetime ?? $data->deliveryDate;
+
+        $stmt->bind_param(
+            "ssssssssssss",
+            $data->customerLineName,
+            $data->product,
+            $v_type,
+            $purpose,
+            $data->deliveryLocation,
+            $data->address,
+            $data->deliveryDate,
+            $end_date,
+            $data->deliveryBy,
+            $data->notes,
+            $status,
+            $data->imageUrl
+        );
 
         if ($stmt->execute()) {
             http_response_code(201);
@@ -65,6 +94,26 @@ switch ($method) {
         } else {
             http_response_code(500);
             echo json_encode(["status" => "error", "message" => "Failed to create reservation: " . $stmt->error]);
+        }
+        break;
+
+    case 'PUT':
+        $data = json_decode(file_get_contents("php://input"));
+        if (empty($data->id) || empty($data->status)) {
+            http_response_code(400);
+            echo json_encode(["status" => "error", "message" => "ID and Status are required"]);
+            exit();
+        }
+
+        $sql = "UPDATE vehicle_reservations SET status = ? WHERE id = ?";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param("si", $data->status, $data->id);
+
+        if ($stmt->execute()) {
+            echo json_encode(["status" => "success"]);
+        } else {
+            http_response_code(500);
+            echo json_encode(["status" => "error", "message" => $stmt->error]);
         }
         break;
 

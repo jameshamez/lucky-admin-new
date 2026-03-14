@@ -1,6 +1,8 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { accountingService } from "@/services/accountingService";
+import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -22,9 +24,8 @@ import { Separator } from "@/components/ui/separator";
 import {
   Monitor, Laptop, Smartphone, Plug, Search, Plus, Edit, Eye, QrCode,
   ArrowUpDown, Wrench, UserCheck, Package, ChevronRight, CalendarDays,
-  DollarSign, Printer, History,
+  DollarSign, Printer, History, Loader2
 } from "lucide-react";
-import { toast } from "sonner";
 
 // ── Types ──
 interface AssetHistoryEntry {
@@ -120,11 +121,73 @@ const initialAssets: Asset[] = [
 
 // ── Component ──
 const OfficeInventory = () => {
-  const [assets, setAssets] = useState<Asset[]>(initialAssets);
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [bubbleFilter, setBubbleFilter] = useState<string>("all");
   const [sortKey, setSortKey] = useState<string>("");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  useEffect(() => {
+    fetchAssets();
+  }, []);
+
+  const fetchAssets = async () => {
+    setIsLoading(true);
+    try {
+      const res = await accountingService.getOfficeAssets();
+      if (res.status === 'success') {
+        const mapped = res.data.map((a: any) => ({
+          id: a.id,
+          assetId: a.asset_id,
+          name: a.name,
+          category: a.category,
+          assignedTo: a.assigned_to || "",
+          purchaseDate: a.purchase_date,
+          price: Number(a.price),
+          status: a.status,
+          history: [] // Initially empty, load on demand
+        }));
+        setAssets(mapped);
+      }
+    } catch (error) {
+      toast.error("ไม่สามารถโหลดข้อมูลทรัพย์สินได้");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchAssetDetails = async (asset: Asset) => {
+    try {
+      const res = await accountingService.getOfficeAssetDetails(asset.id);
+      if (res.status === 'success') {
+        const a = res.data;
+        const mappedAsset: Asset = {
+          id: a.id,
+          assetId: a.asset_id,
+          name: a.name,
+          category: a.category,
+          assignedTo: a.assigned_to || "",
+          purchaseDate: a.purchase_date,
+          price: Number(a.price),
+          status: a.status,
+          history: a.history.map((h: any) => ({
+            id: h.id,
+            date: h.date,
+            type: h.type as any,
+            description: h.description,
+            cost: h.cost,
+            fromUser: h.fromUser,
+            toUser: h.toUser
+          }))
+        };
+        setSelectedAsset(mappedAsset);
+        setShowHistoryDrawer(true);
+      }
+    } catch (error) {
+      toast.error("ไม่สามารถโหลดประวัติได้");
+    }
+  };
 
   // Drawers & Dialogs
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
@@ -227,32 +290,62 @@ const OfficeInventory = () => {
   };
 
   // ── Add asset ──
-  const handleAddAsset = () => {
+  const handleAddAsset = async () => {
     const seq = assets.length + 1;
     const assetId = addForm.assetIdOverride || generateAssetId(addForm.purchaseDate, seq);
-    const newAsset: Asset = {
-      id: String(Date.now()),
+
+    const payload = {
       assetId,
       name: addForm.name,
       category: addForm.category,
       assignedTo: addForm.assignedTo,
       purchaseDate: addForm.purchaseDate,
       price: addForm.price,
-      status: addForm.status,
-      history: [{ id: String(Date.now()), date: addForm.purchaseDate, type: "register", description: "นำเข้าอุปกรณ์ใหม่" }],
+      status: addForm.status
     };
-    setAssets(prev => [...prev, newAsset]);
-    setShowAddDialog(false);
-    setAddForm({ name: "", category: "คอมพิวเตอร์", assignedTo: "", purchaseDate: today, price: 0, status: "ใช้งานอยู่", assetIdOverride: "" });
-    toast.success("เพิ่มทรัพย์สินเรียบร้อยแล้ว");
+
+    try {
+      const res = await accountingService.saveOfficeAsset(payload);
+      if (res.status === 'success') {
+        toast.success("เพิ่มทรัพย์สินเรียบร้อยแล้ว");
+        setShowAddDialog(false);
+        setAddForm({ name: "", category: "คอมพิวเตอร์", assignedTo: "", purchaseDate: today, price: 0, status: "ใช้งานอยู่", assetIdOverride: "" });
+        fetchAssets();
+      } else {
+        toast.error(res.message || "เกิดข้อผิดพลาด");
+      }
+    } catch (error) {
+      toast.error("การสื่อสารกับเซิร์ฟเวอร์ล้มเหลว");
+    }
   };
 
   // ── Edit asset ──
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (!editAsset) return;
-    setAssets(prev => prev.map(a => a.id === editAsset.id ? editAsset : a));
-    setShowEditDialog(false);
-    toast.success("แก้ไขข้อมูลเรียบร้อยแล้ว");
+
+    const payload = {
+      id: editAsset.id,
+      assetId: editAsset.assetId,
+      name: editAsset.name,
+      category: editAsset.category,
+      assignedTo: editAsset.assignedTo,
+      purchaseDate: editAsset.purchaseDate,
+      price: editAsset.price,
+      status: editAsset.status
+    };
+
+    try {
+      const res = await accountingService.saveOfficeAsset(payload);
+      if (res.status === 'success') {
+        toast.success("แก้ไขข้อมูลเรียบร้อยแล้ว");
+        setShowEditDialog(false);
+        fetchAssets();
+      } else {
+        toast.error(res.message || "เกิดข้อผิดพลาด");
+      }
+    } catch (error) {
+      toast.error("การสื่อสารกับเซิร์ฟเวอร์ล้มเหลว");
+    }
   };
 
   // ── Print QR (simple text simulation) ──
@@ -372,7 +465,16 @@ const OfficeInventory = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredAssets.length === 0 ? (
+                {isLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center py-20">
+                      <div className="flex flex-col items-center gap-2">
+                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                        <p className="text-muted-foreground">กำลังโหลดข้อมูล...</p>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : filteredAssets.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
                       ไม่พบรายการทรัพย์สิน
@@ -380,7 +482,7 @@ const OfficeInventory = () => {
                   </TableRow>
                 ) : (
                   filteredAssets.map(asset => (
-                    <TableRow key={asset.id} className="hover:bg-muted/50 cursor-pointer" onClick={() => { setSelectedAsset(asset); setShowHistoryDrawer(true); }}>
+                    <TableRow key={asset.id} className="hover:bg-muted/50 cursor-pointer" onClick={() => fetchAssetDetails(asset)}>
                       <TableCell className="font-mono text-xs whitespace-nowrap">
                         <div className="flex items-center gap-2">
                           <QrCode className="h-4 w-4 opacity-40" />
@@ -403,7 +505,7 @@ const OfficeInventory = () => {
                       <TableCell className="whitespace-nowrap">{getStatusBadge(asset.status)}</TableCell>
                       <TableCell onClick={e => e.stopPropagation()}>
                         <div className="flex justify-center gap-1">
-                          <Button variant="ghost" size="icon" title="ดูประวัติ" onClick={() => { setSelectedAsset(asset); setShowHistoryDrawer(true); }}>
+                          <Button variant="ghost" size="icon" title="ดูประวัติ" onClick={() => fetchAssetDetails(asset)}>
                             <Eye className="h-4 w-4" />
                           </Button>
                           <Button variant="ghost" size="icon" title="แก้ไข" onClick={() => { setEditAsset({ ...asset }); setShowEditDialog(true); }}>

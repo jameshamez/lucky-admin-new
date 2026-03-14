@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +13,8 @@ import { Separator } from "@/components/ui/separator";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Plus, FileDown, Search, ArrowUpDown, Trophy, ClipboardCheck, Lock, Image, FileText, Receipt, Package, AlertTriangle } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { accountingService } from "@/services/accountingService";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface StockItem {
   name: string;
@@ -60,219 +62,7 @@ interface WorkOrder {
   notes: string;
 }
 
-const mockOrders: WorkOrder[] = [
-  {
-    id: "WO-2026-001",
-    jobId: "JOB-2026-0012",
-    customer: "บริษัท ABC จำกัด",
-    project: "โปรเจคสายคล้องคอพรีเมียม",
-    factory: "Chaina B&C",
-    prIssueDate: "2026-01-15",
-    shipmentDate: "2026-02-01",
-    quantity: 5000,
-    revenue: 250000,
-    expense: 162500,
-    stockStatus: "ครบ",
-    workStatus: "ตรวจสอบแล้ว",
-    assignedBy: "สมชาย ใจดี",
-    revenueItems: [
-      { desc: "ค่าสินค้า สายคล้องคอ 5,000 ชิ้น", amount: 200000, status: "ชำระแล้ว" },
-      { desc: "ค่าพิมพ์โลโก้", amount: 30000, status: "ชำระแล้ว" },
-      { desc: "ค่าขนส่ง", amount: 20000, status: "ค้างชำระ" },
-    ],
-    expenseItems: [
-      { desc: "ต้นทุนสินค้า (โรงงาน)", amount: 120000, status: "ตั้งเบิกแล้ว" },
-      { desc: "ค่าขนส่งจากจีน", amount: 25000, status: "ตั้งเบิกแล้ว" },
-      { desc: "ค่าภาษีนำเข้า", amount: 12500, status: "ยังไม่ตั้งเบิก" },
-      { desc: "ค่าบรรจุภัณฑ์", amount: 5000, status: "ตั้งเบิกแล้ว" },
-    ],
-    stockSold: [
-      { name: "สายคล้องคอ พรีเมียม 20mm", soldQty: 5000, deductedQty: 5000 },
-      { name: "ตะขอเหล็ก J-Hook", soldQty: 5000, deductedQty: 5000 },
-    ],
-    stockDeducted: [
-      { name: "สายคล้องคอ พรีเมียม 20mm", soldQty: 5000, deductedQty: 5000 },
-      { name: "ตะขอเหล็ก J-Hook", soldQty: 5000, deductedQty: 5000 },
-    ],
-    attachments: [
-      { name: "หน้างาน_001.jpg", type: "image", url: "#" },
-      { name: "สลิปชำระ_001.pdf", type: "slip", url: "#" },
-      { name: "ใบรับของ_001.pdf", type: "document", url: "#" },
-    ],
-    notes: "งานเสร็จตามกำหนด ลูกค้าพึงพอใจ",
-  },
-  {
-    id: "WO-2026-002",
-    jobId: "JOB-2026-0018",
-    customer: "บริษัท XYZ จำกัด",
-    project: "ตัวอย่างพวงกุญแจโลหะ",
-    factory: "China BENC",
-    prIssueDate: "2026-01-18",
-    shipmentDate: "2026-02-10",
-    quantity: 10000,
-    revenue: 180000,
-    expense: 135000,
-    stockStatus: "ไม่ครบ",
-    workStatus: "กำลังดำเนินการ",
-    assignedBy: "สมหญิง รักงาน",
-    revenueItems: [
-      { desc: "ค่าสินค้า พวงกุญแจ 10,000 ชิ้น", amount: 150000, status: "ชำระแล้ว" },
-      { desc: "ค่าแม่พิมพ์", amount: 30000, status: "ค้างชำระ" },
-    ],
-    expenseItems: [
-      { desc: "ต้นทุนสินค้า (โรงงาน)", amount: 100000, status: "ตั้งเบิกแล้ว" },
-      { desc: "ค่าขนส่ง", amount: 20000, status: "ยังไม่ตั้งเบิก" },
-      { desc: "ค่าแม่พิมพ์", amount: 15000, status: "ตั้งเบิกแล้ว" },
-    ],
-    stockSold: [
-      { name: "พวงกุญแจโลหะ รุ่น A", soldQty: 10000, deductedQty: 8500 },
-      { name: "กล่องบรรจุ", soldQty: 10000, deductedQty: 10000 },
-    ],
-    stockDeducted: [
-      { name: "พวงกุญแจโลหะ รุ่น A", soldQty: 10000, deductedQty: 8500 },
-      { name: "กล่องบรรจุ", soldQty: 10000, deductedQty: 10000 },
-    ],
-    attachments: [
-      { name: "ตัวอย่างงาน.jpg", type: "image", url: "#" },
-    ],
-    notes: "",
-  },
-  {
-    id: "WO-2026-003",
-    jobId: "JOB-2026-0025",
-    customer: "หจก. สุขสันต์",
-    project: "เข็มกลัดสัมมนา",
-    factory: "PV พิวเตอร์",
-    prIssueDate: "2026-02-01",
-    shipmentDate: "2026-02-12",
-    quantity: 2000,
-    revenue: 90000,
-    expense: 54000,
-    stockStatus: "ครบ",
-    workStatus: "ปิดงาน",
-    assignedBy: "สมชาย ใจดี",
-    revenueItems: [
-      { desc: "ค่าสินค้า เข็มกลัด 2,000 ชิ้น", amount: 80000, status: "ชำระแล้ว" },
-      { desc: "ค่าขนส่ง", amount: 10000, status: "ชำระแล้ว" },
-    ],
-    expenseItems: [
-      { desc: "ต้นทุนผลิต", amount: 48000, status: "ตั้งเบิกแล้ว" },
-      { desc: "ค่าขนส่ง", amount: 6000, status: "ตั้งเบิกแล้ว" },
-    ],
-    stockSold: [
-      { name: "เข็มกลัด สัมมนา 30mm", soldQty: 2000, deductedQty: 2000 },
-    ],
-    stockDeducted: [
-      { name: "เข็มกลัด สัมมนา 30mm", soldQty: 2000, deductedQty: 2000 },
-    ],
-    attachments: [
-      { name: "ใบส่งของ.pdf", type: "document", url: "#" },
-      { name: "สลิปจ่าย.jpg", type: "slip", url: "#" },
-    ],
-    notes: "ปิดงานเรียบร้อย ส่งยอดเข้า Dashboard แล้ว",
-  },
-  {
-    id: "WO-2026-004", jobId: "JOB-2026-0031", customer: "บริษัท สยามพรีเมียม จำกัด", project: "สายคล้องคอ งาน Expo 2026",
-    factory: "Chaina B&C", prIssueDate: "2026-01-20", shipmentDate: "2026-02-15", quantity: 8000, revenue: 320000, expense: 208000,
-    stockStatus: "ครบ", workStatus: "ตรวจสอบแล้ว", assignedBy: "สมชาย ใจดี",
-    revenueItems: [{ desc: "ค่าสินค้า 8,000 ชิ้น", amount: 280000, status: "ชำระแล้ว" }, { desc: "ค่าพิมพ์ซิลค์สกรีน", amount: 40000, status: "ชำระแล้ว" }],
-    expenseItems: [{ desc: "ต้นทุนโรงงาน", amount: 180000, status: "ตั้งเบิกแล้ว" }, { desc: "ค่าขนส่ง", amount: 28000, status: "ตั้งเบิกแล้ว" }],
-    stockSold: [{ name: "สายคล้องคอ Expo 25mm", soldQty: 8000, deductedQty: 8000 }],
-    stockDeducted: [{ name: "สายคล้องคอ Expo 25mm", soldQty: 8000, deductedQty: 8000 }],
-    attachments: [{ name: "artwork_expo.jpg", type: "image", url: "#" }], notes: "",
-  },
-  {
-    id: "WO-2026-005", jobId: "JOB-2026-0038", customer: "บริษัท แกรนด์ มาร์เก็ตติ้ง จำกัด", project: "พวงกุญแจอะคริลิค",
-    factory: "China BENC", prIssueDate: "2026-01-25", shipmentDate: "2026-02-18", quantity: 15000, revenue: 225000, expense: 150000,
-    stockStatus: "ไม่ครบ", workStatus: "กำลังดำเนินการ", assignedBy: "สมหญิง รักงาน",
-    revenueItems: [{ desc: "ค่าสินค้า 15,000 ชิ้น", amount: 195000, status: "ชำระแล้ว" }, { desc: "ค่าแม่พิมพ์", amount: 30000, status: "ค้างชำระ" }],
-    expenseItems: [{ desc: "ต้นทุนโรงงาน", amount: 120000, status: "ตั้งเบิกแล้ว" }, { desc: "ค่าขนส่ง", amount: 30000, status: "ยังไม่ตั้งเบิก" }],
-    stockSold: [{ name: "พวงกุญแจอะคริลิค 50mm", soldQty: 15000, deductedQty: 12000 }],
-    stockDeducted: [{ name: "พวงกุญแจอะคริลิค 50mm", soldQty: 15000, deductedQty: 12000 }],
-    attachments: [{ name: "sample_acrylic.jpg", type: "image", url: "#" }, { name: "po_005.pdf", type: "document", url: "#" }], notes: "รอสินค้าล็อตที่ 2",
-  },
-  {
-    id: "WO-2026-006", jobId: "JOB-2026-0042", customer: "มหาวิทยาลัยกรุงเทพ", project: "เข็มกลัดรับปริญญา",
-    factory: "PV พิวเตอร์", prIssueDate: "2026-02-01", shipmentDate: "2026-02-20", quantity: 3000, revenue: 150000, expense: 78000,
-    stockStatus: "ครบ", workStatus: "ตรวจสอบแล้ว", assignedBy: "สมชาย ใจดี",
-    revenueItems: [{ desc: "ค่าเข็มกลัด 3,000 ชิ้น", amount: 135000, status: "ชำระแล้ว" }, { desc: "ค่าขนส่ง", amount: 15000, status: "ชำระแล้ว" }],
-    expenseItems: [{ desc: "ต้นทุนผลิต", amount: 66000, status: "ตั้งเบิกแล้ว" }, { desc: "ค่าขนส่ง", amount: 12000, status: "ตั้งเบิกแล้ว" }],
-    stockSold: [{ name: "เข็มกลัดรับปริญญา 35mm", soldQty: 3000, deductedQty: 3000 }],
-    stockDeducted: [{ name: "เข็มกลัดรับปริญญา 35mm", soldQty: 3000, deductedQty: 3000 }],
-    attachments: [{ name: "ใบเสนอราคา.pdf", type: "document", url: "#" }], notes: "ลูกค้าสั่งเพิ่ม 500 ชิ้น",
-  },
-  {
-    id: "WO-2026-007", jobId: "JOB-2026-0055", customer: "บริษัท โกลเด้น สตาร์ จำกัด", project: "ป้ายชื่อโลหะพนักงาน",
-    factory: "Shinemaker", prIssueDate: "2026-02-03", shipmentDate: "2026-02-22", quantity: 500, revenue: 75000, expense: 42500,
-    stockStatus: "ครบ", workStatus: "กำลังดำเนินการ", assignedBy: "สมหญิง รักงาน",
-    revenueItems: [{ desc: "ค่าป้ายชื่อ 500 ชิ้น", amount: 65000, status: "ค้างชำระ" }, { desc: "ค่าออกแบบ", amount: 10000, status: "ชำระแล้ว" }],
-    expenseItems: [{ desc: "ต้นทุนผลิต", amount: 35000, status: "ตั้งเบิกแล้ว" }, { desc: "ค่าชุบทอง", amount: 7500, status: "ยังไม่ตั้งเบิก" }],
-    stockSold: [{ name: "ป้ายชื่อโลหะ 70x25mm", soldQty: 500, deductedQty: 500 }],
-    stockDeducted: [{ name: "ป้ายชื่อโลหะ 70x25mm", soldQty: 500, deductedQty: 500 }],
-    attachments: [], notes: "",
-  },
-  {
-    id: "WO-2026-008", jobId: "JOB-2026-0061", customer: "บริษัท ไทยเบฟเวอเรจ จำกัด (มหาชน)", project: "ที่เปิดขวดพรีเมียม",
-    factory: "China BENC", prIssueDate: "2026-02-05", shipmentDate: "2026-03-01", quantity: 20000, revenue: 400000, expense: 260000,
-    stockStatus: "ไม่ครบ", workStatus: "กำลังดำเนินการ", assignedBy: "สมชาย ใจดี",
-    revenueItems: [{ desc: "ค่าสินค้า 20,000 ชิ้น", amount: 360000, status: "ชำระแล้ว" }, { desc: "ค่าแม่พิมพ์", amount: 40000, status: "ค้างชำระ" }],
-    expenseItems: [{ desc: "ต้นทุนโรงงาน", amount: 200000, status: "ตั้งเบิกแล้ว" }, { desc: "ค่าขนส่งทางเรือ", amount: 45000, status: "ยังไม่ตั้งเบิก" }, { desc: "ค่าภาษีนำเข้า", amount: 15000, status: "ยังไม่ตั้งเบิก" }],
-    stockSold: [{ name: "ที่เปิดขวด รุ่น Premium", soldQty: 20000, deductedQty: 15000 }, { name: "กล่องใส่", soldQty: 20000, deductedQty: 20000 }],
-    stockDeducted: [{ name: "ที่เปิดขวด รุ่น Premium", soldQty: 20000, deductedQty: 15000 }, { name: "กล่องใส่", soldQty: 20000, deductedQty: 20000 }],
-    attachments: [{ name: "design_final.jpg", type: "image", url: "#" }, { name: "slip_deposit.jpg", type: "slip", url: "#" }], notes: "รอสินค้าจากจีนล็อตสุดท้าย",
-  },
-  {
-    id: "WO-2026-009", jobId: "JOB-2026-0070", customer: "สำนักงานตำรวจแห่งชาติ", project: "เหรียญที่ระลึก 100 ปี",
-    factory: "PV พิวเตอร์", prIssueDate: "2026-02-07", shipmentDate: "2026-03-05", quantity: 1000, revenue: 350000, expense: 175000,
-    stockStatus: "ครบ", workStatus: "ปิดงาน", assignedBy: "สมชาย ใจดี",
-    revenueItems: [{ desc: "ค่าเหรียญ 1,000 ชิ้น", amount: 300000, status: "ชำระแล้ว" }, { desc: "ค่ากล่องกำมะหยี่", amount: 50000, status: "ชำระแล้ว" }],
-    expenseItems: [{ desc: "ต้นทุนผลิตเหรียญ", amount: 140000, status: "ตั้งเบิกแล้ว" }, { desc: "ค่ากล่อง", amount: 25000, status: "ตั้งเบิกแล้ว" }, { desc: "ค่าขนส่ง", amount: 10000, status: "ตั้งเบิกแล้ว" }],
-    stockSold: [{ name: "เหรียญที่ระลึก 45mm", soldQty: 1000, deductedQty: 1000 }, { name: "กล่องกำมะหยี่", soldQty: 1000, deductedQty: 1000 }],
-    stockDeducted: [{ name: "เหรียญที่ระลึก 45mm", soldQty: 1000, deductedQty: 1000 }, { name: "กล่องกำมะหยี่", soldQty: 1000, deductedQty: 1000 }],
-    attachments: [{ name: "เหรียญ_final.jpg", type: "image", url: "#" }, { name: "ใบส่งของ.pdf", type: "document", url: "#" }, { name: "สลิปจ่าย_full.jpg", type: "slip", url: "#" }],
-    notes: "ปิดงานเรียบร้อย งานพิเศษ GP สูง",
-  },
-  {
-    id: "WO-2026-010", jobId: "JOB-2026-0078", customer: "บริษัท เอเชีย มีเดีย จำกัด", project: "USB Flash Drive สกรีนโลโก้",
-    factory: "China W", prIssueDate: "2026-02-08", shipmentDate: "2026-03-08", quantity: 5000, revenue: 200000, expense: 145000,
-    stockStatus: "ครบ", workStatus: "กำลังดำเนินการ", assignedBy: "สมหญิง รักงาน",
-    revenueItems: [{ desc: "ค่า USB 5,000 ชิ้น", amount: 175000, status: "ชำระแล้ว" }, { desc: "ค่าสกรีน", amount: 25000, status: "ค้างชำระ" }],
-    expenseItems: [{ desc: "ต้นทุน USB", amount: 110000, status: "ตั้งเบิกแล้ว" }, { desc: "ค่าสกรีนจีน", amount: 20000, status: "ตั้งเบิกแล้ว" }, { desc: "ค่าขนส่ง Express", amount: 15000, status: "ยังไม่ตั้งเบิก" }],
-    stockSold: [{ name: "USB 16GB รุ่น Slim", soldQty: 5000, deductedQty: 5000 }],
-    stockDeducted: [{ name: "USB 16GB รุ่น Slim", soldQty: 5000, deductedQty: 5000 }],
-    attachments: [{ name: "usb_mockup.jpg", type: "image", url: "#" }], notes: "",
-  },
-  {
-    id: "WO-2026-011", jobId: "JOB-2026-0085", customer: "การไฟฟ้าส่วนภูมิภาค", project: "แก้วน้ำเซรามิค ของที่ระลึก",
-    factory: "The101", prIssueDate: "2026-02-10", shipmentDate: "2026-03-10", quantity: 3000, revenue: 180000, expense: 99000,
-    stockStatus: "ไม่ครบ", workStatus: "กำลังดำเนินการ", assignedBy: "สมชาย ใจดี",
-    revenueItems: [{ desc: "ค่าแก้วเซรามิค 3,000 ใบ", amount: 150000, status: "ชำระแล้ว" }, { desc: "ค่ากล่อง+บรรจุ", amount: 30000, status: "ค้างชำระ" }],
-    expenseItems: [{ desc: "ต้นทุนผลิตแก้ว", amount: 75000, status: "ตั้งเบิกแล้ว" }, { desc: "ค่ากล่อง", amount: 15000, status: "ตั้งเบิกแล้ว" }, { desc: "ค่าขนส่ง", amount: 9000, status: "ยังไม่ตั้งเบิก" }],
-    stockSold: [{ name: "แก้วเซรามิค 300ml", soldQty: 3000, deductedQty: 2700 }, { name: "กล่องบรรจุ", soldQty: 3000, deductedQty: 3000 }],
-    stockDeducted: [{ name: "แก้วเซรามิค 300ml", soldQty: 3000, deductedQty: 2700 }, { name: "กล่องบรรจุ", soldQty: 3000, deductedQty: 3000 }],
-    attachments: [{ name: "แก้ว_design.jpg", type: "image", url: "#" }], notes: "รอแก้วล็อต 2 อีก 300 ใบ",
-  },
-  {
-    id: "WO-2026-012", jobId: "JOB-2026-0091", customer: "โรงแรม เดอะ สยาม", project: "พัดลมพกพา USB ของพรีเมียม",
-    factory: "China X", prIssueDate: "2026-02-11", shipmentDate: "2026-03-12", quantity: 2000, revenue: 160000, expense: 96000,
-    stockStatus: "ครบ", workStatus: "ตรวจสอบแล้ว", assignedBy: "สมหญิง รักงาน",
-    revenueItems: [{ desc: "ค่าพัดลม 2,000 ชิ้น", amount: 140000, status: "ชำระแล้ว" }, { desc: "ค่าสกรีนโลโก้", amount: 20000, status: "ชำระแล้ว" }],
-    expenseItems: [{ desc: "ต้นทุนพัดลม", amount: 70000, status: "ตั้งเบิกแล้ว" }, { desc: "ค่าสกรีน", amount: 16000, status: "ตั้งเบิกแล้ว" }, { desc: "ค่าขนส่ง", amount: 10000, status: "ตั้งเบิกแล้ว" }],
-    stockSold: [{ name: "พัดลม USB Mini Fan", soldQty: 2000, deductedQty: 2000 }],
-    stockDeducted: [{ name: "พัดลม USB Mini Fan", soldQty: 2000, deductedQty: 2000 }],
-    attachments: [{ name: "fan_sample.jpg", type: "image", url: "#" }, { name: "invoice_012.pdf", type: "document", url: "#" }], notes: "ลูกค้าพอใจ อาจสั่งซ้ำ",
-  },
-  {
-    id: "WO-2026-013", jobId: "JOB-2026-0099", customer: "บริษัท ออล อินสไปร์ จำกัด", project: "กระเป๋าผ้า Canvas พิมพ์ลาย",
-    factory: "ไทย Solid", prIssueDate: "2026-02-13", shipmentDate: "2026-03-15", quantity: 6000, revenue: 270000, expense: 189000,
-    stockStatus: "ครบ", workStatus: "กำลังดำเนินการ", assignedBy: "สมชาย ใจดี",
-    revenueItems: [{ desc: "ค่ากระเป๋า 6,000 ใบ", amount: 240000, status: "ชำระแล้ว" }, { desc: "ค่าพิมพ์ลาย", amount: 30000, status: "ค้างชำระ" }],
-    expenseItems: [{ desc: "ต้นทุนผ้า+เย็บ", amount: 150000, status: "ตั้งเบิกแล้ว" }, { desc: "ค่าพิมพ์", amount: 24000, status: "ตั้งเบิกแล้ว" }, { desc: "ค่าขนส่ง", amount: 15000, status: "ยังไม่ตั้งเบิก" }],
-    stockSold: [{ name: "กระเป๋าผ้า Canvas 14x16\"", soldQty: 6000, deductedQty: 6000 }],
-    stockDeducted: [{ name: "กระเป๋าผ้า Canvas 14x16\"", soldQty: 6000, deductedQty: 6000 }],
-    attachments: [{ name: "bag_design.jpg", type: "image", url: "#" }], notes: "งานผลิตในประเทศ ส่งเร็ว",
-  },
-];
+// No mock data - fetched from API
 
 type SortKey = "id" | "revenue" | "expense" | "gp" | "margin" | "shipmentDate" | "prIssueDate";
 
@@ -280,11 +70,30 @@ export default function WorkOrders() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterFactory, setFilterFactory] = useState("all");
-  const [orders, setOrders] = useState<WorkOrder[]>(mockOrders);
+  const [orders, setOrders] = useState<WorkOrder[]>([]);
+  const [loading, setLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<WorkOrder | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("id");
   const [sortAsc, setSortAsc] = useState(true);
+
+  useEffect(() => {
+    fetchOrders();
+  }, []);
+
+  const fetchOrders = async () => {
+    setLoading(true);
+    try {
+      const res = await accountingService.getWorkOrders();
+      if (res.status === 'success') {
+        setOrders(res.data);
+      }
+    } catch (error) {
+      toast({ title: "เกิดข้อผิดพลาด", description: "ไม่สามารถโหลดข้อมูลใบสั่งงานได้", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) setSortAsc(!sortAsc);
@@ -336,10 +145,19 @@ export default function WorkOrders() {
     }
   };
 
-  const handleCloseWorkOrder = (order: WorkOrder) => {
-    setOrders(prev => prev.map(o => o.id === order.id ? { ...o, workStatus: "ปิดงาน" as const } : o));
-    setSelectedOrder(prev => prev && prev.id === order.id ? { ...prev, workStatus: "ปิดงาน" } : prev);
-    toast({ title: "ปิดงานสำเร็จ", description: `${order.id} ถูกล็อกและส่งยอด GP เข้า Dashboard แล้ว` });
+  const handleCloseWorkOrder = async (order: WorkOrder) => {
+    try {
+      const res = await accountingService.updateWorkOrderStatus(order.id, "ปิดงาน");
+      if (res.status === 'success') {
+        setOrders(prev => prev.map(o => o.id === order.id ? { ...o, workStatus: "ปิดงาน" as const } : o));
+        setSelectedOrder(prev => prev && prev.id === order.id ? { ...prev, workStatus: "ปิดงาน" } : prev);
+        toast({ title: "ปิดงานสำเร็จ", description: `${order.id} ถูกล็อกและส่งยอด GP เข้า Dashboard แล้ว` });
+      } else {
+        toast({ title: "ไม่สามารถปิดงานได้", description: res.message, variant: "destructive" });
+      }
+    } catch (error) {
+      toast({ title: "เกิดข้อผิดพลาด", description: "ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้", variant: "destructive" });
+    }
   };
 
   const handleExport = () => {
@@ -437,7 +255,13 @@ export default function WorkOrders() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredOrders.map(order => {
+                  {loading ? (
+                    Array(5).fill(0).map((_, i) => (
+                      <TableRow key={i}>
+                        <TableCell colSpan={14}><Skeleton className="h-12 w-full" /></TableCell>
+                      </TableRow>
+                    ))
+                  ) : filteredOrders.map(order => {
                     const gp = order.revenue - order.expense;
                     const margin = order.revenue > 0 ? (gp / order.revenue) * 100 : 0;
                     return (

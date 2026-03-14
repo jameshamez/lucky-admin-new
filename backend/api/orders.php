@@ -108,6 +108,10 @@ if ($method === 'GET') {
         if (!empty($order['departments'])) {
             $order['departments'] = json_decode($order['departments'], true);
         }
+        // parse production_workflow JSON
+        if (!empty($order['production_workflow'])) {
+            $order['production_workflow'] = json_decode($order['production_workflow'], true);
+        }
 
         $order['items'] = $items;
         $order['payments'] = $payments;
@@ -205,6 +209,9 @@ if ($method === 'GET') {
     while ($row = $result->fetch_assoc()) {
         if (!empty($row['departments'])) {
             $row['departments'] = json_decode($row['departments'], true);
+        }
+        if (!empty($row['production_workflow'])) {
+            $row['production_workflow'] = json_decode($row['production_workflow'], true);
         }
         // Compatibility: ใช้คอลัมน์ใหม่ก่อน fallback คอลัมน์เดิม
         $row['order_status'] = $row['order_status'] ?? ($row['status'] ?? 'สร้างคำสั่งซื้อใหม่');
@@ -568,13 +575,17 @@ if ($method === 'PUT') {
         'preferred_delivery_date',
         'notes',
         'quotation_number',
+        'production_workflow',
     ];
 
     foreach ($allowed_fields as $field) {
         if (array_key_exists($field, $data)) {
             $value = $data[$field];
             if ($field === 'departments' && is_array($value)) {
-                $value = json_encode($value);
+                $value = json_encode($value, JSON_UNESCAPED_UNICODE);
+            }
+            if ($field === 'production_workflow' && is_array($value)) {
+                $value = json_encode($value, JSON_UNESCAPED_UNICODE);
             }
             $fields[] = "$field = ?";
             $params[] = $value;
@@ -637,7 +648,12 @@ if ($method === 'PATCH') {
     }
     if (isset($data['departments'])) {
         $fields[] = "departments = ?";
-        $params[] = is_array($data['departments']) ? json_encode($data['departments']) : $data['departments'];
+        $params[] = is_array($data['departments']) ? json_encode($data['departments'], JSON_UNESCAPED_UNICODE) : $data['departments'];
+        $types .= 's';
+    }
+    if (isset($data['production_workflow'])) {
+        $fields[] = "production_workflow = ?";
+        $params[] = is_array($data['production_workflow']) ? json_encode($data['production_workflow'], JSON_UNESCAPED_UNICODE) : $data['production_workflow'];
         $types .= 's';
     }
     if (isset($data['paid_amount'])) {

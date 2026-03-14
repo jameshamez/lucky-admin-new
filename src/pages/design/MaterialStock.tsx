@@ -38,7 +38,7 @@ import {
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 // API Service
-import { materialStockService } from "@/services/materialStockService";
+import { designStockService as materialStockService } from "@/services/materialStockService";
 
 const PAGE_SIZE_OPTIONS = [5, 10, 20, 50];
 
@@ -80,6 +80,8 @@ function PaginationControls({ currentPage, totalPages, totalItems, pageSize, onP
   );
 }
 
+const CURRENT_DEPT = 'design';
+
 export default function MaterialStock() {
   const [activeTab, setActiveTab] = useState("history");
 
@@ -89,6 +91,7 @@ export default function MaterialStock() {
   const [loading, setLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [uniqueRequesters, setUniqueRequesters] = useState<string[]>([]);
+  const [employees, setEmployees] = useState<any[]>([]);
 
   // Request History states
   const [searchRequest, setSearchRequest] = useState("");
@@ -172,6 +175,11 @@ export default function MaterialStock() {
         // Extract unique requesters
         const requesters = Array.from(new Set(requestsRes.data.map((r: any) => r.requester))) as string[];
         setUniqueRequesters(requesters);
+      }
+
+      const employeesRes = await materialStockService.getEmployees({ department: 'ฝ่ายกราฟฟิก' });
+      if (employeesRes.status === 'success') {
+        setEmployees(employeesRes.data);
       }
     } catch (error) {
       console.error("Failed to fetch data", error);
@@ -790,7 +798,7 @@ export default function MaterialStock() {
               <Select value={requestForm.requester} onValueChange={(v) => setRequestForm({ ...requestForm, requester: v })}>
                 <SelectTrigger className="mt-1"><SelectValue placeholder="เลือกผู้เบิก" /></SelectTrigger>
                 <SelectContent>
-                  {uniqueRequesters.map(req => (<SelectItem key={req} value={req}>{req}</SelectItem>))}
+                  {employees.map(emp => (<SelectItem key={emp.id} value={emp.full_name}>{emp.full_name} ({emp.nickname || emp.position})</SelectItem>))}
                 </SelectContent>
               </Select>
             </div>
@@ -892,7 +900,7 @@ export default function MaterialStock() {
               <Select value={editRequestForm.requester} onValueChange={(v) => setEditRequestForm({ ...editRequestForm, requester: v })}>
                 <SelectTrigger className="mt-1"><SelectValue placeholder="เลือกผู้เบิก" /></SelectTrigger>
                 <SelectContent>
-                  {uniqueRequesters.map(req => (<SelectItem key={req} value={req}>{req}</SelectItem>))}
+                  {employees.map(emp => (<SelectItem key={emp.id} value={emp.full_name}>{emp.full_name} ({emp.nickname || emp.position})</SelectItem>))}
                 </SelectContent>
               </Select>
             </div>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { 
+import {
   ShoppingCart,
   AlertCircle,
   FileText,
@@ -36,6 +36,7 @@ import moment from 'moment';
 import { format } from "date-fns";
 import { th } from "date-fns/locale";
 import 'react-big-calendar/lib/css/react-big-calendar.css';
+import { procurementService } from "@/services/procurementService";
 
 // Initialize moment localizer for calendar
 const localizer = momentLocalizer(moment);
@@ -52,7 +53,7 @@ const monthlyData = [
 
 const kpiData = {
   totalCalculated: 125,
-  totalProduced: 95, 
+  totalProduced: 95,
   totalDelivered: 82,
   weeklyShipments: 12,
   unpaidOrders: "฿2,450,000",
@@ -84,7 +85,7 @@ const chartConfig = {
     color: "#3b82f6"
   },
   produced: {
-    label: "สั่งผลิต", 
+    label: "สั่งผลิต",
     color: "#f97316"
   },
   delivered: {
@@ -102,7 +103,7 @@ const recentJobs = [
     priority: "สูง"
   },
   {
-    id: "680729-05-W", 
+    id: "680729-05-W",
     project: "ถ้วยคริสตัล",
     status: "จัดส่งแล้ว",
     updateTime: "08:45 วันนี้",
@@ -111,7 +112,7 @@ const recentJobs = [
   {
     id: "680730-02-Y",
     project: "โล่อะคริลิก",
-    status: "รอคำนวณราคา", 
+    status: "รอคำนวณราคา",
     updateTime: "07:20 วันนี้",
     priority: "สูง"
   }
@@ -205,6 +206,27 @@ export default function ProcurementDashboard() {
   const [productFilter, setProductFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [calendarView, setCalendarView] = useState("month");
+
+  // Real Data states
+  const [dashboardData, setDashboardData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const res = await procurementService.getDashboardData();
+        if (res.status === 'success') {
+          setDashboardData(res.data);
+        }
+      } catch (error) {
+        console.error("Failed to fetch dashboard data", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
+
   const [selectedEvent, setSelectedEvent] = useState<any>(null);
   const [showEventModal, setShowEventModal] = useState(false);
 
@@ -215,7 +237,7 @@ export default function ProcurementDashboard() {
 
   const eventStyleGetter = (event: any) => {
     let backgroundColor = '#3b82f6';
-    
+
     switch (event.type) {
       case 'shipping':
         backgroundColor = '#f97316';
@@ -227,7 +249,7 @@ export default function ProcurementDashboard() {
         backgroundColor = '#3b82f6';
         break;
     }
-    
+
     return {
       style: {
         backgroundColor,
@@ -352,7 +374,7 @@ export default function ProcurementDashboard() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatsCard
           title="✅ คำนวณราคาทั้งหมด"
-          value={`${kpiData.totalCalculated} งาน`}
+          value={`${dashboardData?.stats?.totalCalculated || 0} งาน`}
           change="+12% จากเดือนที่แล้ว"
           icon={<Target className="w-6 h-6" />}
           trend="up"
@@ -360,7 +382,7 @@ export default function ProcurementDashboard() {
         />
         <StatsCard
           title="🛠️ สั่งผลิตแล้ว"
-          value={`${kpiData.totalProduced} งาน`}
+          value={`${dashboardData?.stats?.totalProduced || 0} งาน`}
           change="+8% จากเดือนที่แล้ว"
           icon={<Package className="w-6 h-6" />}
           trend="up"
@@ -368,7 +390,7 @@ export default function ProcurementDashboard() {
         />
         <StatsCard
           title="จำนวนงานต้องส่งออกสัปดาห์นี้"
-          value={`${kpiData.weeklyShipments} งาน`}
+          value={`${dashboardData?.stats?.weeklyShipments || 0} งาน`}
           change="+3 จากสัปดาห์ที่แล้ว"
           icon={<Plane className="w-6 h-6" />}
           trend="up"
@@ -376,7 +398,7 @@ export default function ProcurementDashboard() {
         />
         <StatsCard
           title="ยอดสั่งซื้อที่ยังไม่ชำระเงิน"
-          value={kpiData.unpaidOrders}
+          value={dashboardData?.stats?.unpaidOrders || "฿0"}
           change="-5% จากเดือนที่แล้ว"
           icon={<DollarSign className="w-6 h-6" />}
           trend="down"
@@ -393,22 +415,22 @@ export default function ProcurementDashboard() {
               ปฏิทินกิจกรรมหลัก
             </CardTitle>
             <div className="flex gap-2">
-              <Button 
-                variant={calendarView === "month" ? "default" : "outline"} 
+              <Button
+                variant={calendarView === "month" ? "default" : "outline"}
                 size="sm"
                 onClick={() => setCalendarView("month")}
               >
                 เดือน
               </Button>
-              <Button 
-                variant={calendarView === "week" ? "default" : "outline"} 
+              <Button
+                variant={calendarView === "week" ? "default" : "outline"}
                 size="sm"
                 onClick={() => setCalendarView("week")}
               >
                 สัปดาห์
               </Button>
-              <Button 
-                variant={calendarView === "day" ? "default" : "outline"} 
+              <Button
+                variant={calendarView === "day" ? "default" : "outline"}
                 size="sm"
                 onClick={() => setCalendarView("day")}
               >
@@ -446,17 +468,17 @@ export default function ProcurementDashboard() {
               <Clock className="h-5 w-5" />
               งานที่ต้องทำวันนี้
               <Badge variant="secondary" className="ml-auto">
-                {kpiData.todaysTasks}
+                {dashboardData?.stats?.todaysTasks || 0}
               </Badge>
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {todaysTasks.slice(0, 4).map((task) => (
+            {(dashboardData?.tasks || []).slice(0, 4).map((task: any) => (
               <div key={task.id} className="flex items-start justify-between p-3 bg-muted/30 rounded-lg">
                 <div className="flex-1">
                   <p className="text-sm font-medium">{task.task}</p>
                   <div className="flex items-center gap-2 mt-1">
-                    <Badge 
+                    <Badge
                       variant={task.priority === "สูง" ? "destructive" : task.priority === "ปานกลาง" ? "default" : "secondary"}
                       className="text-xs"
                     >
@@ -484,15 +506,14 @@ export default function ProcurementDashboard() {
               <AlertTriangle className="h-5 w-5 text-orange-500" />
               แจ้งเตือนสำคัญ
               <Badge variant="destructive" className="ml-auto">
-                {kpiData.criticalAlerts}
+                {dashboardData?.stats?.criticalAlerts || 0}
               </Badge>
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {criticalAlerts.map((alert) => (
-              <div key={alert.id} className={`p-3 rounded-lg border-l-4 ${
-                alert.type === "urgent" ? "border-l-red-500 bg-red-50" : "border-l-orange-500 bg-orange-50"
-              }`}>
+              <div key={alert.id} className={`p-3 rounded-lg border-l-4 ${alert.type === "urgent" ? "border-l-red-500 bg-red-50" : "border-l-orange-500 bg-orange-50"
+                }`}>
                 <div className="flex items-start justify-between">
                   <div>
                     <p className="text-sm font-medium text-gray-900">⚠️ {alert.message}</p>
@@ -524,7 +545,7 @@ export default function ProcurementDashboard() {
           <CardContent>
             <ChartContainer config={chartConfig} className="h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={monthlyData}>
+                <BarChart data={dashboardData?.monthlyData || monthlyData}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="month" />
                   <YAxis />
@@ -552,7 +573,7 @@ export default function ProcurementDashboard() {
           <CardContent>
             <ChartContainer config={chartConfig} className="h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={dailyTrendData}>
+                <LineChart data={dashboardData?.dailyTrendData || dailyTrendData}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="date" />
                   <YAxis />
@@ -612,10 +633,9 @@ export default function ProcurementDashboard() {
             <div className="space-y-4">
               {recentActivities.map((activity) => (
                 <div key={activity.id} className="flex items-start gap-3 p-3 bg-muted/30 rounded-lg">
-                  <div className={`w-2 h-2 rounded-full mt-2 ${
-                    activity.type === "status_update" ? "bg-green-500" : 
-                    activity.type === "production_order" ? "bg-blue-500" : "bg-orange-500"
-                  }`} />
+                  <div className={`w-2 h-2 rounded-full mt-2 ${activity.type === "status_update" ? "bg-green-500" :
+                      activity.type === "production_order" ? "bg-blue-500" : "bg-orange-500"
+                    }`} />
                   <div className="flex-1">
                     <p className="text-sm font-medium">{activity.user}</p>
                     <p className="text-sm text-muted-foreground">{activity.action}</p>
@@ -657,7 +677,7 @@ export default function ProcurementDashboard() {
               <div className="flex gap-2 pt-4">
                 <Badge variant={
                   selectedEvent.type === "shipping" ? "destructive" :
-                  selectedEvent.type === "arrival" ? "default" : "secondary"
+                    selectedEvent.type === "arrival" ? "default" : "secondary"
                 }>
                   {selectedEvent.type === "shipping" && "จัดส่งจากจีน"}
                   {selectedEvent.type === "arrival" && "สินค้าถึงไทย"}

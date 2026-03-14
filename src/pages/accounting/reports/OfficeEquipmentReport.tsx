@@ -1,105 +1,59 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { FileDown, Search, Image } from "lucide-react";
+import { FileDown, Search, Image as ImageIcon, Loader2 } from "lucide-react";
+import { accountingService } from "@/services/accountingService";
+import { toast } from "sonner";
 
 export default function OfficeEquipmentReport() {
   const [filterCategory, setFilterCategory] = useState("");
   const [filterPurchaseDate, setFilterPurchaseDate] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [summaryData, setSummaryData] = useState<any[]>([]);
+  const [equipmentList, setEquipmentList] = useState<any[]>([]);
 
-  const summaryData = [
-    { title: "มูลค่าทรัพย์สินรวม", value: "฿3,450,000", color: "text-blue-600" },
-    { title: "อุปกรณ์ทั้งหมด", value: "145 รายการ", color: "text-green-600" },
-    { title: "ใช้งานอยู่", value: "132 รายการ", color: "text-green-600" },
-    { title: "ชำรุด/ซ่อมบำรุง", value: "13 รายการ", color: "text-yellow-600" },
-  ];
+  useEffect(() => {
+    const fetchEquipmentData = async () => {
+      setLoading(true);
+      try {
+        const res = await accountingService.getReportsData('office_equipment');
+        if (res.status === 'success') {
+          setSummaryData(res.data.summary);
+          setEquipmentList(res.data.list);
+        }
+      } catch (error) {
+        toast.error("ไม่สามารถดึงข้อมูลรายงานพัสดุได้");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchEquipmentData();
+  }, []);
 
-  const equipmentList = [
-    { 
-      assetNo: "EQ-2024-001", 
-      name: "เครื่องคอมพิวเตอร์ Dell OptiPlex", 
-      category: "IT", 
-      purchaseDate: "2024-01-15", 
-      price: 25000, 
-      status: "ใช้งานอยู่", 
-      assignedTo: "สมชาย ใจดี",
-      hasImage: true
-    },
-    { 
-      assetNo: "EQ-2024-002", 
-      name: "เครื่องปริ้นเตอร์ HP LaserJet", 
-      category: "IT", 
-      purchaseDate: "2024-02-20", 
-      price: 15000, 
-      status: "ใช้งานอยู่", 
-      assignedTo: "แผนกบัญชี",
-      hasImage: true
-    },
-    { 
-      assetNo: "EQ-2023-045", 
-      name: "โต๊ะทำงาน", 
-      category: "เฟอร์นิเจอร์", 
-      purchaseDate: "2023-05-10", 
-      price: 8500, 
-      status: "ใช้งานอยู่", 
-      assignedTo: "สมหญิง รักษ์ดี",
-      hasImage: false
-    },
-    { 
-      assetNo: "EQ-2024-003", 
-      name: "เครื่องปรับอากาศ Daikin", 
-      category: "เครื่องใช้ไฟฟ้า", 
-      purchaseDate: "2024-03-01", 
-      price: 28000, 
-      status: "ซ่อมบำรุง", 
-      assignedTo: "ห้องประชุม A",
-      hasImage: true
-    },
-    { 
-      assetNo: "EQ-2023-028", 
-      name: "ตู้เอกสาร", 
-      category: "เฟอร์นิเจอร์", 
-      purchaseDate: "2023-08-15", 
-      price: 6500, 
-      status: "ใช้งานอยู่", 
-      assignedTo: "แผนก HR",
-      hasImage: false
-    },
-    { 
-      assetNo: "EQ-2024-004", 
-      name: "เครื่องถ่ายเอกสาร Canon", 
-      category: "IT", 
-      purchaseDate: "2024-04-10", 
-      price: 45000, 
-      status: "ใช้งานอยู่", 
-      assignedTo: "ส่วนกลาง",
-      hasImage: true
-    },
-    { 
-      assetNo: "EQ-2023-012", 
-      name: "โทรศัพท์สำนักงาน", 
-      category: "อุปกรณ์สื่อสาร", 
-      purchaseDate: "2023-02-20", 
-      price: 3500, 
-      status: "ชำรุด", 
-      assignedTo: "แผนกขาย",
-      hasImage: false
-    },
-  ];
+  if (loading) {
+    return (
+      <div className="flex h-[400px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="ml-2">กำลังโหลดข้อมูล...</span>
+      </div>
+    );
+  }
 
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "ใช้งานอยู่":
         return <Badge className="bg-green-500">ใช้งานอยู่</Badge>;
-      case "ซ่อมบำรุง":
-        return <Badge className="bg-yellow-500">ซ่อมบำรุง</Badge>;
-      case "ชำรุด":
-        return <Badge className="bg-red-500">ชำรุด</Badge>;
+      case "ว่าง":
+        return <Badge className="bg-blue-500">ว่าง</Badge>;
+      case "ส่งซ่อม":
+        return <Badge className="bg-yellow-500">ส่งซ่อม</Badge>;
+      case "จำหน่ายออก":
+        return <Badge className="bg-red-500">จำหน่ายออก</Badge>;
       default:
         return <Badge>{status}</Badge>;
     }
@@ -220,7 +174,7 @@ export default function OfficeEquipmentReport() {
                   <TableCell className="text-center">
                     {item.hasImage ? (
                       <Button variant="ghost" size="sm">
-                        <Image className="h-4 w-4" />
+                        <ImageIcon className="h-4 w-4" />
                       </Button>
                     ) : (
                       <span className="text-muted-foreground text-sm">-</span>

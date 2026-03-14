@@ -12,6 +12,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Check, X, Plus, Upload, Car, ClipboardList, Eye, ChevronsUpDown, Pencil, Fuel, BarChart3, Settings } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from "recharts";
+import { productionService } from "@/services/productionService";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useEffect } from "react";
 
 // ─── Types ──────────────────────────────────────────────────
 interface VehicleUsageLog {
@@ -23,37 +26,7 @@ interface Vehicle {
   status: "พร้อมใช้" | "กำลังใช้งาน" | "ซ่อมบำรุง"; currentMileage: number; usageLogs: VehicleUsageLog[];
 }
 
-// ─── Mock Data ──────────────────────────────────────────────
-const mockRequests = [
-  { id: "VR001", customerLineName: "ลูกค้า A", product: "เหรียญรางวัล 500 ชิ้น", deliveryBy: "พนักงานขับรถ 1", deliveryDate: "2024-03-15", deliveryLocation: "โรงเรียนสาธิต", address: "123 ถนนพระราม 4 กรุงเทพฯ 10110", notes: "มีใบเสร็จ", status: "รออนุมัติ", imageUrl: null },
-  { id: "VR002", customerLineName: "ลูกค้า B", product: "โล่รางวัล 100 ชิ้น", deliveryBy: "พนักงานขับรถ 2", deliveryDate: "2024-03-16", deliveryLocation: "บริษัท ABC จำกัด", address: "456 ถนนสุขุมวิท กรุงเทพฯ 10110", notes: "ไม่มีใบเสร็จ", status: "อนุมัติแล้ว", imageUrl: null },
-];
-
-const initialVehicles: Vehicle[] = [
-  { id: "V001", name: "รถกระบะ 1", licensePlate: "กข 1234 กรุงเทพ", type: "กระบะ", status: "พร้อมใช้", currentMileage: 45230,
-    usageLogs: [
-      { id: "UL001", date: "2024-03-14", driver: "สมชาย", destination: "โรงเรียนสาธิต", purpose: "ส่งสินค้า", mileageStart: 45100, mileageEnd: 45230, fuelAdded: 30, fuelCost: 1050, notes: "ส่งเหรียญรางวัล" },
-      { id: "UL002", date: "2024-03-10", driver: "สมชาย", destination: "บริษัท XYZ", purpose: "ส่งสินค้า", mileageStart: 44950, mileageEnd: 45100, fuelAdded: 25, fuelCost: 875, notes: "ส่งโล่รางวัล 50 ชิ้น" },
-      { id: "UL010", date: "2024-02-20", driver: "สมชาย", destination: "จ.ชลบุรี", purpose: "ส่งสินค้า", mileageStart: 44500, mileageEnd: 44950, fuelAdded: 50, fuelCost: 1750, notes: "" },
-      { id: "UL011", date: "2024-02-05", driver: "สมชาย", destination: "นนทบุรี", purpose: "ส่งสินค้า", mileageStart: 44300, mileageEnd: 44500, fuelAdded: 20, fuelCost: 700, notes: "" },
-      { id: "UL012", date: "2024-01-15", driver: "สมชาย", destination: "ปทุมธานี", purpose: "รับวัตถุดิบ", mileageStart: 44100, mileageEnd: 44300, fuelAdded: 22, fuelCost: 770, notes: "" },
-      { id: "UL013", date: "2024-01-05", driver: "สมชาย", destination: "สมุทรปราการ", purpose: "ส่งสินค้า", mileageStart: 43800, mileageEnd: 44100, fuelAdded: 35, fuelCost: 1225, notes: "" },
-      { id: "UL014", date: "2023-12-20", driver: "สมชาย", destination: "กรุงเทพ", purpose: "ส่งสินค้า", mileageStart: 43500, mileageEnd: 43800, fuelAdded: 30, fuelCost: 1050, notes: "" },
-      { id: "UL015", date: "2023-12-10", driver: "สมชาย", destination: "นครปฐม", purpose: "ส่งสินค้า", mileageStart: 43200, mileageEnd: 43500, fuelAdded: 28, fuelCost: 980, notes: "" },
-    ],
-  },
-  { id: "V002", name: "รถตู้ 1", licensePlate: "คง 5678 กรุงเทพ", type: "รถตู้", status: "กำลังใช้งาน", currentMileage: 78500,
-    usageLogs: [
-      { id: "UL003", date: "2024-03-15", driver: "วิชัย", destination: "จ.นครปฐม", purpose: "ส่งสินค้า", mileageStart: 78400, mileageEnd: 78500, fuelAdded: 40, fuelCost: 1400, notes: "ส่งถ้วยรางวัล ลูกค้า B" },
-      { id: "UL020", date: "2024-02-25", driver: "วิชัย", destination: "จ.ราชบุรี", purpose: "ส่งสินค้า", mileageStart: 78100, mileageEnd: 78400, fuelAdded: 45, fuelCost: 1575, notes: "" },
-      { id: "UL021", date: "2024-02-10", driver: "วิชัย", destination: "จ.กาญจนบุรี", purpose: "ส่งสินค้า", mileageStart: 77700, mileageEnd: 78100, fuelAdded: 55, fuelCost: 1925, notes: "" },
-      { id: "UL022", date: "2024-01-20", driver: "วิชัย", destination: "จ.สุพรรณบุรี", purpose: "ส่งสินค้า", mileageStart: 77300, mileageEnd: 77700, fuelAdded: 50, fuelCost: 1750, notes: "" },
-      { id: "UL023", date: "2024-01-08", driver: "วิชัย", destination: "กรุงเทพ", purpose: "รับวัตถุดิบ", mileageStart: 77100, mileageEnd: 77300, fuelAdded: 25, fuelCost: 875, notes: "" },
-      { id: "UL024", date: "2023-12-15", driver: "วิชัย", destination: "นนทบุรี", purpose: "ส่งสินค้า", mileageStart: 76800, mileageEnd: 77100, fuelAdded: 35, fuelCost: 1225, notes: "" },
-    ],
-  },
-  { id: "V003", name: "รถกระบะ 2", licensePlate: "จฉ 9012 กรุงเทพ", type: "กระบะ", status: "ซ่อมบำรุง", currentMileage: 62100, usageLogs: [] },
-];
+// Mock Data removed
 
 // ─── Sortable Header Component ──────────────────────────────
 function SortableHead({ label, sortKey, currentSort, onSort, className }: {
@@ -72,9 +45,10 @@ function SortableHead({ label, sortKey, currentSort, onSort, className }: {
 
 // ─── Main Component ─────────────────────────────────────────
 export default function VehicleRequestManagement() {
-  const [requests, setRequests] = useState(mockRequests);
+  const [requests, setRequests] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [vehicles, setVehicles] = useState<Vehicle[]>(initialVehicles);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
   const [showLogDrawer, setShowLogDrawer] = useState(false);
   const [viewingVehicle, setViewingVehicle] = useState<Vehicle | null>(null);
@@ -88,8 +62,36 @@ export default function VehicleRequestManagement() {
   const [requestSort, setRequestSort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "id", dir: "asc" });
   const [logSort, setLogSort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "date", dir: "desc" });
 
-  const [logForm, setLogForm] = useState({ date: "", driver: "", destination: "", purpose: "", mileageStart: 0, mileageEnd: 0, fuelAdded: 0, fuelCost: 0, notes: "" });
-  const [formData, setFormData] = useState({ customerLineName: "", product: "", deliveryBy: "", deliveryDate: "", deliveryLocation: "", address: "", notes: "", imageUrl: null as string | null });
+  const [logForm, setLogForm] = useState({ date: new Date().toISOString().split('T')[0], driver: "", destination: "", purpose: "", mileageStart: 0, mileageEnd: 0, fuelAdded: 0, fuelCost: 0, notes: "" });
+  const [formData, setFormData] = useState({ customerLineName: "", product: "", deliveryBy: "", deliveryDate: new Date().toISOString().split('T')[0], deliveryLocation: "", address: "", notes: "", imageUrl: null as string | null });
+
+  // ─── API Data Fetching ──────────────────────────────────
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const [resRequests, resVehicles] = await Promise.all([
+        productionService.getVehicleReservations(),
+        productionService.getVehicles()
+      ]);
+
+      if (resRequests.status === 'success') setRequests(resRequests.data);
+      if (resVehicles.status === 'success') {
+        const vehiclesWithLogs = await Promise.all(resVehicles.data.map(async (v: any) => {
+          const logsRes = await productionService.getVehicleLogs(v.id);
+          return { ...v, usageLogs: logsRes.status === 'success' ? logsRes.data : [] };
+        }));
+        setVehicles(vehiclesWithLogs);
+      }
+    } catch (error) {
+      toast({ title: "โหลดข้อมูลไม่สำเร็จ", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
 
   // ─── Sorting ────────────────────────────────────────────
   const toggleSort = useCallback((key: string, setter: React.Dispatch<React.SetStateAction<{ key: string; dir: "asc" | "desc" }>>) => {
@@ -108,27 +110,63 @@ export default function VehicleRequestManagement() {
   }, [formDirty]);
 
   // ─── Vehicle Request Handlers ───────────────────────────
-  const handleApprove = (id: string) => { setRequests(prev => prev.map(r => r.id === id ? { ...r, status: "อนุมัติแล้ว" } : r)); toast({ title: "อนุมัติคำขอสำเร็จ", description: `คำขอ ${id} อนุมัติแล้ว` }); };
-  const handleReject = (id: string) => { setRequests(prev => prev.map(r => r.id === id ? { ...r, status: "ไม่อนุมัติ" } : r)); toast({ title: "ไม่อนุมัติคำขอ", variant: "destructive" }); };
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setRequests(prev => [{ id: `VR${String(prev.length + 1).padStart(3, '0')}`, ...formData, status: "รออนุมัติ" }, ...prev]);
-    setIsDrawerOpen(false); setFormDirty(false);
-    setFormData({ customerLineName: "", product: "", deliveryBy: "", deliveryDate: "", deliveryLocation: "", address: "", notes: "", imageUrl: null });
-    toast({ title: "สร้างคำขอสำเร็จ" });
+  const handleApprove = async (id: string) => {
+    try {
+      await productionService.updateVehicleReservationStatus(id, "อนุมัติแล้ว");
+      setRequests(prev => prev.map(r => r.id === id ? { ...r, status: "อนุมัติแล้ว" } : r));
+      toast({ title: "อนุมัติคำขอสำเร็จ" });
+    } catch (error) {
+      toast({ title: "ไม่สามารถอนุมัติได้", variant: "destructive" });
+    }
   };
+
+  const handleReject = async (id: string) => {
+    try {
+      await productionService.updateVehicleReservationStatus(id, "ไม่อนุมัติ");
+      setRequests(prev => prev.map(r => r.id === id ? { ...r, status: "ไม่อนุมัติ" } : r));
+      toast({ title: "ไม่อนุมัติคำขอสำเร็จ", variant: "destructive" });
+    } catch (error) {
+      toast({ title: "ไม่สามารถดำเนินการได้", variant: "destructive" });
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await productionService.saveVehicleReservation(formData);
+      if (res.status === 'success') {
+        fetchData();
+        setIsDrawerOpen(false);
+        setFormDirty(false);
+        setFormData({ customerLineName: "", product: "", deliveryBy: "", deliveryDate: new Date().toISOString().split('T')[0], deliveryLocation: "", address: "", notes: "", imageUrl: null });
+        toast({ title: "สร้างคำขอสำเร็จ" });
+      }
+    } catch (error) {
+      toast({ title: "ไม่สามารถสร้างคำขอได้", variant: "destructive" });
+    }
+  };
+
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => { const f = e.target.files?.[0]; if (f) { const r = new FileReader(); r.onloadend = () => { setFormData(prev => ({ ...prev, imageUrl: r.result as string })); setFormDirty(true); }; r.readAsDataURL(f); } };
   const getStatusColor = (s: string) => s === "ไม่อนุมัติ" ? "destructive" as const : "default" as const;
 
   // ─── Vehicle Usage Log Handlers ─────────────────────────
-  const openAddLog = (v: Vehicle) => { setSelectedVehicle(v); setLogForm({ date: "", driver: "", destination: "", purpose: "", mileageStart: v.currentMileage, mileageEnd: v.currentMileage, fuelAdded: 0, fuelCost: 0, notes: "" }); setFormDirty(false); setShowLogDrawer(true); };
-  const handleAddLog = (e: React.FormEvent) => {
+  const openAddLog = (v: Vehicle) => { setSelectedVehicle(v); setLogForm({ date: new Date().toISOString().split('T')[0], driver: "", destination: "", purpose: "", mileageStart: v.currentMileage, mileageEnd: v.currentMileage, fuelAdded: 0, fuelCost: 0, notes: "" }); setFormDirty(false); setShowLogDrawer(true); };
+  const handleAddLog = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedVehicle) return;
     if (!logForm.date || !logForm.driver || !logForm.destination) { toast({ title: "กรุณากรอกข้อมูลให้ครบ", variant: "destructive" }); return; }
-    setVehicles(prev => prev.map(v => v.id === selectedVehicle.id ? { ...v, currentMileage: logForm.mileageEnd || v.currentMileage, usageLogs: [{ id: `UL${Date.now()}`, ...logForm }, ...v.usageLogs] } : v));
-    setShowLogDrawer(false); setFormDirty(false);
-    toast({ title: "บันทึกสำเร็จ", description: `เพิ่มบันทึกการใช้รถ ${selectedVehicle.name} แล้ว` });
+
+    try {
+      const res = await productionService.saveVehicleLog({ ...logForm, vehicle_id: selectedVehicle.id });
+      if (res.status === 'success') {
+        fetchData();
+        setShowLogDrawer(false);
+        setFormDirty(false);
+        toast({ title: "บันทึกข้อมูลการใช้รถสำเร็จ" });
+      }
+    } catch (error) {
+      toast({ title: "บันทึกไม่สำเร็จ", variant: "destructive" });
+    }
   };
 
   const getVehicleStatusBadge = (s: Vehicle["status"]) => {
@@ -148,17 +186,20 @@ export default function VehicleRequestManagement() {
     setVehicleForm({ name: v.name, licensePlate: v.licensePlate, type: v.type, currentMileage: v.currentMileage, status: v.status });
     setFormDirty(false); setShowVehicleDrawer(true);
   };
-  const handleSaveVehicle = () => {
+  const handleSaveVehicle = async () => {
     if (!vehicleForm.name || !vehicleForm.licensePlate) { toast({ title: "กรุณากรอกชื่อรถและทะเบียน", variant: "destructive" }); return; }
-    if (editingVehicle) {
-      setVehicles(prev => prev.map(v => v.id === editingVehicle.id ? { ...v, ...vehicleForm } : v));
-      toast({ title: "แก้ไขข้อมูลรถสำเร็จ", description: vehicleForm.name });
-    } else {
-      const newV: Vehicle = { id: `V${String(Date.now()).slice(-4)}`, ...vehicleForm, usageLogs: [] };
-      setVehicles(prev => [...prev, newV]);
-      toast({ title: "เพิ่มรถใหม่สำเร็จ", description: vehicleForm.name });
+    try {
+      const payload = editingVehicle ? { ...vehicleForm, id: editingVehicle.id } : vehicleForm;
+      const res = await productionService.saveVehicle(payload);
+      if (res.status === 'success') {
+        fetchData();
+        setShowVehicleDrawer(false);
+        setFormDirty(false);
+        toast({ title: editingVehicle ? "แก้ไขข้อมูลรถสำเร็จ" : "เพิ่มรถใหม่สำเร็จ" });
+      }
+    } catch (error) {
+      toast({ title: "ดำเนินการไม่สำเร็จ", variant: "destructive" });
     }
-    setShowVehicleDrawer(false); setFormDirty(false);
   };
 
   const pendingRequests = requests.filter(r => r.status === "รออนุมัติ");
@@ -269,7 +310,17 @@ export default function VehicleRequestManagement() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {sortedRequests.map((r) => (
+                  {loading ? (
+                    Array(3).fill(0).map((_, i) => (
+                      <TableRow key={i}>
+                        <TableCell colSpan={8}><Skeleton className="h-10 w-full" /></TableCell>
+                      </TableRow>
+                    ))
+                  ) : sortedRequests.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">ไม่มีรายการคำขอ</TableCell>
+                    </TableRow>
+                  ) : sortedRequests.map((r) => (
                     <TableRow key={r.id}>
                       <TableCell className="font-medium">{r.id}</TableCell>
                       <TableCell>{r.customerLineName}</TableCell>
@@ -297,7 +348,11 @@ export default function VehicleRequestManagement() {
         {/* ===== Tab: บันทึกการใช้รถ ===== */}
         <TabsContent value="usage-log" className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {vehicles.map((v) => (
+            {loading ? (
+              Array(3).fill(0).map((_, i) => (
+                <Card key={i}><CardContent className="p-6"><Skeleton className="h-32 w-full" /></CardContent></Card>
+              ))
+            ) : vehicles.map((v) => (
               <Card key={v.id} className="cursor-pointer hover:shadow-md transition-shadow border-l-4" style={{ borderLeftColor: v.status === "พร้อมใช้" ? "#6FB98F" : v.status === "กำลังใช้งาน" ? "#6C9FCE" : "#d97706" }} onClick={() => setViewingVehicle(v)}>
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">

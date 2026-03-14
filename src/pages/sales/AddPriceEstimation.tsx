@@ -189,7 +189,11 @@ const mockPreviousEstimations: PreviousEstimation[] = [
   }
 ];
 
-export default function AddPriceEstimation() {
+export default function AddPriceEstimation({
+  redirectPath = "/sales/price-estimation"
+}: {
+  redirectPath?: string
+}) {
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
@@ -1066,7 +1070,7 @@ export default function AddPriceEstimation() {
       setSelectedFromPreviousModel(false);
       setOriginalOrderReference("");
 
-      navigate("/sales/price-estimation");
+      navigate(redirectPath);
     } catch (err: any) {
       console.error(err);
       toast({

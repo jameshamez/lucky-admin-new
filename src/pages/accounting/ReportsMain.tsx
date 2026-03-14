@@ -1,41 +1,70 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
-import { TrendingUp, Package, Briefcase, Wallet, FileText } from "lucide-react";
+import { TrendingUp, Package, Briefcase, Wallet, FileText, Loader2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { accountingService } from "@/services/accountingService";
 
 export default function ReportsMain() {
   const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<any>(null);
+
+  useEffect(() => {
+    const fetchSummary = async () => {
+      try {
+        const res = await accountingService.getReportsData('summary');
+        if (res.status === 'success') {
+          setData(res.data);
+        }
+      } catch (error) {
+        console.error("Failed to fetch reports summary", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchSummary();
+  }, []);
 
   const summaryCards = [
     {
       title: "ยอดขายรวมเดือนนี้",
-      value: "฿2,450,000",
-      change: "+15%",
+      value: data ? `฿${data.monthlySales.toLocaleString()}` : "฿0",
+      change: data?.monthlySalesChange || "+0%",
       icon: TrendingUp,
       color: "text-green-600",
     },
     {
-      title: "มูลค่าสต๊อกรวม",
+      title: "มูลค่าคลังพัสดุ",
+      value: data ? `฿${data.officeValue.toLocaleString()}` : "฿0",
+      change: data?.officeChange || "+0%",
+      icon: Briefcase,
+      color: "text-orange-600",
+    },
+    {
+      title: "ยอดเงินสดย่อยเดือนนี้",
+      value: data ? `฿${data.pettyCashSpent.toLocaleString()}` : "฿0",
+      change: data?.pettyCashChange || "+0%",
+      icon: Wallet,
+      color: "text-purple-600",
+    },
+    {
+      title: "มูลค่าแอปเปิ้ล (Mock)",
       value: "฿5,800,000",
       change: "+5%",
       icon: Package,
       color: "text-blue-600",
     },
-    {
-      title: "วัสดุ/อุปกรณ์สำนักงานคงเหลือ",
-      value: "฿180,000",
-      change: "-8%",
-      icon: Briefcase,
-      color: "text-orange-600",
-    },
-    {
-      title: "ยอดใช้เงินสดย่อยเดือนนี้",
-      value: "฿95,000",
-      change: "+12%",
-      icon: Wallet,
-      color: "text-purple-600",
-    },
   ];
+
+  if (loading) {
+    return (
+      <div className="flex h-[400px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="ml-2">กำลังโหลดข้อมูล...</span>
+      </div>
+    );
+  }
 
   const reportButtons = [
     {

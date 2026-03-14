@@ -22,7 +22,8 @@ if ($conn->connect_error) {
     echo json_encode(["status" => "error", "message" => "Connection failed: " . $conn->connect_error]);
     exit();
 }
-
+$conn->select_db('finfinph_lcukycompany');
+$conn->set_charset("utf8mb4");
 $method = $_SERVER['REQUEST_METHOD'];
 $request_uri = $_SERVER['REQUEST_URI'];
 $path_parts = explode('/', trim(parse_url($request_uri, PHP_URL_PATH), '/'));
@@ -94,6 +95,14 @@ switch ($method) {
             if ($requester !== 'all') {
                 $where_conditions[] = "requester = ?";
                 $params[] = $requester;
+                $types .= 's';
+            }
+
+            // Filter by department (required for segregation)
+            $dept = isset($_GET['department']) ? $_GET['department'] : 'design';
+            if ($dept !== 'all') {
+                $where_conditions[] = "department = ?";
+                $params[] = $dept;
                 $types .= 's';
             }
 
@@ -186,8 +195,8 @@ switch ($method) {
 
         try {
             // Create request
-            $insert_sql = "INSERT INTO material_requests (request_date, material_id, material_name, qty, requester, remark, status) 
-                          VALUES (?, ?, ?, ?, ?, ?, ?)";
+            $insert_sql = "INSERT INTO material_requests (request_date, material_id, material_name, qty, requester, remark, status, department) 
+                          VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
             $insert_stmt = $conn->prepare($insert_sql);
 
             if (!$insert_stmt) {
@@ -196,16 +205,18 @@ switch ($method) {
 
             $remark = isset($data->remark) ? $data->remark : '';
             $status = 'บันทึกแล้ว';
+            $department = isset($data->department) ? $data->department : 'design';
 
             $insert_stmt->bind_param(
-                "sisisss",
+                "sisissss",
                 $data->request_date,
                 $material['id'],
                 $data->material_name,
                 $qty,
                 $data->requester,
                 $remark,
-                $status
+                $status,
+                $department
             );
 
             if (!$insert_stmt->execute()) {

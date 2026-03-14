@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,7 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { PackageMinus } from "lucide-react";
 import { toast } from "sonner";
-import { Supply, Requisition, EMPLOYEES } from "./types";
+import { Supply, Requisition } from "./types";
+import { accountingService } from "@/services/accountingService";
 
 interface Props {
   open: boolean;
@@ -18,6 +19,7 @@ interface Props {
 }
 
 const RequisitionDrawer = ({ open, onOpenChange, supplies, onRequisition }: Props) => {
+  const [employees, setEmployees] = useState<any[]>([]);
   const [form, setForm] = useState({
     supplyId: "",
     quantity: "",
@@ -25,6 +27,20 @@ const RequisitionDrawer = ({ open, onOpenChange, supplies, onRequisition }: Prop
     date: new Date().toISOString().split("T")[0],
     note: "",
   });
+
+  useEffect(() => {
+    const fetchEmployees = async () => {
+      try {
+        const res = await accountingService.getEmployees();
+        if (res.status === 'success') {
+          setEmployees(res.data);
+        }
+      } catch (error) {
+        console.error("Failed to fetch employees", error);
+      }
+    };
+    fetchEmployees();
+  }, []);
 
   const selectedSupply = supplies.find((s) => s.id === form.supplyId);
   const qtyNum = Number(form.quantity) || 0;
@@ -101,7 +117,11 @@ const RequisitionDrawer = ({ open, onOpenChange, supplies, onRequisition }: Prop
             <Select value={form.requester} onValueChange={(v) => setForm({ ...form, requester: v })}>
               <SelectTrigger><SelectValue placeholder="เลือกผู้เบิก" /></SelectTrigger>
               <SelectContent>
-                {EMPLOYEES.map((e) => <SelectItem key={e} value={e}>{e}</SelectItem>)}
+                {employees.map((e) => (
+                  <SelectItem key={e.id} value={e.full_name}>
+                    {e.full_name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>

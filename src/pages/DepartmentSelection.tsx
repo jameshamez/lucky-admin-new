@@ -6,7 +6,8 @@ import {
   Calculator,
   Users,
   Crown,
-  LogOut
+  LogOut,
+  Lock
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { useNavigate } from "react-router-dom";
@@ -16,58 +17,84 @@ const departments = [
     id: "sales",
     name: "ฝ่ายขาย",
     icon: ShoppingCart,
-    route: "/sales"
+    route: "/sales",
+    allowedDepartments: ["ฝ่ายขาย"], // เฉพาะฝ่ายขายเท่านั้น (Admin/Manager เข้าได้เสมอ)
   },
   {
     id: "design",
     name: "ฝ่ายกราฟิก",
     icon: Palette,
-    // route: "/design"
+    route: "/design",
+    allowedDepartments: ["ฝ่ายกราฟิก"], // เฉพาะฝ่ายกราฟิกเท่านั้น (Admin/Manager เข้าได้เสมอ)
   },
   {
     id: "procurement",
     name: "ฝ่ายจัดซื้อ",
     icon: Package,
-    // route: "/procurement"
+    route: "/procurement",
+    allowedDepartments: ["ฝ่ายจัดซื้อ"], // เฉพาะฝ่ายจัดซื้อเท่านั้น (Admin/Manager เข้าได้เสมอ)
   },
   {
     id: "production",
     name: "ฝ่ายผลิตและจัดส่ง",
     icon: Factory,
-    // route: "/production"
+    route: "/production",
+    allowedDepartments: ["ฝ่ายผลิตและจัดส่ง"], // เฉพาะฝ่ายผลิตและจัดส่งเท่านั้น (Admin/Manager เข้าได้เสมอ)
   },
   {
     id: "accounting",
     name: "ฝ่ายบัญชี",
     icon: Calculator,
-    // route: "/accounting"
+    route: "/accounting",
+    allowedDepartments: ["ฝ่ายบัญชี"], // เฉพาะฝ่ายบัญชีเท่านั้น (Admin/Manager เข้าได้เสมอ)
   },
   {
     id: "hr",
     name: "ฝ่ายบุคคล",
     icon: Users,
-    // route: "/hr"
+    route: "/hr",
+    allowedDepartments: ["ฝ่ายบุคคล"], // เฉพาะฝ่ายบุคคลเท่านั้น (Admin/Manager เข้าได้เสมอ)
   },
   {
     id: "manager",
     name: "ผู้จัดการ",
     icon: Crown,
-    // route: "/manager"
+    route: "/manager",
+    allowedDepartments: ["ผู้จัดการ"], // เฉพาะผู้จัดการเท่านั้น (Admin/Manager เข้าได้เสมอ)
   },
   {
     id: "petty-cash",
     name: "เงินสดย่อย",
     icon: Calculator,
-    // route: "/petty-cash"
-  }
+    route: "/petty-cash",
+    allowedDepartments: ["เงินสดย่อย"], // เฉพาะเงินสดย่อยเท่านั้น (Admin/Manager เข้าได้เสมอ)
+  },
 ];
 
 export default function DepartmentSelection() {
   const navigate = useNavigate();
   const userData = JSON.parse(localStorage.getItem("user") || "{}");
 
-  const handleDepartmentClick = (route: string) => {
-    navigate(route);
+  // role จาก API เป็น "Admin", "Manager", "User" → เช็คแบบ case-insensitive
+  const userRole = (userData.role ?? "").toLowerCase();
+  const isAdminOrManager = userRole === "admin" || userRole === "manager";
+
+  /**
+   * ตรวจสอบว่า user มีสิทธิ์เข้า department นี้หรือไม่
+   * - Admin / Manager → เข้าได้ทุก department
+   * - ถ้า department มี allowedDepartments → user ต้องอยู่ใน list นั้น
+   * - ถ้า department ไม่มี allowedDepartments → เปิดให้ทุกคน
+   * department จาก API เป็นภาษาไทย เช่น "ฝ่ายขาย", "IT"
+   */
+  const canAccess = (dept: (typeof departments)[number]) => {
+    if (isAdminOrManager) return true;
+    if (!dept.allowedDepartments) return true;
+    return dept.allowedDepartments.includes(userData.department ?? "");
+  };
+
+  const handleDepartmentClick = (dept: (typeof departments)[number]) => {
+    if (!canAccess(dept)) return;
+    if (dept.route) navigate(dept.route);
   };
 
   const handleLogout = () => {
@@ -118,26 +145,69 @@ export default function DepartmentSelection() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-5xl w-full">
           {departments.map((dept) => {
             const IconComponent = dept.icon;
+            const accessible = canAccess(dept);
             return (
               <Card
                 key={dept.id}
-                className="cursor-pointer border-none shadow-sm hover:shadow-strong transition-all duration-300 hover:-translate-y-1 group bg-white rounded-2xl overflow-hidden"
-                onClick={() => handleDepartmentClick(dept.route)}
+                onClick={() => handleDepartmentClick(dept)}
+                className={[
+                  "border-none shadow-sm rounded-2xl overflow-hidden transition-all duration-300",
+                  accessible
+                    ? "cursor-pointer hover:shadow-strong hover:-translate-y-1 group bg-white"
+                    : "cursor-not-allowed bg-slate-100 opacity-60",
+                ].join(" ")}
               >
                 <CardContent className="flex flex-col items-center justify-center p-8 h-40 relative">
-                  <div className="absolute top-0 right-0 p-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center">
-                      <div className="w-1.5 h-1.5 bg-primary rounded-full"></div>
+                  {/* Active hover indicator */}
+                  {accessible && (
+                    <div className="absolute top-0 right-0 p-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center">
+                        <div className="w-1.5 h-1.5 bg-primary rounded-full"></div>
+                      </div>
                     </div>
-                  </div>
-                  <div className="p-4 rounded-2xl bg-slate-50 group-hover:bg-primary/10 transition-colors mb-4">
+                  )}
+
+                  {/* Lock badge for restricted departments */}
+                  {!accessible && (
+                    <div className="absolute top-2 right-2">
+                      <div className="w-5 h-5 rounded-full bg-slate-300 flex items-center justify-center">
+                        <Lock className="w-3 h-3 text-slate-500" />
+                      </div>
+                    </div>
+                  )}
+
+                  <div
+                    className={[
+                      "p-4 rounded-2xl mb-4 transition-colors",
+                      accessible
+                        ? "bg-slate-50 group-hover:bg-primary/10"
+                        : "bg-slate-200",
+                    ].join(" ")}
+                  >
                     <IconComponent
-                      className="w-8 h-8 text-slate-600 group-hover:text-primary group-hover:scale-110 transition-all duration-300"
+                      className={[
+                        "w-8 h-8 transition-all duration-300",
+                        accessible
+                          ? "text-slate-600 group-hover:text-primary group-hover:scale-110"
+                          : "text-slate-400",
+                      ].join(" ")}
                     />
                   </div>
-                  <span className="text-sm font-bold text-center text-slate-700 group-hover:text-primary tracking-tight">
+                  <span
+                    className={[
+                      "text-sm font-bold text-center tracking-tight",
+                      accessible
+                        ? "text-slate-700 group-hover:text-primary"
+                        : "text-slate-400",
+                    ].join(" ")}
+                  >
                     {dept.name}
                   </span>
+                  {!accessible && (
+                    <span className="text-[10px] text-slate-400 font-medium mt-0.5">
+                      ไม่มีสิทธิ์เข้าถึง
+                    </span>
+                  )}
                 </CardContent>
               </Card>
             );

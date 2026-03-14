@@ -12,6 +12,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { format } from "date-fns";
 import { th } from "date-fns/locale";
+import { designJobService } from "@/services/designJobService";
 
 // Status configuration - 6 สถานะหลักเท่านั้น
 const statusConfig = {
@@ -23,21 +24,7 @@ const statusConfig = {
   completed: { label: "เสร็จสิ้น", color: "#2ECC71", bgColor: "bg-green-500" },
 };
 
-// Mock data for design jobs - ใช้เฉพาะ 6 สถานะหลัก
-const mockJobs = [
-  { id: "1", job_code: "DG-2025-001", customer_name: "บริษัท ABC", job_type: "เหรียญรางวัล", designer: "สมชาย", start_date: "2025-01-10", due_date: "2025-01-25", status: "designing", priority: "high", description: "เหรียญรางวัลแข่งขันกีฬา" },
-  { id: "2", job_code: "DG-2025-002", customer_name: "โรงเรียน XYZ", job_type: "ถ้วยรางวัล", designer: "สมหญิง", start_date: "2025-01-12", due_date: "2025-01-28", status: "review", priority: "medium", description: "ถ้วยรางวัลนักเรียนดีเด่น" },
-  { id: "3", job_code: "DG-2025-003", customer_name: "บริษัท DEF", job_type: "คริสตัล", designer: "ประเสริฐ", start_date: "2025-01-15", due_date: "2025-02-01", status: "feedback", priority: "high", description: "คริสตัลโล่รางวัล" },
-  { id: "4", job_code: "DG-2025-004", customer_name: "มหาวิทยาลัย LMN", job_type: "อะคริลิก", designer: "สมชาย", start_date: "2025-01-08", due_date: "2025-01-20", status: "production", priority: "low", description: "ป้ายอะคริลิก" },
-  { id: "5", job_code: "DG-2025-005", customer_name: "บริษัท GHI", job_type: "ผ้า", designer: "สมหญิง", start_date: "2025-01-05", due_date: "2025-01-18", status: "completed", priority: "medium", description: "ผ้าแบนเนอร์" },
-  { id: "6", job_code: "DG-2025-006", customer_name: "สมาคม JKL", job_type: "สายคล้องคอ", designer: "ประเสริฐ", start_date: "2025-01-16", due_date: "2025-01-30", status: "unassigned", priority: "low", description: "สายคล้องคอ ID Card" },
-  { id: "7", job_code: "DG-2025-007", customer_name: "บริษัท MNO", job_type: "เหรียญรางวัล", designer: "", start_date: "2025-01-17", due_date: "2025-02-05", status: "unassigned", priority: "medium", description: "เหรียญรางวัลพนักงานดีเด่น" },
-  { id: "8", job_code: "DG-2025-008", customer_name: "โรงเรียน PQR", job_type: "ถ้วยรางวัล", designer: "สมชาย", start_date: "2025-01-14", due_date: "2025-01-26", status: "designing", priority: "high", description: "ถ้วยรางวัลแข่งขันวิชาการ" },
-  { id: "9", job_code: "DG-2025-009", customer_name: "บริษัท STU", job_type: "คริสตัล", designer: "สมหญิง", start_date: "2025-01-11", due_date: "2025-01-24", status: "feedback", priority: "high", description: "คริสตัลรางวัล - รอข้อมูล Logo" },
-  { id: "10", job_code: "DG-2025-010", customer_name: "มหาวิทยาลัย VWX", job_type: "อะคริลิก", designer: "ประเสริฐ", start_date: "2025-01-13", due_date: "2025-01-27", status: "review", priority: "medium", description: "โล่อะคริลิกรางวัล" },
-  { id: "11", job_code: "DG-2025-011", customer_name: "บริษัท AAA", job_type: "เหรียญรางวัล", designer: "วิไล", start_date: "2025-01-09", due_date: "2025-01-22", status: "production", priority: "medium", description: "เหรียญรางวัลพนักงานดีเด่น" },
-  { id: "12", job_code: "DG-2025-012", customer_name: "โรงเรียน BBB", job_type: "ถ้วยรางวัล", designer: "สมชาย", start_date: "2025-01-11", due_date: "2025-01-29", status: "completed", priority: "low", description: "ถ้วยรางวัลกีฬาสี" },
-];
+// Mock data removed in favor of state
 
 // Mock data for line chart (30 days)
 const lineChartData = Array.from({ length: 30 }, (_, i) => {
@@ -65,6 +52,8 @@ const barChartData = Array.from({ length: 6 }, (_, i) => {
   };
 });
 
+import { useEffect } from "react";
+
 export default function DesignDashboard() {
   const [searchTerm, setSearchTerm] = useState("");
   const [startDate, setStartDate] = useState<Date>();
@@ -74,10 +63,46 @@ export default function DesignDashboard() {
   const [customerFilter, setCustomerFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
 
+  const [jobs, setJobs] = useState<any[]>([]);
+
+  useEffect(() => {
+    const fetchJobs = async () => {
+      try {
+        const res = await designJobService.getJobs();
+        if (res.status === "success") {
+          const mapped = res.data.map((j: any) => {
+            let mappedStatus = "unassigned";
+            if (["รอรับงาน", "รับงานแล้ว"].includes(j.status)) mappedStatus = "unassigned";
+            else if (j.status === "กำลังดำเนินการ") mappedStatus = "designing";
+            else if (j.status === "รอตรวจสอบ") mappedStatus = "review";
+            else if (j.status === "แก้ไข") mappedStatus = "feedback";
+            else if (j.status === "ผลิตชิ้นงาน") mappedStatus = "production";
+            else if (j.status === "เสร็จสิ้น") mappedStatus = "completed";
+
+            return {
+              id: j.id,
+              job_code: j.job_code,
+              customer_name: j.client_name,
+              job_type: j.job_type,
+              designer: j.designer || "",
+              start_date: j.started_at ? j.started_at.split('T')[0] : (j.created_at?.split(' ')[0] || "2024-01-01"),
+              due_date: j.due_date || "2024-01-01",
+              status: mappedStatus,
+              priority: j.priority || "medium",
+              description: j.description || ""
+            };
+          });
+          setJobs(mapped);
+        }
+      } catch (e) { }
+    };
+    fetchJobs();
+  }, []);
+
   // Calculate statistics
-  const totalJobs = mockJobs.length;
+  const totalJobs = jobs.length;
   const statusCounts = Object.keys(statusConfig).reduce((acc, status) => {
-    acc[status] = mockJobs.filter(job => job.status === status).length;
+    acc[status] = jobs.filter(job => job.status === status).length;
     return acc;
   }, {} as Record<string, number>);
 
@@ -89,7 +114,7 @@ export default function DesignDashboard() {
   }));
 
   // Filter jobs for urgent table (designing, feedback, review)
-  const urgentJobs = mockJobs
+  const urgentJobs = jobs
     .filter(job => ["designing", "feedback", "review"].includes(job.status))
     .sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime())
     .slice(0, 10);
@@ -184,7 +209,7 @@ export default function DesignDashboard() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">ทุกลูกค้า</SelectItem>
-                  {Array.from(new Set(mockJobs.map(j => j.customer_name))).map(customer => (
+                  {Array.from(new Set(jobs.map(j => j.customer_name))).map(customer => (
                     <SelectItem key={customer} value={customer}>{customer}</SelectItem>
                   ))}
                 </SelectContent>
@@ -224,9 +249,9 @@ export default function DesignDashboard() {
                   {percentage.toFixed(1)}% ของงานทั้งหมด
                 </div>
                 <div className="mt-2 h-2 bg-secondary rounded-full overflow-hidden">
-                  <div 
+                  <div
                     className="h-full transition-all"
-                    style={{ 
+                    style={{
                       width: `${percentage}%`,
                       backgroundColor: config.color
                     }}
@@ -340,7 +365,7 @@ export default function DesignDashboard() {
                 const daysLeft = calculateDaysLeft(job.due_date);
                 const isOverdue = daysLeft < 0;
                 const config = statusConfig[job.status as keyof typeof statusConfig];
-                
+
                 return (
                   <TableRow key={job.id}>
                     <TableCell className="font-medium">{job.job_code}</TableCell>
@@ -355,7 +380,7 @@ export default function DesignDashboard() {
                     <TableCell>
                       <Badge variant={
                         job.priority === "high" ? "destructive" :
-                        job.priority === "medium" ? "default" : "secondary"
+                          job.priority === "medium" ? "default" : "secondary"
                       }>
                         {job.priority === "high" ? "สูง" : job.priority === "medium" ? "กลาง" : "ต่ำ"}
                       </Badge>

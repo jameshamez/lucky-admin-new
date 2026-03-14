@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useNavigate } from "react-router-dom";
-import { 
+import {
   Users,
   DollarSign,
   Target,
@@ -10,7 +10,8 @@ import {
   Book,
   ArrowRight,
   Settings,
-  FileBarChart
+  FileBarChart,
+  UserCog
 } from "lucide-react";
 
 const hrModules = [
@@ -77,6 +78,14 @@ const hrModules = [
     icon: Book,
     path: "/hr/work-guides",
     color: "from-gray-500 to-gray-600"
+  },
+  {
+    id: "user-management",
+    title: "จัดการผู้ใช้งานระบบ",
+    description: "เพิ่ม แก้ไข ปิดการใช้งาน และรีเซ็ตรหัสผ่านบัญชีพนักงาน",
+    icon: UserCog,
+    path: "/hr/user-management",
+    color: "from-violet-500 to-violet-600"
   }
 ];
 
@@ -96,8 +105,8 @@ export default function HRMain() {
         {hrModules.map((module) => {
           const IconComponent = module.icon;
           return (
-            <Card 
-              key={module.id} 
+            <Card
+              key={module.id}
               className="group hover:shadow-lg transition-all duration-200 cursor-pointer border-2 hover:border-primary/20"
               onClick={() => navigate(module.path)}
             >
@@ -115,8 +124,8 @@ export default function HRMain() {
                 </div>
               </CardHeader>
               <CardContent>
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   className="w-full group-hover:bg-primary group-hover:text-primary-foreground transition-colors"
                 >
                   เข้าสู่ระบบ

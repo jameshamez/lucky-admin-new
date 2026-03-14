@@ -80,8 +80,8 @@ const designItems = [
   { title: "รับงานออกแบบ", url: "/design/jobs", icon: PenTool },
   { title: "ดูและติดตามสถานะงาน", url: "/design/tracking", icon: Eye },
   { title: "การเบิกสินค้าและสต็อกสินค้า", url: "/design/materials", icon: Boxes },
-  { title: "คู่มือการทำงาน", url: "/design/user-manual", icon: BookOpen },
-  { title: "รายงานผล", url: "/design/reports", icon: FileBarChart }
+  // { title: "คู่มือการทำงาน", url: "/design/user-manual", icon: BookOpen },
+  // { title: "รายงานผล", url: "/design/reports", icon: FileBarChart }
 ];
 
 const procurementItems = [
@@ -101,7 +101,7 @@ const procurementItems = [
   { title: "สต๊อกสินค้า", url: "/procurement/inventory-stock", icon: Boxes },
   { title: "เบิกการใช้งาน", url: "/procurement/requisition-center", icon: FileText },
   { title: "รายงานและสรุปยอด", url: "/procurement/reports", icon: BarChart3 },
-  { title: "คู่มือการทำงาน", url: "/procurement/user-manual", icon: BookOpen },
+  // { title: "คู่มือการทำงาน", url: "/procurement/user-manual", icon: BookOpen },
   { title: "การตั้งค่า", url: "/procurement/settings", icon: Settings }
 ];
 
@@ -112,7 +112,7 @@ const productionItems = [
   { title: "คลังสินค้า", url: "/production/inventory", icon: Boxes },
   { title: "จัดการยานพาหนะ", url: "/production/vehicle-management", icon: Car },
   { title: "รายงาน", url: "/production/reports", icon: FileBarChart },
-  { title: "คู่มือ", url: "/production/user-manual", icon: BookOpen }
+  // { title: "คู่มือ", url: "/production/user-manual", icon: BookOpen }
 ];
 
 // Accounting department items
@@ -126,7 +126,7 @@ const accountingItems = [
   { title: "ทรัพย์สินสำนักงาน", url: "/accounting/office-inventory", icon: Package },
   { title: "เบิกเงินสดย่อย", url: "/accounting/petty-cash", icon: Wallet },
   { title: "เบิกใช้วัสดุสำนักงาน", url: "/accounting/office-requisitions", icon: ClipboardList },
-  { title: "คู่มือการทำงาน", url: "/accounting/user-manual", icon: BookOpen },
+  // { title: "คู่มือการทำงาน", url: "/accounting/user-manual", icon: BookOpen },
   { 
     title: "รายงาน", 
     url: "/accounting/reports", 
@@ -157,7 +157,7 @@ const hrItems = [
   },
   { title: "ตั้งค่า HR & Commission", url: "/hr/settings", icon: Settings },
   { title: "รายงานค่าคอมรายเดือน", url: "/hr/monthly-commission-report", icon: FileBarChart },
-  { title: "คู่มือการทำงาน", url: "/hr/user-manual", icon: BookOpen },
+  // { title: "คู่มือการทำงาน", url: "/hr/user-manual", icon: BookOpen },
   { title: "รายงานผล", url: "/hr/reports", icon: FileBarChart }
 ];
 

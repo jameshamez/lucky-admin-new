@@ -1,18 +1,20 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { accountingService } from "@/services/accountingService";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
 } from "@/components/ui/table";
 import {
   Dialog,
@@ -30,14 +32,14 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { 
-  Search, 
-  Phone, 
-  Mail, 
-  FileText, 
-  AlertTriangle, 
-  Plus, 
-  Download, 
+import {
+  Search,
+  Phone,
+  Mail,
+  FileText,
+  AlertTriangle,
+  Plus,
+  Download,
   Eye,
   DollarSign,
   FileCheck,
@@ -50,119 +52,243 @@ import {
 } from "lucide-react";
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 
-const accountsReceivable = [
-  {
-    id: "AR-001",
-    customer: "บริษัท ABC จำกัด",
-    invoiceNumber: "INV-2024-001",
-    invoiceDate: "2024-01-10",
-    dueDate: "2024-01-25",
-    totalAmount: 75000,
-    paidAmount: 25000,
-    remainingAmount: 50000,
-    status: "ค้างชำระ",
-    daysOverdue: 35,
-    followUpNote: "โทรติดตามแล้ว 2 ครั้ง รอยืนยันวันชำระ",
-    accountManager: "คุณสมชาย",
-    lastUpdated: "2024-02-29",
-    attachments: [],
-    followUpHistory: [
-      { id: "f1", date: "2024-02-29", channel: "โทรศัพท์", detail: "โทรติดตามครั้งที่ 2 ลูกค้าแจ้งว่าจะชำระภายในสัปดาห์หน้า", nextDate: "2024-03-07", user: "คุณสมชาย" },
-      { id: "f2", date: "2024-02-15", channel: "LINE", detail: "ส่งข้อความแจ้งเตือนครบกำหนดชำระ ลูกค้าอ่านแล้วยังไม่ตอบ", nextDate: "2024-02-29", user: "คุณสมชาย" },
-      { id: "f3", date: "2024-01-26", channel: "โทรศัพท์", detail: "โทรแจ้งครบกำหนดชำระ ลูกค้ารับทราบแต่ขอเลื่อน", nextDate: "2024-02-15", user: "คุณสมชาย" },
-    ]
-  },
-  {
-    id: "AR-002",
-    customer: "ร้าน XYZ",
-    invoiceNumber: "INV-2024-002",
-    invoiceDate: "2024-02-15",
-    dueDate: "2024-03-15",
-    totalAmount: 45000,
-    paidAmount: 0,
-    remainingAmount: 45000,
-    status: "รอชำระ",
-    daysOverdue: 0,
-    followUpNote: "-",
-    accountManager: "คุณสมหญิง",
-    lastUpdated: "2024-02-15",
-    attachments: [],
-    followUpHistory: []
-  },
-  {
-    id: "AR-003",
-    customer: "บริษัท DEF จำกัด",
-    invoiceNumber: "INV-2024-003",
-    invoiceDate: "2024-01-05",
-    dueDate: "2024-01-20",
-    totalAmount: 120000,
-    paidAmount: 120000,
-    remainingAmount: 0,
-    status: "ชำระเสร็จสิ้น",
-    daysOverdue: 0,
-    followUpNote: "ชำระครบถ้วนแล้ว",
-    accountManager: "คุณสมศักดิ์",
-    lastUpdated: "2024-01-19",
-    attachments: [],
-    followUpHistory: [
-      { id: "f4", date: "2024-01-19", channel: "โทรศัพท์", detail: "ลูกค้าโอนเงินเข้าบัญชีเรียบร้อย ยืนยันสลิปแล้ว", nextDate: "", user: "คุณสมศักดิ์" },
-    ]
-  },
-  {
-    id: "AR-004",
-    customer: "บริษัท GHI จำกัด",
-    invoiceNumber: "INV-2024-004",
-    invoiceDate: "2023-12-20",
-    dueDate: "2024-01-05",
-    totalAmount: 85000,
-    paidAmount: 30000,
-    remainingAmount: 55000,
-    status: "ค้างชำระ",
-    daysOverdue: 55,
-    followUpNote: "ลูกค้าขอผ่อนชำระ 3 งวด",
-    accountManager: "คุณสมชาย",
-    lastUpdated: "2024-02-28",
-    attachments: [],
-    followUpHistory: [
-      { id: "f5", date: "2024-02-28", channel: "เข้าพบ", detail: "เข้าพบลูกค้าที่สำนักงาน ตกลงผ่อนชำระ 3 งวด งวดละ ~18,333 บาท เริ่มงวดแรก 15 มี.ค.", nextDate: "2024-03-15", user: "คุณสมชาย" },
-      { id: "f6", date: "2024-02-10", channel: "อีเมล", detail: "ส่งอีเมลแจ้งยอดค้างชำระพร้อมใบแจ้งหนี้ฉบับใหม่", nextDate: "2024-02-20", user: "คุณสมชาย" },
-      { id: "f7", date: "2024-01-20", channel: "โทรศัพท์", detail: "โทรแจ้งครบกำหนด ลูกค้าแจ้งว่ามีปัญหากระแสเงินสด ขอผ่อนผัน", nextDate: "2024-02-10", user: "คุณสมชาย" },
-    ]
-  },
-];
 
-const monthlyData = [
-  { month: "ม.ค.", amount: 120000 },
-  { month: "ก.พ.", amount: 95000 },
-  { month: "มี.ค.", amount: 145000 },
-  { month: "เม.ย.", amount: 110000 },
-  { month: "พ.ค.", amount: 130000 },
-  { month: "มิ.ย.", amount: 155000 },
-  { month: "ก.ค.", amount: 125000 },
-  { month: "ส.ค.", amount: 140000 },
-  { month: "ก.ย.", amount: 135000 },
-  { month: "ต.ค.", amount: 150000 },
-  { month: "พ.ย.", amount: 165000 },
-  { month: "ธ.ค.", amount: 175000 },
-];
-
-const COLORS = ['hsl(var(--success))', 'hsl(var(--warning))', 'hsl(var(--destructive))'];
+// COLORS used for charts
+const AR_COLORS = ['hsl(var(--success))', 'hsl(var(--warning))', 'hsl(var(--destructive))'];
 
 export default function CustomerAccounts() {
+  const [accountsReceivable, setAccountsReceivable] = useState<any[]>([]);
+  const [summaryData, setSummaryData] = useState<any>(null);
+  const [monthlyData, setMonthlyData] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [accountingEmployees, setAccountingEmployees] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetchAccounts();
+    fetchAccountingEmployees();
+  }, []);
+
+  const fetchAccountingEmployees = async () => {
+    try {
+      const response = await accountingService.getEmployees({ department: 'ฝ่ายบัญชี' });
+      if (response.status === "success") {
+        setAccountingEmployees(response.data);
+      }
+    } catch (error) {
+      console.error("Failed to fetch employees:", error);
+    }
+  };
+
+  const fetchAccounts = async () => {
+    setIsLoading(true);
+    try {
+      const response = await accountingService.getCustomerAccounts();
+      if (response.status === "success") {
+        const mappedData = response.data.map((acc: any) => ({
+          ...acc,
+          customer: acc.customer_name,
+          invoiceNumber: acc.invoice_number,
+          invoiceDate: acc.invoice_date,
+          dueDate: acc.due_date,
+          totalAmount: Number(acc.total_amount),
+          paidAmount: Number(acc.paid_amount),
+          remainingAmount: Number(acc.remaining_amount),
+          daysOverdue: Number(acc.days_overdue),
+          accountManager: acc.account_manager,
+          followUpNote: acc.follow_up_note,
+        }));
+        setAccountsReceivable(mappedData);
+        setSummaryData(response.summary);
+        setMonthlyData(response.monthly);
+      }
+    } catch (error) {
+      console.error("Failed to fetch accounts:", error);
+      toast.error("ไม่สามารถโหลดข้อมูลลูกหนี้ได้");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchAccountDetails = async (id: number | string) => {
+    try {
+      const response = await accountingService.getCustomerAccountDetails(id);
+      if (response.status === "success") {
+        const acc = response.data;
+        const mappedAcc = {
+          ...acc,
+          customer: acc.customer_name,
+          invoiceNumber: acc.invoice_number,
+          invoiceDate: acc.invoice_date,
+          dueDate: acc.due_date,
+          totalAmount: Number(acc.total_amount),
+          paidAmount: Number(acc.paid_amount),
+          remainingAmount: Number(acc.remaining_amount),
+          daysOverdue: Number(acc.days_overdue),
+          accountManager: acc.account_manager,
+          followUpNote: acc.follow_up_note,
+          followUpHistory: acc.follow_up_history.map((h: any) => ({
+            id: h.id,
+            date: h.follow_up_date,
+            channel: h.channel,
+            detail: h.detail,
+            nextDate: h.next_follow_up_date,
+            user: h.user_name
+          }))
+        };
+        setSelectedAccount(mappedAcc);
+        setShowDetailDialog(true);
+      }
+    } catch (error) {
+      console.error("Failed to fetch account details:", error);
+      toast.error("ไม่สามารถโหลดรายละเอียดได้");
+    }
+  };
+
   const [searchTerm, setSearchTerm] = useState("");
   const [filterOverdue, setFilterOverdue] = useState(false);
-  const [selectedAccount, setSelectedAccount] = useState<typeof accountsReceivable[0] | null>(null);
+  const [selectedAccount, setSelectedAccount] = useState<any | null>(null);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
   const [showFollowUpDialog, setShowFollowUpDialog] = useState(false);
+  const [showAddDialog, setShowAddDialog] = useState(false);
+  const [newAccountData, setNewAccountData] = useState({
+    customer_name: "",
+    invoice_number: "",
+    invoice_date: new Date().toISOString().split("T")[0],
+    due_date: "",
+    total_amount: 0,
+    paid_amount: 0,
+    status: "รอชำระ",
+    account_manager: ""
+  });
 
-  // Calculations
-  const totalAccounts = accountsReceivable.length;
-  const totalReceivable = accountsReceivable.reduce((sum, item) => sum + item.remainingAmount, 0);
-  const overdueAccounts = accountsReceivable.filter(item => item.daysOverdue > 30);
-  const overdueCount = overdueAccounts.length;
-  const overduePercentage = ((overdueCount / totalAccounts) * 100).toFixed(1);
-  const completedCount = accountsReceivable.filter(item => item.status === "ชำระเสร็จสิ้น").length;
+  const handleAddAccount = async () => {
+    try {
+      const response = await accountingService.saveCustomerAccount(newAccountData);
+      if (response.status === "success") {
+        toast.success("เพิ่มข้อมูลลูกหนี้เรียบร้อย");
+        setShowAddDialog(false);
+        fetchAccounts();
+        setNewAccountData({
+          customer_name: "",
+          invoice_number: "",
+          invoice_date: new Date().toISOString().split("T")[0],
+          due_date: "",
+          total_amount: 0,
+          paid_amount: 0,
+          status: "รอชำระ",
+          account_manager: ""
+        });
+      }
+    } catch (error) {
+      toast.error("ไม่สามารถเพิ่มข้อมูลได้");
+    }
+  };
+
+  const [followUpData, setFollowUpData] = useState({
+    date: new Date().toISOString().split("T")[0],
+    channel: "โทรศัพท์",
+    detail: "",
+    nextDate: "",
+    user: ""
+  });
+
+  const handleAddFollowUp = async () => {
+    if (!selectedAccount) return;
+    try {
+      const payload = {
+        ar_id: selectedAccount.id,
+        follow_up_date: followUpData.date,
+        channel: followUpData.channel,
+        detail: followUpData.detail,
+        next_follow_up_date: followUpData.nextDate,
+        user_name: followUpData.user
+      };
+      const response = await accountingService.addFollowUp(payload);
+      if (response.status === "success") {
+        toast.success("บันทึกการติดตามเรียบร้อย");
+        setShowFollowUpDialog(false);
+        fetchAccountDetails(selectedAccount.id); // Refresh details
+        fetchAccounts(); // Refresh list
+      }
+    } catch (error) {
+      toast.error("ไม่สามารถบันทึกข้อมูลได้");
+    }
+  };
+
+  const handleStatusUpdate = async (newStatus: string) => {
+    if (!selectedAccount) return;
+    try {
+      const payload = {
+        ...selectedAccount,
+        status: newStatus,
+        customer_name: selectedAccount.customer,
+        invoice_number: selectedAccount.invoiceNumber,
+        invoice_date: selectedAccount.invoiceDate,
+        due_date: selectedAccount.dueDate,
+        total_amount: selectedAccount.totalAmount,
+        paid_amount: selectedAccount.paidAmount,
+        account_manager: selectedAccount.accountManager
+      };
+      const response = await accountingService.saveCustomerAccount(payload);
+      if (response.status === "success") {
+        toast.success("อัปเดตสถานะเรียบร้อย");
+        fetchAccountDetails(selectedAccount.id);
+        fetchAccounts();
+      }
+    } catch (error) {
+      toast.error("ไม่สามารถอัปเดตสถานะได้");
+    }
+  };
+  const [paymentData, setPaymentData] = useState({
+    date: new Date().toISOString().split("T")[0],
+    amount: 0,
+    method: "โอนเงิน",
+    remark: ""
+  });
+
+  const handlePayment = async () => {
+    if (!selectedAccount) return;
+    try {
+      const newPaidAmount = Number(selectedAccount.paidAmount) + Number(paymentData.amount);
+      const newStatus = newPaidAmount >= selectedAccount.totalAmount ? "ชำระเสร็จสิ้น" : "ค้างชำระ";
+
+      const payload = {
+        ...selectedAccount,
+        customer_name: selectedAccount.customer,
+        invoice_number: selectedAccount.invoiceNumber,
+        invoice_date: selectedAccount.invoiceDate,
+        due_date: selectedAccount.dueDate,
+        total_amount: selectedAccount.totalAmount,
+        paid_amount: newPaidAmount,
+        status: newStatus,
+        account_manager: selectedAccount.accountManager
+      };
+
+      const response = await accountingService.saveCustomerAccount(payload);
+      if (response.status === "success") {
+        // Also add a follow-up record for the payment
+        await accountingService.addFollowUp({
+          ar_id: selectedAccount.id,
+          follow_up_date: paymentData.date,
+          channel: "ชำระเงิน",
+          detail: `ชำระเงินจำนวน ฿${Number(paymentData.amount).toLocaleString()} ผ่าน${paymentData.method}. ${paymentData.remark}`,
+          user_name: "System"
+        });
+
+        toast.success("บันทึกการชำระเงินเรียบร้อย");
+        setShowPaymentDialog(false);
+        fetchAccounts();
+      }
+    } catch (error) {
+      toast.error("ไม่สามารถบันทึกการชำระเงินได้");
+    }
+  };
+  const totalAccounts = summaryData?.total_accounts || accountsReceivable.length;
+  const totalReceivable = summaryData?.total_receivable || accountsReceivable.reduce((sum, item) => sum + item.remainingAmount, 0);
+  const overdueCount = summaryData?.overdue_count || accountsReceivable.filter(item => item.daysOverdue > 30).length;
+  const overduePercentage = totalAccounts > 0 ? ((overdueCount / totalAccounts) * 100).toFixed(1) : "0.0";
+  const completedCount = summaryData?.completed_count || accountsReceivable.filter(item => item.status === "ชำระเสร็จสิ้น").length;
 
   // Status distribution for pie chart
   const statusData = [
@@ -173,8 +299,8 @@ export default function CustomerAccounts() {
 
   // Filter accounts
   const filteredAccounts = accountsReceivable.filter(account => {
-    const matchesSearch = account.customer.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         account.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = (account.customer?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
+      (account.invoiceNumber?.toLowerCase() || "").includes(searchTerm.toLowerCase());
     const matchesOverdue = filterOverdue ? account.daysOverdue > 0 : true;
     return matchesSearch && matchesOverdue;
   });
@@ -203,7 +329,7 @@ export default function CustomerAccounts() {
             <Download className="w-4 h-4 mr-2" />
             Export Excel
           </Button>
-          <Button className="bg-gradient-to-r from-primary to-primary-hover">
+          <Button className="bg-gradient-to-r from-primary to-primary-hover" onClick={() => setShowAddDialog(true)}>
             <Plus className="w-4 h-4 mr-2" />
             เพิ่มลูกหนี้
           </Button>
@@ -295,7 +421,7 @@ export default function CustomerAccounts() {
                   dataKey="value"
                 >
                   {statusData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    <Cell key={`cell-${index}`} fill={AR_COLORS[index % AR_COLORS.length]} />
                   ))}
                 </Pie>
                 <Tooltip />
@@ -309,14 +435,14 @@ export default function CustomerAccounts() {
       <div className="flex gap-4">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-          <Input 
-            placeholder="ค้นหาชื่อลูกค้า หรือเลขที่ใบแจ้งหนี้..." 
+          <Input
+            placeholder="ค้นหาชื่อลูกค้า หรือเลขที่ใบแจ้งหนี้..."
             className="pl-10"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
-        <Button 
+        <Button
           variant={filterOverdue ? "default" : "outline"}
           onClick={() => setFilterOverdue(!filterOverdue)}
         >
@@ -375,28 +501,28 @@ export default function CustomerAccounts() {
                     <TableCell className="text-sm">{account.accountManager}</TableCell>
                     <TableCell>
                       <div className="flex gap-1">
-                        <Button 
-                          size="sm" 
+                        <Button
+                          size="sm"
                           variant="outline"
                           onClick={() => {
-                            setSelectedAccount(account);
-                            setShowDetailDialog(true);
+                            fetchAccountDetails(account.id);
                           }}
                         >
                           <Eye className="w-4 h-4" />
                         </Button>
-                        <Button 
-                          size="sm" 
+                        <Button
+                          size="sm"
                           variant="outline"
                           onClick={() => {
-                            window.open("/accounting/work-orders", "_blank");
+                            setSelectedAccount(account);
+                            setShowPaymentDialog(true);
                           }}
-                          title="ดูใบสั่งงาน"
+                          title="ชำระเงิน"
                         >
                           <DollarSign className="w-4 h-4" />
                         </Button>
-                        <Button 
-                          size="sm" 
+                        <Button
+                          size="sm"
                           variant="outline"
                           onClick={() => {
                             setSelectedAccount(account);
@@ -498,8 +624,8 @@ export default function CustomerAccounts() {
                       {selectedAccount.followUpHistory.map((entry, idx) => {
                         const channelIcon = entry.channel === "โทรศัพท์" ? <Phone className="h-3.5 w-3.5" />
                           : entry.channel === "อีเมล" ? <Mail className="h-3.5 w-3.5" />
-                          : entry.channel === "LINE" ? <MessageSquare className="h-3.5 w-3.5" />
-                          : <UserCheck className="h-3.5 w-3.5" />;
+                            : entry.channel === "LINE" ? <MessageSquare className="h-3.5 w-3.5" />
+                              : <UserCheck className="h-3.5 w-3.5" />;
 
                         const dotColor = idx === 0 ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))";
 
@@ -553,23 +679,28 @@ export default function CustomerAccounts() {
           <div className="space-y-4">
             <div>
               <Label>วันที่ชำระ</Label>
-              <Input type="date" />
+              <Input type="date" value={paymentData.date} onChange={(e) => setPaymentData({ ...paymentData, date: e.target.value })} />
             </div>
             <div>
               <Label>จำนวนเงิน (THB)</Label>
-              <Input type="number" placeholder="0.00" />
+              <Input
+                type="number"
+                placeholder="0.00"
+                value={paymentData.amount}
+                onChange={(e) => setPaymentData({ ...paymentData, amount: Number(e.target.value) })}
+              />
             </div>
             <div>
               <Label>วิธีการชำระ</Label>
-              <Select>
+              <Select value={paymentData.method} onValueChange={(v) => setPaymentData({ ...paymentData, method: v })}>
                 <SelectTrigger>
                   <SelectValue placeholder="เลือกวิธีการชำระ" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="transfer">โอนเงิน</SelectItem>
-                  <SelectItem value="cash">เงินสด</SelectItem>
-                  <SelectItem value="check">เช็ค</SelectItem>
-                  <SelectItem value="credit">บัตรเครดิต</SelectItem>
+                  <SelectItem value="โอนเงิน">โอนเงิน</SelectItem>
+                  <SelectItem value="เงินสด">เงินสด</SelectItem>
+                  <SelectItem value="เช็ค">เช็ค</SelectItem>
+                  <SelectItem value="บัตรเครดิต">บัตรเครดิต</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -579,9 +710,13 @@ export default function CustomerAccounts() {
             </div>
             <div>
               <Label>หมายเหตุ</Label>
-              <Textarea placeholder="หมายเหตุเพิ่มเติม..." />
+              <Textarea
+                placeholder="หมายเหตุเพิ่มเติม..."
+                value={paymentData.remark}
+                onChange={(e) => setPaymentData({ ...paymentData, remark: e.target.value })}
+              />
             </div>
-            <Button className="w-full">บันทึกการชำระเงิน</Button>
+            <Button className="w-full" onClick={handlePayment}>บันทึกการชำระเงิน</Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -598,31 +733,147 @@ export default function CustomerAccounts() {
           <div className="space-y-4">
             <div>
               <Label>วันที่ติดตาม</Label>
-              <Input type="date" />
+              <Input type="date" value={followUpData.date} onChange={(e) => setFollowUpData({ ...followUpData, date: e.target.value })} />
             </div>
             <div>
               <Label>ช่องทางการติดตาม</Label>
-              <Select>
+              <Select value={followUpData.channel} onValueChange={(v) => setFollowUpData({ ...followUpData, channel: v })}>
                 <SelectTrigger>
                   <SelectValue placeholder="เลือกช่องทาง" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="phone">โทรศัพท์</SelectItem>
-                  <SelectItem value="email">อีเมล</SelectItem>
-                  <SelectItem value="line">LINE</SelectItem>
-                  <SelectItem value="visit">เข้าพบ</SelectItem>
+                  <SelectItem value="โทรศัพท์">โทรศัพท์</SelectItem>
+                  <SelectItem value="อีเมล">อีเมล</SelectItem>
+                  <SelectItem value="LINE">LINE</SelectItem>
+                  <SelectItem value="เข้าพบ">เข้าพบ</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div>
               <Label>รายละเอียดการติดตาม</Label>
-              <Textarea placeholder="บันทึกรายละเอียดการติดตาม..." rows={4} />
+              <Textarea
+                placeholder="บันทึกรายละเอียดการติดตาม..."
+                rows={4}
+                value={followUpData.detail}
+                onChange={(e) => setFollowUpData({ ...followUpData, detail: e.target.value })}
+              />
             </div>
             <div>
               <Label>วันนัดชำระ (ถ้ามี)</Label>
-              <Input type="date" />
+              <Input type="date" value={followUpData.nextDate} onChange={(e) => setFollowUpData({ ...followUpData, nextDate: e.target.value })} />
             </div>
-            <Button className="w-full">บันทึกการติดตาม</Button>
+            <div>
+              <Label>ผู้บันทึก</Label>
+              <Select
+                value={followUpData.user}
+                onValueChange={(v) => setFollowUpData({ ...followUpData, user: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="เลือกผู้บันทึก" />
+                </SelectTrigger>
+                <SelectContent>
+                  {accountingEmployees.map((emp) => (
+                    <SelectItem key={emp.id} value={emp.full_name}>
+                      {emp.full_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button className="w-full" onClick={handleAddFollowUp}>บันทึกการติดตาม</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Account Dialog */}
+      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>เพิ่มข้อมูลลูกหนี้ใหม่</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>ชื่อลูกค้า</Label>
+              <Input
+                value={newAccountData.customer_name}
+                onChange={(e) => setNewAccountData({ ...newAccountData, customer_name: e.target.value })}
+                placeholder="ชื่อบริษัท หรือ ชื่อลูกค้า"
+              />
+            </div>
+            <div>
+              <Label>เลขที่ใบแจ้งหนี้</Label>
+              <Input
+                value={newAccountData.invoice_number}
+                onChange={(e) => setNewAccountData({ ...newAccountData, invoice_number: e.target.value })}
+                placeholder="INV-XXXX-XXX"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>วันที่ออกใบ</Label>
+                <Input
+                  type="date"
+                  value={newAccountData.invoice_date}
+                  onChange={(e) => setNewAccountData({ ...newAccountData, invoice_date: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label>วันครบกำหนด</Label>
+                <Input
+                  type="date"
+                  value={newAccountData.due_date}
+                  onChange={(e) => setNewAccountData({ ...newAccountData, due_date: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>ยอดรวม (THB)</Label>
+                <Input
+                  type="number"
+                  value={newAccountData.total_amount}
+                  onChange={(e) => setNewAccountData({ ...newAccountData, total_amount: Number(e.target.value) })}
+                />
+              </div>
+              <div>
+                <Label>ชำระแล้ว (THB)</Label>
+                <Input
+                  type="number"
+                  value={newAccountData.paid_amount}
+                  onChange={(e) => setNewAccountData({ ...newAccountData, paid_amount: Number(e.target.value) })}
+                />
+              </div>
+            </div>
+            <div>
+              <Label>สถานะ</Label>
+              <Select value={newAccountData.status} onValueChange={(v) => setNewAccountData({ ...newAccountData, status: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="รอชำระ">รอชำระ</SelectItem>
+                  <SelectItem value="ค้างชำระ">ค้างชำระ</SelectItem>
+                  <SelectItem value="ชำระเสร็จสิ้น">ชำระเสร็จสิ้น</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>ผู้ดูแลบัญชี</Label>
+              <Select
+                value={newAccountData.account_manager}
+                onValueChange={(v) => setNewAccountData({ ...newAccountData, account_manager: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="เลือกผู้ดูแล" />
+                </SelectTrigger>
+                <SelectContent>
+                  {accountingEmployees.map((emp) => (
+                    <SelectItem key={emp.id} value={emp.full_name}>
+                      {emp.full_name} ({emp.nickname || emp.code})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button className="w-full" onClick={handleAddAccount}>บันทึกข้อมูล</Button>
           </div>
         </DialogContent>
       </Dialog>

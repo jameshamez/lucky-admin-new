@@ -22,6 +22,8 @@ if ($conn->connect_error) {
     echo json_encode(["status" => "error", "message" => "Connection failed: " . $conn->connect_error]);
     exit();
 }
+$conn->select_db('finfinph_lcukycompany');
+$conn->set_charset("utf8mb4");
 
 $method = $_SERVER['REQUEST_METHOD'];
 $request_uri = $_SERVER['REQUEST_URI'];
@@ -81,6 +83,14 @@ switch ($method) {
             $where_conditions = [];
             $params = [];
             $types = '';
+
+            // Filter by department (Required for segregation)
+            $dept = isset($_GET['department']) ? $_GET['department'] : 'design';
+            if ($dept !== 'all') {
+                $where_conditions[] = "department = ?";
+                $params[] = $dept;
+                $types .= 's';
+            }
 
             if (!empty($search)) {
                 $where_conditions[] = "material_name LIKE ?";
@@ -165,7 +175,7 @@ switch ($method) {
             exit();
         }
 
-        $sql = "INSERT INTO materials (material_name, unit, current_qty, min_qty, note) VALUES (?, ?, ?, ?, ?)";
+        $sql = "INSERT INTO materials (material_name, unit, current_qty, min_qty, note, department) VALUES (?, ?, ?, ?, ?, ?)";
         $stmt = $conn->prepare($sql);
 
         if (!$stmt) {
@@ -177,14 +187,16 @@ switch ($method) {
         $current_qty = isset($data->current_qty) ? intval($data->current_qty) : 0;
         $min_qty = isset($data->min_qty) ? intval($data->min_qty) : 0;
         $note = isset($data->note) ? $data->note : '';
+        $department = isset($data->department) ? $data->department : 'design';
 
         $stmt->bind_param(
-            "ssiis",
+            "ssiiss",
             $data->material_name,
             $data->unit,
             $current_qty,
             $min_qty,
-            $note
+            $note,
+            $department
         );
 
         if ($stmt->execute()) {
@@ -243,6 +255,11 @@ switch ($method) {
         if (isset($data->note)) {
             $update_fields[] = "note = ?";
             $params[] = $data->note;
+            $types .= 's';
+        }
+        if (isset($data->department)) {
+            $update_fields[] = "department = ?";
+            $params[] = $data->department;
             $types .= 's';
         }
 

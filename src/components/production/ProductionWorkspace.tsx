@@ -16,6 +16,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { productionService } from "@/services/productionService";
+import { toast } from "sonner";
 
 interface ProductDetail {
   name: string;
@@ -174,7 +176,7 @@ const WORKFLOW_STEPPER_STEPS = [
 export function ProductionWorkspace({ order, onBack, onStatusChange, currentUserDepartment = "production" }: ProductionWorkspaceProps) {
   const isFactoryExportOrder = order.status === "โรงงานส่งออก" || !!order.procurementInfo;
   const [activeWorkflowStep, setActiveWorkflowStep] = useState<string>("all");
-  
+
   // Initialize steps data from order.productionWorkflow if available
   const getInitialStepsData = (): Record<string, StepData> => {
     const defaultSteps: Record<string, StepData> = {
@@ -215,17 +217,26 @@ export function ProductionWorkspace({ order, onBack, onStatusChange, currentUser
 
   const [currentOrderStatus, setCurrentOrderStatus] = useState(order.status);
   const [deliverySlipOpen, setDeliverySlipOpen] = useState(false);
-  const handleStepUpdate = (stepKey: string, data: StepData) => {
-    setStepsData((prev) => ({
-      ...prev,
+  const handleStepUpdate = async (stepKey: string, data: StepData) => {
+    const updatedSteps = {
+      ...stepsData,
       [stepKey]: data,
-    }));
+    };
+
+    setStepsData(updatedSteps);
+
+    try {
+      await productionService.updateProductionWorkflow(order.id, updatedSteps);
+      toast.success(`อัปเดตขั้นตอน ${stepKey} สำเร็จ`);
+    } catch (error) {
+      toast.error("ไม่สามารถบันทึกข้อมูลขั้นตอนการผลิตได้");
+    }
 
     // Auto-advance logic
     if (data.status === "complete") {
       const stepIndex = PRODUCTION_STEPS.findIndex((s) => s.key === stepKey);
       const step = PRODUCTION_STEPS[stepIndex];
-      
+
       // Update main order status
       setCurrentOrderStatus(step.completedStatus);
       onStatusChange(order.id, step.completedStatus);
@@ -323,8 +334,8 @@ export function ProductionWorkspace({ order, onBack, onStatusChange, currentUser
           </div>
           <div className="flex items-center gap-3">
             {/* Circular Progress with Hover Details */}
-            <CircularProgress 
-              percentage={getOverallProgress()} 
+            <CircularProgress
+              percentage={getOverallProgress()}
               steps={stepsForProgress}
             />
             <Badge className="bg-blue-100 text-blue-700 text-sm px-3 py-1">
@@ -333,140 +344,140 @@ export function ProductionWorkspace({ order, onBack, onStatusChange, currentUser
           </div>
         </div>
 
-      {/* Stepper Bar (only for factory export orders) */}
-      {isFactoryExportOrder && (
-        <Card className="border bg-white">
-          <CardContent className="p-4">
-            <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-              <Factory className="w-4 h-4 text-primary" />
-              แถบสถานะการผลิต (Production Progress)
-            </h3>
+        {/* Stepper Bar (only for factory export orders) */}
+        {isFactoryExportOrder && (
+          <Card className="border bg-white">
+            <CardContent className="p-4">
+              <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
+                <Factory className="w-4 h-4 text-primary" />
+                แถบสถานะการผลิต (Production Progress)
+              </h3>
 
-            {/* Stepper */}
-            <div className="flex items-start relative overflow-x-auto pb-2">
-              {WORKFLOW_STEPPER_STEPS.map((step, index) => {
-                const activeIdx = activeWorkflowStep === "all" ? -1 : WORKFLOW_STEPPER_STEPS.findIndex(s => s.key === activeWorkflowStep);
-                const isCompleted = activeIdx > index;
-                const isActive = activeIdx === index;
-                const isPending = activeIdx < index || activeIdx === -1;
+              {/* Stepper */}
+              <div className="flex items-start relative overflow-x-auto pb-2">
+                {WORKFLOW_STEPPER_STEPS.map((step, index) => {
+                  const activeIdx = activeWorkflowStep === "all" ? -1 : WORKFLOW_STEPPER_STEPS.findIndex(s => s.key === activeWorkflowStep);
+                  const isCompleted = activeIdx > index;
+                  const isActive = activeIdx === index;
+                  const isPending = activeIdx < index || activeIdx === -1;
 
-                return (
-                  <div
-                    key={step.key}
-                    className="flex flex-col items-center relative z-10 flex-1 min-w-[72px] cursor-pointer group"
-                    onClick={() => setActiveWorkflowStep(step.key)}
-                  >
-                    {index > 0 && (
+                  return (
+                    <div
+                      key={step.key}
+                      className="flex flex-col items-center relative z-10 flex-1 min-w-[72px] cursor-pointer group"
+                      onClick={() => setActiveWorkflowStep(step.key)}
+                    >
+                      {index > 0 && (
+                        <div
+                          className={cn(
+                            "absolute top-4 right-1/2 w-full h-0.5",
+                            isCompleted || isActive ? "bg-green-400" : "bg-muted"
+                          )}
+                          style={{ zIndex: -1 }}
+                        />
+                      )}
                       <div
                         className={cn(
-                          "absolute top-4 right-1/2 w-full h-0.5",
-                          isCompleted || isActive ? "bg-green-400" : "bg-muted"
+                          "w-8 h-8 rounded-full flex items-center justify-center border-2 transition-all text-xs font-bold",
+                          isCompleted && "bg-green-500 border-green-500 text-white",
+                          isActive && "bg-amber-500 border-amber-500 text-white animate-pulse",
+                          isPending && "bg-muted border-muted-foreground/30 text-muted-foreground",
+                          "group-hover:scale-110"
                         )}
-                        style={{ zIndex: -1 }}
-                      />
-                    )}
-                    <div
-                      className={cn(
-                        "w-8 h-8 rounded-full flex items-center justify-center border-2 transition-all text-xs font-bold",
-                        isCompleted && "bg-green-500 border-green-500 text-white",
-                        isActive && "bg-amber-500 border-amber-500 text-white animate-pulse",
-                        isPending && "bg-muted border-muted-foreground/30 text-muted-foreground",
-                        "group-hover:scale-110"
-                      )}
-                    >
-                      {isCompleted ? (
-                        <CheckCircle2 className="w-4 h-4" />
-                      ) : (
-                        <span>{index + 1}</span>
-                      )}
+                      >
+                        {isCompleted ? (
+                          <CheckCircle2 className="w-4 h-4" />
+                        ) : (
+                          <span>{index + 1}</span>
+                        )}
+                      </div>
+                      <span
+                        className={cn(
+                          "text-[10px] mt-1.5 text-center font-medium leading-tight max-w-[80px]",
+                          isCompleted && "text-green-600",
+                          isActive && "text-amber-600 font-semibold",
+                          isPending && "text-muted-foreground"
+                        )}
+                      >
+                        {step.label}
+                      </span>
                     </div>
-                    <span
-                      className={cn(
-                        "text-[10px] mt-1.5 text-center font-medium leading-tight max-w-[80px]",
-                        isCompleted && "text-green-600",
-                        isActive && "text-amber-600 font-semibold",
-                        isPending && "text-muted-foreground"
-                      )}
-                    >
-                      {step.label}
-                    </span>
+                  );
+                })}
+              </div>
+
+              {/* Current status */}
+              <div className="mt-3 pt-3 border-t flex items-center gap-2 text-sm">
+                <span className="text-muted-foreground">สถานะปัจจุบัน:</span>
+                <span className="font-semibold text-amber-600">
+                  {activeWorkflowStep === "all" ? "ทั้งหมด" : WORKFLOW_STEPPER_STEPS.find(s => s.key === activeWorkflowStep)?.label || "-"}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto text-xs h-6 px-2 text-muted-foreground hover:text-primary"
+                  onClick={() => setActiveWorkflowStep("all")}
+                >
+                  ดูทั้งหมด
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Section 1: Order Reference Info (hidden for factory export orders) */}
+        {!isFactoryExportOrder && (
+          <OrderReferenceCard order={{ ...order, status: currentOrderStatus }} />
+        )}
+
+        {/* Procurement Info Cards (only for factory export orders) */}
+        {isFactoryExportOrder && order.procurementInfo && (
+          <>
+            <ProcurementInfoCards info={order.procurementInfo} />
+            {/* Procurement-style shipping status (replaces simple card) */}
+            <ProcurementStatusUpdate orderId={order.id} filterStep={activeWorkflowStep} hideSections={["qc", "logistics"]} />
+          </>
+        )}
+
+        {/* Section 2: Production Steps - 2 Column Dashboard */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-xl">ขั้นตอนการผลิต</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              {isFactoryExportOrder
+                ? ""
+                : "ดำเนินการตามลำดับขั้นตอน เมื่อเสร็จแต่ละขั้นตอนระบบจะอัปเดตสถานะอัตโนมัติ"}
+            </p>
+          </CardHeader>
+          <CardContent className="p-3">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              {(isFactoryExportOrder ? PRODUCTION_STEPS.slice(4) : PRODUCTION_STEPS).map((step, index) => {
+                const displayNumber = isFactoryExportOrder ? index + 1 : index + 1;
+
+                return (
+                  <div key={step.key}>
+                    <ProductionStepBox
+                      stepKey={step.key}
+                      stepNumber={displayNumber}
+                      title={step.title}
+                      icon={step.icon}
+                      completedStatus={step.completedStatus}
+                      initialData={stepsData[step.key]}
+                      isLocked={isStepLocked(step.key)}
+                      onUpdate={handleStepUpdate}
+                      hasBoxCount={step.hasBoxCount}
+                      hasShippingInfo={step.hasShippingInfo}
+                      isDeliverySlipStep={step.isDeliverySlipStep}
+                      requiresGraphicDepartment={step.requiresGraphicDepartment}
+                      currentUserDepartment={currentUserDepartment}
+                      onPrintDeliverySlip={step.isDeliverySlipStep ? () => setDeliverySlipOpen(true) : undefined}
+                      compact
+                    />
                   </div>
                 );
               })}
             </div>
-
-            {/* Current status */}
-            <div className="mt-3 pt-3 border-t flex items-center gap-2 text-sm">
-              <span className="text-muted-foreground">สถานะปัจจุบัน:</span>
-              <span className="font-semibold text-amber-600">
-                {activeWorkflowStep === "all" ? "ทั้งหมด" : WORKFLOW_STEPPER_STEPS.find(s => s.key === activeWorkflowStep)?.label || "-"}
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="ml-auto text-xs h-6 px-2 text-muted-foreground hover:text-primary"
-                onClick={() => setActiveWorkflowStep("all")}
-              >
-                ดูทั้งหมด
-              </Button>
-            </div>
           </CardContent>
-        </Card>
-      )}
-
-      {/* Section 1: Order Reference Info (hidden for factory export orders) */}
-      {!isFactoryExportOrder && (
-        <OrderReferenceCard order={{ ...order, status: currentOrderStatus }} />
-      )}
-
-      {/* Procurement Info Cards (only for factory export orders) */}
-      {isFactoryExportOrder && order.procurementInfo && (
-        <>
-          <ProcurementInfoCards info={order.procurementInfo} />
-          {/* Procurement-style shipping status (replaces simple card) */}
-          <ProcurementStatusUpdate orderId={order.id} filterStep={activeWorkflowStep} hideSections={["qc", "logistics"]} />
-        </>
-      )}
-
-      {/* Section 2: Production Steps - 2 Column Dashboard */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-xl">ขั้นตอนการผลิต</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            {isFactoryExportOrder 
-              ? ""
-              : "ดำเนินการตามลำดับขั้นตอน เมื่อเสร็จแต่ละขั้นตอนระบบจะอัปเดตสถานะอัตโนมัติ"}
-          </p>
-        </CardHeader>
-       <CardContent className="p-3">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-            {(isFactoryExportOrder ? PRODUCTION_STEPS.slice(4) : PRODUCTION_STEPS).map((step, index) => {
-              const displayNumber = isFactoryExportOrder ? index + 1 : index + 1;
-              
-              return (
-                <div key={step.key}>
-                  <ProductionStepBox
-                    stepKey={step.key}
-                    stepNumber={displayNumber}
-                    title={step.title}
-                    icon={step.icon}
-                    completedStatus={step.completedStatus}
-                    initialData={stepsData[step.key]}
-                    isLocked={isStepLocked(step.key)}
-                    onUpdate={handleStepUpdate}
-                    hasBoxCount={step.hasBoxCount}
-                    hasShippingInfo={step.hasShippingInfo}
-                    isDeliverySlipStep={step.isDeliverySlipStep}
-                    requiresGraphicDepartment={step.requiresGraphicDepartment}
-                    currentUserDepartment={currentUserDepartment}
-                    onPrintDeliverySlip={step.isDeliverySlipStep ? () => setDeliverySlipOpen(true) : undefined}
-                    compact
-                  />
-                </div>
-              );
-            })}
-          </div>
-        </CardContent>
         </Card>
 
         {/* Delivery Slip Print Dialog */}
@@ -483,11 +494,11 @@ export function ProductionWorkspace({ order, onBack, onStatusChange, currentUser
             qcImage: stepsData.qc?.imagePreviews?.[0] || undefined,
             products: order.productDetails.length > 0
               ? order.productDetails.map(p => ({
-                  name: p.name || order.product,
-                  model: p.model,
-                  color: p.color,
-                  orderedQty: p.orderedQty,
-                }))
+                name: p.name || order.product,
+                model: p.model,
+                color: p.color,
+                orderedQty: p.orderedQty,
+              }))
               : [{ name: order.product, orderedQty: order.quantity }],
             totalQty: order.productDetails.length > 0
               ? order.productDetails.reduce((sum, p) => sum + p.orderedQty, 0)

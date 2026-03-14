@@ -68,6 +68,7 @@ import CommissionReadyMade from "./pages/hr/CommissionReadyMade";
 import HRSettings from "./pages/hr/HRSettings";
 import HRReports from "./pages/hr/HRReports";
 import MonthlyCommissionReport from "./pages/hr/MonthlyCommissionReport";
+import HRUserManagement from "./pages/hr/HRUserManagement";
 import ProductionMain from "./pages/production/ProductionMain";
 import ProductionDashboard from "./pages/production/ProductionDashboard";
 import OrderManagement from "./pages/production/OrderManagement";
@@ -562,6 +563,11 @@ const App = () => (
           <Route path="/hr/monthly-commission-report" element={
             <DashboardLayout>
               <MonthlyCommissionReport />
+            </DashboardLayout>
+          } />
+          <Route path="/hr/user-management" element={
+            <DashboardLayout>
+              <HRUserManagement />
             </DashboardLayout>
           } />
           <Route path="/manager" element={

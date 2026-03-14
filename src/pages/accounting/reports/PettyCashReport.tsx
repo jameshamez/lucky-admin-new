@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -6,105 +6,53 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import { FileDown, Search } from "lucide-react";
+import { FileDown, Search, Loader2 } from "lucide-react";
+import { accountingService } from "@/services/accountingService";
+import { toast } from "sonner";
 
 export default function PettyCashReport() {
   const [filterDate, setFilterDate] = useState("");
   const [filterCategory, setFilterCategory] = useState("");
   const [filterDepartment, setFilterDepartment] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [summaryData, setSummaryData] = useState<any[]>([]);
+  const [history, setHistory] = useState<any[]>([]);
 
-  const summaryData = [
-    { title: "ยอดเบิกเดือนนี้", value: "฿95,000", color: "text-blue-600" },
-    { title: "รออนุมัติ", value: "฿12,500", color: "text-yellow-600" },
-    { title: "รอเบิกจ่าย", value: "฿8,200", color: "text-orange-600" },
-    { title: "คงเหลือกองกลาง", value: "฿45,300", color: "text-green-600" },
-  ];
+  useEffect(() => {
+    const fetchPettyCashData = async () => {
+      setLoading(true);
+      try {
+        const res = await accountingService.getReportsData('petty_cash');
+        if (res.status === 'success') {
+          setSummaryData(res.data.summary);
+          setHistory(res.data.history);
+        }
+      } catch (error) {
+        toast.error("ไม่สามารถดึงข้อมูลรายงานเงินสดย่อยได้");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchPettyCashData();
+  }, []);
 
+  if (loading) {
+    return (
+      <div className="flex h-[400px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="ml-2">กำลังโหลดข้อมูล...</span>
+      </div>
+    );
+  }
+
+  // Monthly category data (Mock for now as backend doesn't group yet)
   const monthlyCategoryData = [
-    { month: "ม.ค.", fuel: 15000, delivery: 12000, welfare: 8000, others: 5000 },
-    { month: "ก.พ.", fuel: 16000, delivery: 11000, welfare: 9000, others: 6000 },
-    { month: "มี.ค.", fuel: 14000, delivery: 13000, welfare: 7500, others: 5500 },
-    { month: "เม.ย.", fuel: 17000, delivery: 12500, welfare: 8500, others: 7000 },
-    { month: "พ.ค.", fuel: 18000, delivery: 14000, welfare: 9500, others: 6500 },
-    { month: "มิ.ย.", fuel: 16500, delivery: 13500, welfare: 8000, others: 5000 },
+    { month: "ปัจจุบัน", fuel: 0, delivery: 0, welfare: 0, others: 0 },
   ];
 
   const monthlyTrendData = [
-    { month: "ม.ค.", total: 40000 },
-    { month: "ก.พ.", total: 42000 },
-    { month: "มี.ค.", total: 40000 },
-    { month: "เม.ย.", total: 45000 },
-    { month: "พ.ค.", total: 48000 },
-    { month: "มิ.ย.", total: 43000 },
-  ];
-
-  const requestsList = [
-    { 
-      code: "PC-20250105-001", 
-      date: "2025-01-05", 
-      employee: "สมชาย ใจดี", 
-      department: "ขาย", 
-      category: "ค่าน้ำมัน", 
-      detail: "เติมน้ำมันรถเยี่ยมลูกค้า", 
-      amount: 1500, 
-      status: "จ่ายแล้ว",
-      approver: "ผู้จัดการขาย",
-      approvalDate: "2025-01-05",
-      paymentDate: "2025-01-05"
-    },
-    { 
-      code: "PC-20250104-002", 
-      date: "2025-01-04", 
-      employee: "สมหญิง รักษ์ดี", 
-      department: "บัญชี", 
-      category: "ค่าส่งสินค้า", 
-      detail: "ส่งเอกสารด่วน - Flash Express", 
-      amount: 850, 
-      status: "รอเบิกจ่าย",
-      approver: "ผู้จัดการบัญชี",
-      approvalDate: "2025-01-04",
-      paymentDate: "-"
-    },
-    { 
-      code: "PC-20250103-003", 
-      date: "2025-01-03", 
-      employee: "วิชัย มั่นคง", 
-      department: "ผลิต", 
-      category: "ค่าของใช้", 
-      detail: "ซื้อขาตั้งกล้อง", 
-      amount: 2500, 
-      status: "รออนุมัติ",
-      approver: "ผู้จัดการผลิต",
-      approvalDate: "-",
-      paymentDate: "-"
-    },
-    { 
-      code: "PC-20250102-004", 
-      date: "2025-01-02", 
-      employee: "ประเสริฐ วงศ์ดี", 
-      department: "HR", 
-      category: "สวัสดิการพนักงาน", 
-      detail: "ของขวัญวันเกิดพนักงาน", 
-      amount: 1200, 
-      status: "จ่ายแล้ว",
-      approver: "ผู้จัดการ HR",
-      approvalDate: "2025-01-02",
-      paymentDate: "2025-01-02"
-    },
-    { 
-      code: "PC-20250101-005", 
-      date: "2025-01-01", 
-      employee: "สมศรี ดีงาม", 
-      department: "ออกแบบ", 
-      category: "คืนเงินลูกค้า", 
-      detail: "คืนเงินมัดจำ QO-2024-1250", 
-      amount: 5000, 
-      status: "จ่ายแล้ว",
-      approver: "ผู้อำนวยการ",
-      approvalDate: "2025-01-01",
-      paymentDate: "2025-01-01"
-    },
+    { month: "ปัจจุบัน", total: history.reduce((sum, h) => sum + h.amount, 0) },
   ];
 
   const getStatusBadge = (status: string) => {
@@ -281,18 +229,18 @@ export default function PettyCashReport() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {requestsList.map((item) => (
-                <TableRow key={item.code}>
-                  <TableCell className="font-medium">{item.code}</TableCell>
+              {history.map((item) => (
+                <TableRow key={item.id}>
+                  <TableCell className="font-medium">PC-{item.id}</TableCell>
                   <TableCell>{item.date}</TableCell>
-                  <TableCell>{item.employee}</TableCell>
-                  <TableCell>{item.department}</TableCell>
-                  <TableCell>{item.category}</TableCell>
-                  <TableCell>{item.detail}</TableCell>
+                  <TableCell>{item.requester}</TableCell>
+                  <TableCell>โฮมออฟฟิศ</TableCell>
+                  <TableCell>ทั่วไป</TableCell>
+                  <TableCell>{item.purpose}</TableCell>
                   <TableCell className="text-right">฿{item.amount.toLocaleString()}</TableCell>
                   <TableCell>{getStatusBadge(item.status)}</TableCell>
-                  <TableCell>{item.approver}</TableCell>
-                  <TableCell>{item.paymentDate}</TableCell>
+                  <TableCell>-</TableCell>
+                  <TableCell>{item.date}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

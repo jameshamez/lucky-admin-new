@@ -14,9 +14,11 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { CalendarIcon, Package, ClipboardList, Car, Plus, Loader2, AlertTriangle, RefreshCw } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
+import { salesStockService as materialStockService } from "@/services/materialStockService";
 import { th } from "date-fns/locale";
 import { toast } from "@/hooks/use-toast";
 
+const CURRENT_DEPT = 'sales';
 const API_BASE = "https://finfinphone.com/api-lucky/admin";
 
 interface MaterialRequest {
@@ -98,8 +100,7 @@ export default function InternalRequisitions() {
     setPurchaseLoading(true);
     setPurchaseError("");
     try {
-      const res = await fetch(`${API_BASE}/material_requests.php?limit=50`);
-      const json = await res.json();
+      const json = await materialStockService.getRequests({ limit: 50 });
       if (json.status === "success") {
         setPurchaseHistory(json.data || []);
       } else {
@@ -116,8 +117,7 @@ export default function InternalRequisitions() {
   const fetchMaterials = async () => {
     setMaterialsLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/materials.php?limit=100`);
-      const json = await res.json();
+      const json = await materialStockService.getMaterials({ limit: 100 });
       if (json.status === "success") {
         setMaterials(json.data || []);
       }
@@ -165,12 +165,7 @@ export default function InternalRequisitions() {
         requester: "ผู้ใช้งานปัจจุบัน",
         remark: `${purchaseReason}${purchaseBudget ? ` | งบ: ${purchaseBudget} บาท` : ""}`,
       };
-      const res = await fetch(`${API_BASE}/material_requests.php`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const json = await res.json();
+      const json = await materialStockService.createRequest(payload);
       if (json.status === "success") {
         toast({ title: "ส่งคำขอเบิกซื้อสำเร็จ", description: `คำขอ "${purchaseName}" ถูกบันทึกแล้ว` });
         setIsPurchaseDialogOpen(false);
@@ -202,12 +197,7 @@ export default function InternalRequisitions() {
         requester: usageRequester,
         remark: `แผนก: ${usageDepartment}${usageReason ? ` | ${usageReason}` : ""}`,
       };
-      const res = await fetch(`${API_BASE}/material_requests.php`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const json = await res.json();
+      const json = await materialStockService.createRequest(payload);
       if (json.status === "success") {
         const remaining = json.data?.remainingQty;
         toast({

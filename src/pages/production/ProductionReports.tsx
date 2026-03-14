@@ -2,28 +2,28 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { 
+import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
 } from "@/components/ui/table";
-import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
   ResponsiveContainer,
   LineChart,
   Line,
@@ -31,52 +31,69 @@ import {
   Pie,
   Cell
 } from "recharts";
-import { Download, TrendingUp, Package, Truck, AlertTriangle } from "lucide-react";
+import { Download, TrendingUp, Package, Truck, AlertTriangle, Loader2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { productionService } from "@/services/productionService";
+import { Skeleton } from "@/components/ui/skeleton";
+import { toast } from "sonner";
 
-const productionEfficiencyData = [
-  { week: "สัปดาห์ 1", target: 250, actual: 245, efficiency: 98 },
-  { week: "สัปดาห์ 2", target: 250, actual: 260, efficiency: 104 },
-  { week: "สัปดาห์ 3", target: 250, actual: 235, efficiency: 94 },
-  { week: "สัปดาห์ 4", target: 250, actual: 270, efficiency: 108 },
-];
-
-const inventoryMovementData = [
-  { date: "01/01", stockIn: 150, stockOut: 120, net: 30 },
-  { date: "02/01", stockIn: 80, stockOut: 145, net: -65 },
-  { date: "03/01", stockIn: 200, stockOut: 110, net: 90 },
-  { date: "04/01", stockIn: 120, stockOut: 135, net: -15 },
-  { date: "05/01", stockIn: 180, stockOut: 95, net: 85 },
-];
-
-const orderStatusBreakdown = [
-  { name: "กำลังผลิต", value: 8, color: "#8884d8" },
-  { name: "ตรวจสอบคุณภาพ", value: 3, color: "#82ca9d" },
-  { name: "พร้อมจัดส่ง", value: 5, color: "#ffc658" },
-  { name: "รอเริ่มผลิต", value: 2, color: "#ff7300" },
-];
-
-const defectAnalysis = [
-  { type: "สีผิดเพี้ยน", count: 5, percentage: 35.7 },
-  { type: "พิมพ์ไม่ชัด", count: 4, percentage: 28.6 },
-  { type: "ขนาดผิด", count: 3, percentage: 21.4 },
-  { type: "วัสดุชำรุด", count: 2, percentage: 14.3 },
-];
-
-const deliveryPerformance = [
-  { month: "ต.ค.", onTime: 85, late: 15, total: 100 },
-  { month: "พ.ย.", onTime: 92, late: 8, total: 100 },
-  { month: "ธ.ค.", onTime: 88, late: 12, total: 100 },
-  { month: "ม.ค.", onTime: 95, late: 5, total: 100 },
-];
-
-const inventoryStatus = [
-  { item: "กระดาษ A4", current: 25, minimum: 50, status: "ขาดแคลน", value: 12500 },
-  { item: "หมึกสี", current: 15, minimum: 20, status: "ใกล้หมด", value: 7500 },
-  { item: "ฟิล์มพลาสติก", current: 120, minimum: 100, status: "ปกติ", value: 24000 },
-  { item: "กาวลาเบล", current: 8, minimum: 10, status: "ใกล้หมด", value: 4000 },
-];
+// Mock data removed
 
 export default function ProductionReports() {
+  const [period, setPeriod] = useState("this-month");
+  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<any>(null);
+
+  useEffect(() => {
+    const fetchReports = async () => {
+      setLoading(true);
+      try {
+        const res = await productionService.getReportsData(period);
+        if (res.status === 'success') {
+          setData(res.data);
+        }
+      } catch (error) {
+        toast.error("ไม่สามารถโหลดข้อมูลรายงานได้");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchReports();
+  }, [period]);
+
+  if (loading && !data) {
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <Skeleton className="h-10 w-48" />
+          <Skeleton className="h-10 w-32" />
+        </div>
+        <div className="grid gap-4 md:grid-cols-4">
+          {Array(4).fill(0).map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}
+        </div>
+        <Skeleton className="h-[400px] w-full" />
+      </div>
+    );
+  }
+
+  const {
+    efficiencyCharts,
+    orderStatusBreakdown,
+    inventoryMovements,
+    inventoryStatus,
+    defectAnalysis,
+    deliveryPerformance,
+    summary
+  } = data || {
+    efficiencyCharts: [],
+    orderStatusBreakdown: [],
+    inventoryMovements: [],
+    inventoryStatus: [],
+    defectAnalysis: [],
+    deliveryPerformance: [],
+    summary: { efficiency: "0%", completedOrders: 0, onTimeRate: "0%", defectRate: "0.0%" }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -85,7 +102,7 @@ export default function ProductionReports() {
           <p className="text-muted-foreground">วิเคราะห์ประสิทธิภาพการผลิตและสถานะสต็อก</p>
         </div>
         <div className="flex gap-2">
-          <Select defaultValue="this-month">
+          <Select value={period} onValueChange={setPeriod}>
             <SelectTrigger className="w-40">
               <SelectValue placeholder="เลือกช่วงเวลา" />
             </SelectTrigger>
@@ -96,7 +113,7 @@ export default function ProductionReports() {
             </SelectContent>
           </Select>
           <Button className="bg-gradient-to-r from-primary to-primary-hover">
-            <Download className="w-4 h-4 mr-2" />
+            {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
             ส่งออกรายงาน
           </Button>
         </div>
@@ -110,8 +127,8 @@ export default function ProductionReports() {
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">101%</div>
-            <p className="text-xs text-green-600">+3% จากเดือนที่แล้ว</p>
+            <div className="text-2xl font-bold">{summary.efficiency}</div>
+            <p className="text-xs text-muted-foreground">เปรียบเทียบกับเป้าหมาย</p>
           </CardContent>
         </Card>
 
@@ -121,8 +138,8 @@ export default function ProductionReports() {
             <Package className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">18</div>
-            <p className="text-xs text-green-600">+2 จากเดือนที่แล้ว</p>
+            <div className="text-2xl font-bold">{summary.completedOrders}</div>
+            <p className="text-xs text-muted-foreground text-green-600">ในรายการทั้งหมด</p>
           </CardContent>
         </Card>
 
@@ -132,8 +149,8 @@ export default function ProductionReports() {
             <Truck className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">95%</div>
-            <p className="text-xs text-green-600">+7% จากเดือนที่แล้ว</p>
+            <div className="text-2xl font-bold">{summary.onTimeRate}</div>
+            <p className="text-xs text-muted-foreground text-green-600">อ้างอิงจากประวัติ</p>
           </CardContent>
         </Card>
 
@@ -143,8 +160,8 @@ export default function ProductionReports() {
             <AlertTriangle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">2.1%</div>
-            <p className="text-xs text-red-600">+0.3% จากเดือนที่แล้ว</p>
+            <div className="text-2xl font-bold">{summary.defectRate}</div>
+            <p className="text-xs text-muted-foreground text-red-600">จากการสุ่มตรวจ</p>
           </CardContent>
         </Card>
       </div>
@@ -174,7 +191,7 @@ export default function ProductionReports() {
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={productionEfficiencyData}>
+                  <BarChart data={efficiencyCharts}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="week" />
                     <YAxis />
@@ -230,7 +247,9 @@ export default function ProductionReports() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {productionEfficiencyData.map((week) => (
+                  {efficiencyCharts.length === 0 ? (
+                    <TableRow><TableCell colSpan={5} className="text-center py-4 text-muted-foreground">ไม่มีข้อมูลประสิทธิภาพ</TableCell></TableRow>
+                  ) : efficiencyCharts.map((week: any) => (
                     <TableRow key={week.week}>
                       <TableCell className="font-medium">{week.week}</TableCell>
                       <TableCell>{week.target}</TableCell>
@@ -261,7 +280,7 @@ export default function ProductionReports() {
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={400}>
-                <LineChart data={inventoryMovementData}>
+                <LineChart data={inventoryMovements}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="date" />
                   <YAxis />
@@ -291,7 +310,9 @@ export default function ProductionReports() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {inventoryStatus.map((item) => (
+                  {inventoryStatus.length === 0 ? (
+                    <TableRow><TableCell colSpan={6} className="text-center py-4 text-muted-foreground">ไม่มีข้อมูลสต็อก</TableCell></TableRow>
+                  ) : inventoryStatus.map((item: any) => (
                     <TableRow key={item.item}>
                       <TableCell className="font-medium">{item.item}</TableCell>
                       <TableCell>
@@ -302,10 +323,10 @@ export default function ProductionReports() {
                       <TableCell>{item.minimum}</TableCell>
                       <TableCell>฿{item.value.toLocaleString()}</TableCell>
                       <TableCell>
-                        <Badge 
+                        <Badge
                           variant={
-                            item.status === "ขาดแคลน" ? "destructive" : 
-                            item.status === "ใกล้หมด" ? "secondary" : "default"
+                            item.status === "ขาดแคลน" ? "destructive" :
+                              item.status === "ใกล้หมด" ? "secondary" : "default"
                           }
                         >
                           {item.status}
@@ -344,8 +365,8 @@ export default function ProductionReports() {
                       <div className="text-right">
                         <span className="font-semibold">{defect.percentage}%</span>
                         <div className="w-20 bg-gray-200 rounded-full h-2 mt-1">
-                          <div 
-                            className="bg-red-500 h-2 rounded-full" 
+                          <div
+                            className="bg-red-500 h-2 rounded-full"
                             style={{ width: `${defect.percentage}%` }}
                           ></div>
                         </div>

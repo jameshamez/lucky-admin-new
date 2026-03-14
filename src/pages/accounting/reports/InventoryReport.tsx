@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -6,41 +6,50 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import { FileDown, Search } from "lucide-react";
+import { FileDown, Search, Loader2 } from "lucide-react";
+import { accountingService } from "@/services/accountingService";
+import { toast } from "sonner";
 
 export default function InventoryReport() {
   const [filterDate, setFilterDate] = useState("");
   const [filterWarehouse, setFilterWarehouse] = useState("");
   const [filterProductType, setFilterProductType] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [summaryData, setSummaryData] = useState<any[]>([]);
+  const [statusData, setStatusData] = useState<any[]>([]);
+  const [inventoryList, setInventoryList] = useState<any[]>([]);
 
-  const summaryData = [
-    { title: "มูลค่าสต๊อกรวม", value: "฿5,800,000", color: "text-blue-600" },
-    { title: "สินค้าพร้อมขาย", value: "1,245 รายการ", color: "text-green-600" },
-    { title: "ต่ำกว่า Min", value: "28 รายการ", color: "text-yellow-600" },
-    { title: "สินค้าหมด", value: "5 รายการ", color: "text-red-600" },
-  ];
+  useEffect(() => {
+    const fetchInventoryData = async () => {
+      setLoading(true);
+      try {
+        const res = await accountingService.getReportsData('inventory');
+        if (res.status === 'success') {
+          setSummaryData(res.data.summary);
+          setStatusData(res.data.statusData);
+          setInventoryList(res.data.inventoryList);
+        }
+      } catch (error) {
+        toast.error("ไม่สามารถดึงข้อมูลรายงานสต๊อกได้");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchInventoryData();
+  }, []);
 
-  const statusData = [
-    { name: "พร้อมขาย", value: 1245, color: "hsl(var(--primary))" },
-    { name: "ต่ำกว่า Min", value: 28, color: "#fbbf24" },
-    { name: "หมดสต๊อก", value: 5, color: "#ef4444" },
-  ];
+  if (loading) {
+    return (
+      <div className="flex h-[400px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="ml-2">กำลังโหลดข้อมูล...</span>
+      </div>
+    );
+  }
 
   const categoryValueData = [
-    { category: "กล่องกระดาษ", value: 2100000 },
-    { category: "ถุง", value: 1500000 },
-    { category: "สติกเกอร์", value: 980000 },
-    { category: "เทป", value: 750000 },
-    { category: "อื่นๆ", value: 470000 },
-  ];
-
-  const inventoryList = [
-    { code: "P001", name: "กล่องกระดาษลูกฟูก A4", category: "กล่อง", quantity: 450, minStock: 100, value: 450000, status: "พร้อมขาย" },
-    { code: "P002", name: "ถุงพลาสติก PE", category: "ถุง", quantity: 320, minStock: 150, value: 320000, status: "พร้อมขาย" },
-    { code: "P003", name: "สติกเกอร์สินค้า", category: "สติกเกอร์", quantity: 85, minStock: 100, value: 85000, status: "ต่ำกว่า Min" },
-    { code: "P004", name: "เทปกาว OPP", category: "เทป", quantity: 0, minStock: 50, value: 0, status: "หมดสต๊อก" },
-    { code: "P005", name: "กล่องสีขาว A3", category: "กล่อง", quantity: 280, minStock: 100, value: 280000, status: "พร้อมขาย" },
+    { category: "พัสดุสำนักงาน", value: inventoryList.reduce((sum, item) => sum + item.value, 0) },
   ];
 
   const getStatusBadge = (status: string) => {

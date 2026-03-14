@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { accountingService } from "@/services/accountingService";
 import ExpenseExcelImportDialog, { type ExpenseImportRow } from "@/components/accounting/expenses/ExpenseExcelImportDialog";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -81,31 +82,7 @@ const defaultDrawer = (): DrawerState => ({
   receiptPreview: null,
 });
 
-// ── Static Data ──
-const expensesData = [
-  { id: "EXP-2025-001", supplier: "China BENC", poNo: "PO-2025-001", invoiceNo: "INV-CN-001", purchaseDate: "2025-01-10", paymentDate: "2025-01-15", description: "ปากกาพลาสติก 5000 ชิ้น", amount: 75000, vat: 5250, netAmount: 80250, paidAmount: 80250, outstandingAmount: 0, paymentMethod: "โอน", paymentStatus: "จ่ายแล้ว", remark: "สั่งจากจีน รอสินค้าถึง 25 ม.ค." },
-  { id: "EXP-2025-002", supplier: "บริษัท พรีเมี่ยมแบงค์ค็อก จำกัด", poNo: "PO-2025-002", invoiceNo: "INV-TH-002", purchaseDate: "2025-01-12", paymentDate: null, description: "กระเป๋าผ้า Canvas 500 ใบ", amount: 45000, vat: 3150, netAmount: 48150, paidAmount: 0, outstandingAmount: 48150, paymentMethod: "เช็ค", paymentStatus: "รออนุมัติ", remark: "รอการอนุมัติจากผู้บริหาร" },
-  { id: "EXP-2025-003", supplier: "Chaina LINDA", poNo: "PO-2025-003", invoiceNo: "INV-CN-003", purchaseDate: "2025-01-14", paymentDate: "2025-01-20", description: "แก้วเซรามิค 800 ชิ้น", amount: 96000, vat: 6720, netAmount: 102720, paidAmount: 102720, outstandingAmount: 0, paymentMethod: "โอน", paymentStatus: "จ่ายแล้ว", remark: "จ่ายครบแล้ว รอของถึงไทย" },
-  { id: "EXP-2025-004", supplier: "ไทย Solid", poNo: "PO-2025-004", invoiceNo: "INV-TH-004", purchaseDate: "2025-01-16", paymentDate: null, description: "วัตถุดิบพลาสติก PLA", amount: 25000, vat: 1750, netAmount: 26750, paidAmount: 0, outstandingAmount: 26750, paymentMethod: "เงินสด", paymentStatus: "รออนุมัติ", remark: "สั่งเพิ่มเติมสำหรับงานเร่งด่วน" },
-  { id: "EXP-2025-005", supplier: "Papermate", poNo: "PO-2025-005", invoiceNo: "INV-TH-005", purchaseDate: "2025-01-18", paymentDate: "2025-01-22", description: "กล่องกระดาษพรีเมี่ยม 1000 ใบ", amount: 18000, vat: 1260, netAmount: 19260, paidAmount: 19260, outstandingAmount: 0, paymentMethod: "โอน", paymentStatus: "จ่ายแล้ว", remark: "ของถึงแล้ว เก็บในคลัง" },
-  { id: "EXP-2025-006", supplier: "China X", poNo: "PO-2025-006", invoiceNo: "INV-CN-006", purchaseDate: "2025-01-20", paymentDate: null, description: "พวงกุญแจอะคริลิค 3000 ชิ้น", amount: 42000, vat: 2940, netAmount: 44940, paidAmount: 0, outstandingAmount: 44940, paymentMethod: "โอน", paymentStatus: "ยกเลิก", remark: "ยกเลิกเนื่องจากลูกค้าเปลี่ยนใจ" }
-];
-
-const expenseCategoryData = [
-  { name: "โรงงานจีน", value: 213000, color: "hsl(var(--primary))" },
-  { name: "โรงงานไทย", value: 88000, color: "hsl(var(--info))" },
-  { name: "ค่าขนส่ง", value: 15000, color: "hsl(var(--accent))" },
-  { name: "วัสดุสิ้นเปลือง", value: 32000, color: "hsl(var(--warning))" },
-  { name: "ค่าแรง", value: 45000, color: "hsl(var(--success))" }
-];
-
-const monthlyExpensesData = [
-  { month: "ม.ค.", amount: 28000 }, { month: "ก.พ.", amount: 32000 }, { month: "มี.ค.", amount: 29000 },
-  { month: "เม.ย.", amount: 35000 }, { month: "พ.ค.", amount: 31000 }, { month: "มิ.ย.", amount: 38000 },
-  { month: "ก.ค.", amount: 33000 }, { month: "ส.ค.", amount: 36000 }, { month: "ก.ย.", amount: 34000 },
-  { month: "ต.ค.", amount: 40000 }, { month: "พ.ย.", amount: 37000 }, { month: "ธ.ค.", amount: 42000 }
-];
-
+// ── Default Suppliers (if API doesn't provide) ──
 const suppliersList = [
   "Chaina B&C", "Chaina LINDA", "Chaina PN", "Chaina Xiaoli", "Chaina ZJ",
   "China BENC", "China Lanyard A", "China U", "China W", "China X", "China Y", "China Z",
@@ -472,12 +449,79 @@ export default function Expenses() {
   const [filterSupplier, setFilterSupplier] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
 
+  const [expensesData, setExpensesData] = useState<any[]>([]);
+  const [summaryData, setSummaryData] = useState<any>(null);
+  const [monthlyData, setMonthlyData] = useState<any[]>([]);
+  const [categoryData, setCategoryData] = useState<any[]>([
+    { name: "โรงงานจีน", value: 0, color: "hsl(var(--primary))" },
+    { name: "โรงงานไทย", value: 0, color: "hsl(var(--info))" },
+    { name: "ค่าขนส่ง", value: 0, color: "hsl(var(--accent))" },
+    { name: "วัสดุสิ้นเปลือง", value: 0, color: "hsl(var(--warning))" },
+    { name: "ค่าแรง", value: 0, color: "hsl(var(--success))" }
+  ]);
+  const [isLoading, setIsLoading] = useState(true);
+
   // Drawer state
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [drawerMode, setDrawerMode] = useState<"add" | "edit">("add");
   const [drawerState, setDrawerState] = useState<DrawerState>(defaultDrawer());
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | number | null>(null);
   const [isImportOpen, setIsImportOpen] = useState(false);
+
+  useEffect(() => {
+    fetchExpenses();
+  }, []);
+
+  const fetchExpenses = async () => {
+    setIsLoading(true);
+    try {
+      const response = await accountingService.getExpenses();
+      if (response.status === "success") {
+        // Map snake_case from API to camelCase for frontend
+        const mappedData = response.data.map((exp: any) => ({
+          id: exp.id,
+          expenseCode: exp.expense_code,
+          supplier: exp.supplier,
+          poNo: exp.po_no,
+          invoiceNo: exp.invoice_no,
+          purchaseDate: exp.purchase_date,
+          paymentDate: exp.payment_date,
+          description: exp.description,
+          amount: Number(exp.amount),
+          vat: Number(exp.vat),
+          netAmount: Number(exp.net_amount),
+          paidAmount: Number(exp.paid_amount),
+          outstandingAmount: Number(exp.outstanding_amount),
+          paymentMethod: exp.payment_method,
+          paymentStatus: exp.payment_status,
+          remark: exp.remark
+        }));
+
+        setExpensesData(mappedData);
+        setSummaryData(response.summary);
+        setMonthlyData(response.monthly || []);
+
+        const catMap: Record<string, number> = {};
+        mappedData.forEach((exp: any) => {
+          const cat = exp.supplier.toLowerCase().includes('china') ? 'โรงงานจีน' : 'โรงงานไทย';
+          catMap[cat] = (catMap[cat] || 0) + exp.netAmount;
+        });
+
+        setCategoryData([
+          { name: "โรงงานจีน", value: catMap['โรงงานจีน'] || 0, color: "hsl(var(--primary))" },
+          { name: "โรงงานไทย", value: catMap['โรงงานไทย'] || 0, color: "hsl(var(--info))" },
+          { name: "ค่าขนส่ง", value: 15000, color: "hsl(var(--accent))" },
+          { name: "วัสดุสิ้นเปลือง", value: 32000, color: "hsl(var(--warning))" },
+          { name: "ค่าแรง", value: 45000, color: "hsl(var(--success))" }
+        ]);
+      }
+    } catch (error) {
+      console.error("Failed to fetch expenses:", error);
+      toast.error("ไม่สามารถโหลดข้อมูลรายจ่ายได้");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleImportConfirm = (rows: ExpenseImportRow[]) => {
     toast.success(`นำเข้ารายจ่าย ${rows.length} รายการสำเร็จ`);
@@ -490,47 +534,88 @@ export default function Expenses() {
     setIsDrawerOpen(true);
   };
 
-  const openEditDrawer = (expense: typeof expensesData[0]) => {
-    setDrawerMode("edit");
-    setEditingId(expense.id);
-    setDrawerState({
-      supplier: expense.supplier,
-      poNo: expense.poNo,
-      invoiceNo: expense.invoiceNo,
-      purchaseDate: expense.purchaseDate,
-      items: [{ id: crypto.randomUUID(), description: expense.description, quantity: 1, unitPrice: expense.amount, currency: "THB" }],
-      includeVat: true,
-      payments: expense.paidAmount > 0
-        ? [{ id: crypto.randomUUID(), date: expense.paymentDate || "", amount: expense.paidAmount, method: expense.paymentMethod }]
-        : [],
-      paymentStatus: expense.paymentStatus,
-      remark: expense.remark,
-      slipFile: null,
-      receiptFile: null,
-      slipPreview: null,
-      receiptPreview: null,
-    });
-    setIsDrawerOpen(true);
+  const fetchExpenseDetails = async (id: number | string) => {
+    try {
+      // Fetch details if we need nested items/payments
+      const response = await fetch(`https://finfinphone.com/api-lucky/admin/accounting/expenses.php?id=${id}`);
+      const resData = await response.json();
+      if (resData.status === "success") {
+        const exp = resData.data;
+        setDrawerState({
+          supplier: exp.supplier,
+          poNo: exp.po_no,
+          invoiceNo: exp.invoice_no,
+          purchaseDate: exp.purchase_date,
+          items: exp.items.map((i: any) => ({
+            id: i.id.toString(),
+            description: i.description,
+            quantity: Number(i.quantity),
+            unitPrice: Number(i.unit_price),
+            currency: i.currency
+          })),
+          includeVat: Number(exp.vat) > 0,
+          payments: exp.payments.map((p: any) => ({
+            id: p.id.toString(),
+            date: p.payment_date,
+            amount: Number(p.amount),
+            method: p.payment_method
+          })),
+          paymentStatus: exp.payment_status,
+          remark: exp.remark,
+          slipFile: null,
+          receiptFile: null,
+          slipPreview: null,
+          receiptPreview: null,
+        });
+        setIsDrawerOpen(true);
+      }
+    } catch (error) {
+      console.error("Failed to fetch expense details:", error);
+      toast.error("ไม่สามารถโหลดรายละเอียดรายจ่ายได้");
+    }
   };
 
-  const handleSave = () => {
-    toast.success(drawerMode === "add" ? "เพิ่มรายการจ่ายสำเร็จ" : `แก้ไขรายการ ${editingId} สำเร็จ`);
-    setIsDrawerOpen(false);
+  const openEditDrawer = (expense: any) => {
+    setDrawerMode("edit");
+    setEditingId(expense.id);
+    // Prefer fetching full details
+    fetchExpenseDetails(expense.id);
+  };
+
+  const handleSave = async () => {
+    try {
+      const payload = {
+        ...drawerState,
+        id: editingId,
+        // Map camelCase to snake_case if necessary, or let PHP handle it
+      };
+      const response = await accountingService.saveExpense(payload);
+      if (response.status === "success") {
+        toast.success(drawerMode === "add" ? "เพิ่มรายการจ่ายสำเร็จ" : `แก้ไขรายการสำเร็จ`);
+        setIsDrawerOpen(false);
+        fetchExpenses();
+      } else {
+        toast.error(response.message || "เกิดข้อผิดพลาดในการบันทึก");
+      }
+    } catch (error) {
+      console.error("Failed to save expense:", error);
+      toast.error("ไม่สามารถบันทึกข้อมูลได้");
+    }
   };
 
   const filteredExpenses = expensesData.filter(expense => {
-    const matchesSearch = expense.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         expense.supplier.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         expense.poNo.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = (expense.expenseCode?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
+      (expense.supplier?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
+      (expense.poNo?.toLowerCase() || "").includes(searchTerm.toLowerCase());
     const matchesSupplier = filterSupplier === "all" || expense.supplier === filterSupplier;
     const matchesStatus = filterStatus === "all" || expense.paymentStatus === filterStatus;
     return matchesSearch && matchesSupplier && matchesStatus;
   });
 
-  const totalExpenses = expensesData.reduce((sum, exp) => sum + exp.netAmount, 0);
+  const totalExpenses = summaryData ? Number(summaryData.total_expenses) : expensesData.reduce((sum, exp) => sum + exp.netAmount, 0);
   const avgMonthlyExpense = totalExpenses / 12;
-  const pendingApprovals = expensesData.filter(e => e.paymentStatus === "รออนุมัติ").length;
-  const totalPaidExpenses = expensesData.filter(e => e.paymentStatus === "จ่ายแล้ว").reduce((sum, exp) => sum + exp.netAmount, 0);
+  const pendingApprovals = summaryData ? Number(summaryData.pending_approvals) : expensesData.filter(e => e.paymentStatus === "รออนุมัติ").length;
+  const totalPaidExpenses = summaryData ? Number(summaryData.total_paid) : expensesData.filter(e => e.paymentStatus === "จ่ายแล้ว").reduce((sum, exp) => sum + exp.netAmount, 0);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -623,8 +708,8 @@ export default function Expenses() {
               <div className="h-[300px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Pie data={expenseCategoryData} cx="50%" cy="50%" labelLine={false} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} outerRadius={80} fill="#8884d8" dataKey="value">
-                      {expenseCategoryData.map((entry, index) => (
+                    <Pie data={categoryData} cx="50%" cy="50%" labelLine={false} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} outerRadius={80} fill="#8884d8" dataKey="value">
+                      {categoryData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}
                     </Pie>
@@ -643,7 +728,7 @@ export default function Expenses() {
             <CardContent>
               <div className="h-[300px]">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={monthlyExpensesData}>
+                  <BarChart data={monthlyData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                     <XAxis dataKey="month" tick={{ fill: 'hsl(var(--muted-foreground))' }} stroke="hsl(var(--border))" />
                     <YAxis tick={{ fill: 'hsl(var(--muted-foreground))' }} stroke="hsl(var(--border))" />
@@ -710,7 +795,7 @@ export default function Expenses() {
                 <TableBody>
                   {filteredExpenses.map((expense) => (
                     <TableRow key={expense.id}>
-                      <TableCell className="font-medium">{expense.id}</TableCell>
+                      <TableCell className="font-medium">{expense.expenseCode}</TableCell>
                       <TableCell>{expense.supplier}</TableCell>
                       <TableCell className="font-mono text-sm">{expense.poNo}</TableCell>
                       <TableCell className="font-mono text-sm">{expense.invoiceNo}</TableCell>

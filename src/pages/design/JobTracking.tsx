@@ -9,6 +9,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { StatsCard } from "@/components/dashboard/StatsCard";
+import { designJobService } from "@/services/designJobService";
+import { toast } from "sonner";
 
 interface DesignWorkflowData {
   googleDriveLink?: string;
@@ -79,122 +81,39 @@ export default function JobTracking() {
   const [colAssignee, setColAssignee] = useState("");
   const [colStatus, setColStatus] = useState("");
 
-  const [jobs] = useState<JobTracking[]>([
-    {
-      job_id: "JOB-2024-001",
-      client_name: "บริษัท ABC จำกัด",
-      job_type: "เหรียญซิงค์อัลลอย",
-      assignee: "ดีไซเนอร์ A",
-      assigned_at: "2024-01-15",
-      due_date: "2024-12-25",
-      status: "กำลังดำเนินการ",
-      progress: 60,
-      has_artwork: true,
-      internal_notes: "ลูกค้าต้องการแก้ไขสีทอง",
-      specs: "ขนาด 5cm ชุบทองเหลือง",
-      designWorkflow: {
-        googleDriveLink: "https://drive.google.com/file/d/abc123",
-        layoutImage: "/placeholder.svg",
-        artworkImage: "/placeholder.svg",
-        artworkStatus: 'pending_review',
+  const [jobs, setJobs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const fetchJobs = async () => {
+      try {
+        setLoading(true);
+        const res = await designJobService.getJobs();
+        if (res.status === "success") {
+          const mapped = res.data.map((j: any) => ({
+            ...j,
+            job_id: j.job_code,
+            assignee: j.designer,
+            has_artwork: !!j.artwork_image || !!j.ai_file,
+            designWorkflow: {
+              googleDriveLink: j.google_drive_link,
+              layoutImage: j.layout_image,
+              artworkImage: j.artwork_image,
+              artworkStatus: j.artwork_status,
+              productionArtwork: j.production_artwork,
+              aiFile: j.ai_file,
+            }
+          }));
+          setJobs(mapped);
+        }
+      } catch (error) {
+        toast.error("ไม่สามารถดึงข้อมูลสถานะงานได้");
+      } finally {
+        setLoading(false);
       }
-    },
-    {
-      job_id: "JOB-2024-002",
-      client_name: "ร้าน XYZ",
-      job_type: "โล่สั่งผลิต",
-      assignee: "ดีไซเนอร์ B",
-      assigned_at: "2024-01-10",
-      due_date: "2024-12-10",
-      status: "รอตรวจสอบ",
-      progress: 85,
-      has_artwork: true,
-      internal_notes: "รอลูกค้ายืนยันแบบ",
-      specs: "โล่คริสตัล 8 นิ้ว",
-      designWorkflow: {
-        googleDriveLink: "https://drive.google.com/file/d/xyz456",
-        layoutImage: "/placeholder.svg",
-        artworkImage: "/placeholder.svg",
-        artworkStatus: 'approved',
-        productionArtwork: "/placeholder.svg",
-        aiFile: "production_file.ai",
-      }
-    },
-    {
-      job_id: "JOB-2024-003",
-      client_name: "บริษัท DEF",
-      job_type: "PVC",
-      assignee: "ดีไซเนอร์ C",
-      assigned_at: "2024-01-05",
-      due_date: "2024-12-05",
-      status: "เสร็จสิ้น",
-      progress: 100,
-      has_artwork: true,
-      internal_notes: "งานเสร็จเรียบร้อย",
-      specs: "PVC 3mm พิมพ์ UV",
-      designWorkflow: {
-        googleDriveLink: "https://drive.google.com/file/d/def789",
-        layoutImage: "/placeholder.svg",
-        artworkImage: "/placeholder.svg",
-        artworkStatus: 'approved',
-        productionArtwork: "/placeholder.svg",
-        aiFile: "final_artwork.ai",
-      }
-    },
-    {
-      job_id: "JOB-2024-004",
-      client_name: "องค์กร GHI",
-      job_type: "เหรียญอะคริลิก",
-      assignee: "ดีไซเนอร์ A",
-      assigned_at: "2024-02-01",
-      due_date: "2024-11-30",
-      status: "ล่าช้า",
-      progress: 45,
-      has_artwork: false,
-      internal_notes: "ลูกค้ายังไม่ส่งข้อมูลเพิ่มเติม",
-      specs: "อะคริลิกใส 10cm ตัดเลเซอร์",
-      designWorkflow: {
-        artworkStatus: 'draft',
-      }
-    },
-    {
-      job_id: "JOB-2024-005",
-      client_name: "สถาบัน JKL",
-      job_type: "ป้ายจารึก",
-      assignee: "ดีไซเนอร์ B",
-      assigned_at: "2024-02-15",
-      due_date: "2024-12-20",
-      status: "ผลิตชิ้นงาน",
-      progress: 90,
-      has_artwork: true,
-      internal_notes: "อยู่ระหว่างผลิต",
-      specs: "ป้ายทองเหลือง 20x30cm",
-      designWorkflow: {
-        googleDriveLink: "https://drive.google.com/file/d/jkl012",
-        layoutImage: "/placeholder.svg",
-        artworkImage: "/placeholder.svg",
-        artworkStatus: 'approved',
-        productionArtwork: "/placeholder.svg",
-        aiFile: "label_design.ai",
-      }
-    },
-    {
-      job_id: "JOB-2024-006",
-      client_name: "บริษัท MNO",
-      job_type: "สติกเกอร์",
-      assignee: "ดีไซเนอร์ C",
-      assigned_at: "2024-03-01",
-      due_date: "2024-12-15",
-      status: "รับงานแล้ว",
-      progress: 10,
-      has_artwork: false,
-      internal_notes: "รอเริ่มงาน",
-      specs: "สติกเกอร์ไดคัท 5x5cm",
-      designWorkflow: {
-        artworkStatus: 'draft',
-      }
-    }
-  ]);
+    };
+    fetchJobs();
+  }, []);
 
   // Reset page on filter change
   useEffect(() => {
@@ -335,9 +254,8 @@ export default function JobTracking() {
           return (
             <div key={step.key} className="flex items-center flex-1">
               <div className="flex flex-col items-center flex-1">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium transition-colors ${
-                  isActive ? isCurrent ? "bg-primary text-primary-foreground ring-2 ring-primary ring-offset-2" : "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
-                }`}>
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium transition-colors ${isActive ? isCurrent ? "bg-primary text-primary-foreground ring-2 ring-primary ring-offset-2" : "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                  }`}>
                   {isActive ? <CheckCircle2 className="h-4 w-4" /> : index + 1}
                 </div>
                 <span className={`text-[10px] mt-1 text-center ${isActive ? "text-foreground font-medium" : "text-muted-foreground"}`}>{step.label}</span>
@@ -378,7 +296,7 @@ export default function JobTracking() {
           {/* Design Workflow Section */}
           <div className="pt-4 border-t space-y-4">
             <h3 className="font-semibold text-base">รับออกแบบ</h3>
-            
+
             <div className="space-y-3 p-4 border rounded-lg bg-muted/20">
               <h4 className="font-medium text-sm">1. เริ่มวางแบบ</h4>
               <div className="space-y-2">

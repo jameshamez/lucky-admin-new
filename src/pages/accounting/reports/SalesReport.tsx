@@ -1,52 +1,50 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import { FileDown, Search } from "lucide-react";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { FileDown, Search, Loader2 } from "lucide-react";
+import { accountingService } from "@/services/accountingService";
+import { toast } from "sonner";
 
 export default function SalesReport() {
   const [filterDate, setFilterDate] = useState("");
   const [filterSalesperson, setFilterSalesperson] = useState("");
   const [filterProductType, setFilterProductType] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [monthlyData, setMonthlyData] = useState<any[]>([]);
+  const [topProducts, setTopProducts] = useState<any[]>([]);
+  const [dailySales, setDailySales] = useState<any[]>([]);
 
-  const monthlyData = [
-    { month: "ม.ค.", actual: 2100000, target: 2000000 },
-    { month: "ก.พ.", actual: 1950000, target: 2000000 },
-    { month: "มี.ค.", actual: 2300000, target: 2000000 },
-    { month: "เม.ย.", actual: 2150000, target: 2000000 },
-    { month: "พ.ค.", actual: 2400000, target: 2000000 },
-    { month: "มิ.ย.", actual: 2200000, target: 2000000 },
-    { month: "ก.ค.", actual: 2500000, target: 2000000 },
-    { month: "ส.ค.", actual: 2350000, target: 2000000 },
-    { month: "ก.ย.", actual: 2450000, target: 2000000 },
-    { month: "ต.ค.", actual: 2600000, target: 2000000 },
-    { month: "พ.ย.", actual: 2550000, target: 2000000 },
-    { month: "ธ.ค.", actual: 2450000, target: 2000000 },
-  ];
+  useEffect(() => {
+    const fetchSalesData = async () => {
+      setLoading(true);
+      try {
+        const res = await accountingService.getReportsData('sales');
+        if (res.status === 'success') {
+          setMonthlyData(res.data.monthlyData);
+          setTopProducts(res.data.topProducts);
+          setDailySales(res.data.dailySales);
+        }
+      } catch (error) {
+        toast.error("ไม่สามารถดึงข้อมูลรายงานยอดขายได้");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchSalesData();
+  }, []);
 
-  const topProducts = [
-    { rank: 1, name: "กล่องกระดาษลูกฟูก A4", quantity: 850, value: 425000 },
-    { rank: 2, name: "ถุงพลาสติก PE", quantity: 720, value: 360000 },
-    { rank: 3, name: "สติกเกอร์สินค้า", quantity: 650, value: 325000 },
-    { rank: 4, name: "กล่องสีขาว A3", quantity: 580, value: 290000 },
-    { rank: 5, name: "เทปกาว OPP", quantity: 520, value: 260000 },
-    { rank: 6, name: "กระดาษคราฟท์", quantity: 480, value: 240000 },
-    { rank: 7, name: "ถุงกระดาษสีน้ำตาล", quantity: 420, value: 210000 },
-    { rank: 8, name: "สติกเกอร์บาร์โค้ด", quantity: 380, value: 190000 },
-    { rank: 9, name: "กล่องไดคัท", quantity: 340, value: 170000 },
-    { rank: 10, name: "ฟิล์มยืด", quantity: 300, value: 150000 },
-  ];
-
-  const dailySales = [
-    { date: "2025-01-01", orders: 15, value: 125000, salesperson: "สมชาย ใจดี" },
-    { date: "2025-01-02", orders: 18, value: 145000, salesperson: "สมหญิง รักษ์ดี" },
-    { date: "2025-01-03", orders: 22, value: 185000, salesperson: "สมชาย ใจดี" },
-    { date: "2025-01-04", orders: 20, value: 165000, salesperson: "วิชัย มั่นคง" },
-    { date: "2025-01-05", orders: 25, value: 210000, salesperson: "สมหญิง รักษ์ดี" },
-  ];
+  if (loading) {
+    return (
+      <div className="flex h-[400px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="ml-2">กำลังโหลดข้อมูล...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

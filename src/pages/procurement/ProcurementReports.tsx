@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import {
@@ -37,6 +37,8 @@ import {
   Pie,
   Cell,
 } from "recharts";
+import { procurementService } from "@/services/procurementService";
+import { toast } from "sonner";
 
 const mockData = [
   { month: "ม.ค.", calculated: 45, ordered: 38, delivered: 32 },
@@ -100,6 +102,28 @@ export default function ProcurementReports() {
   const [timeRange, setTimeRange] = useState<string>("monthly");
   const [productType, setProductType] = useState<string>("all");
 
+  // API Data
+  const [reportData, setReportData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchReports = async () => {
+    setLoading(true);
+    try {
+      const res = await procurementService.getReportData();
+      if (res.status === 'success') {
+        setReportData(res.data);
+      }
+    } catch (error) {
+      toast.error("Failed to fetch report data");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchReports();
+  }, [timeRange, productType]); // Re-fetch on filter change if API supports it
+
   // คำนวณ Total ของแต่ละโรงงาน
   const getFactoryTotals = (factory: typeof factoryData[0]) => {
     return {
@@ -110,8 +134,9 @@ export default function ProcurementReports() {
   };
 
   // คำนวณ Grand Total
-  const grandTotal = factoryData.reduce(
-    (acc, factory) => {
+  const currentFactoryData = reportData?.factorySummary || factoryData;
+  const grandTotal = currentFactoryData.reduce(
+    (acc: any, factory: any) => {
       const totals = getFactoryTotals(factory);
       return {
         quoted: acc.quoted + totals.quoted,
@@ -123,7 +148,8 @@ export default function ProcurementReports() {
   );
 
   // ข้อมูลสำหรับ Pie Chart
-  const pieData = comparisonData.map((item) => ({
+  const currentComparisonData = reportData?.comparisonData || comparisonData;
+  const pieData = currentComparisonData.map((item: any) => ({
     name: item.name,
     value: item.ordered,
   }));
@@ -246,10 +272,10 @@ export default function ProcurementReports() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-blue-600">125 งาน</div>
+            <div className="text-3xl font-bold text-blue-600">{reportData?.stats?.totalCalculated || 0} งาน</div>
             <p className="text-xs text-muted-foreground mt-1">
               <TrendingUp className="w-3 h-3 inline mr-1" />
-              +12% จากเดือนที่แล้ว
+              อ้างอิงข้อมูลจริงจากระบบ
             </p>
           </CardContent>
         </Card>
@@ -261,10 +287,10 @@ export default function ProcurementReports() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-orange-600">95 งาน</div>
+            <div className="text-3xl font-bold text-orange-600">{reportData?.stats?.totalOrdered || 0} งาน</div>
             <p className="text-xs text-muted-foreground mt-1">
               <TrendingUp className="w-3 h-3 inline mr-1" />
-              +8% จากเดือนที่แล้ว
+              รวมออเดอร์ทั้งหมด
             </p>
           </CardContent>
         </Card>
@@ -276,10 +302,10 @@ export default function ProcurementReports() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-green-600">82 งาน</div>
+            <div className="text-3xl font-bold text-green-600">{reportData?.stats?.totalDelivered || 0} งาน</div>
             <p className="text-xs text-muted-foreground mt-1">
               <TrendingUp className="w-3 h-3 inline mr-1" />
-              +15% จากเดือนที่แล้ว
+              งานที่ปิดจบแล้ว
             </p>
           </CardContent>
         </Card>
@@ -334,7 +360,7 @@ export default function ProcurementReports() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {factoryData.map((factory, index) => {
+                {currentFactoryData.map((factory: any, index: number) => {
                   const totals = getFactoryTotals(factory);
                   return (
                     <TableRow key={index}>
@@ -370,19 +396,19 @@ export default function ProcurementReports() {
                 <TableRow className="bg-muted font-bold">
                   <TableCell className="border-r">รวมทั้งหมด</TableCell>
                   <TableCell colSpan={3} className="text-center border-r">
-                    {factoryData.reduce((sum, f) => sum + f.medal.quoted, 0)} / {factoryData.reduce((sum, f) => sum + f.medal.ordered, 0)} / {factoryData.reduce((sum, f) => sum + f.medal.po, 0)}
+                    {currentFactoryData.reduce((sum: number, f: any) => sum + f.medal.quoted, 0)} / {currentFactoryData.reduce((sum: number, f: any) => sum + f.medal.ordered, 0)} / {currentFactoryData.reduce((sum: number, f: any) => sum + f.medal.po, 0)}
                   </TableCell>
                   <TableCell colSpan={3} className="text-center border-r">
-                    {factoryData.reduce((sum, f) => sum + f.trophy.quoted, 0)} / {factoryData.reduce((sum, f) => sum + f.trophy.ordered, 0)} / {factoryData.reduce((sum, f) => sum + f.trophy.po, 0)}
+                    {currentFactoryData.reduce((sum: number, f: any) => sum + f.trophy.quoted, 0)} / {currentFactoryData.reduce((sum: number, f: any) => sum + f.trophy.ordered, 0)} / {currentFactoryData.reduce((sum: number, f: any) => sum + f.trophy.po, 0)}
                   </TableCell>
                   <TableCell colSpan={3} className="text-center border-r">
-                    {factoryData.reduce((sum, f) => sum + f.award.quoted, 0)} / {factoryData.reduce((sum, f) => sum + f.award.ordered, 0)} / {factoryData.reduce((sum, f) => sum + f.award.po, 0)}
+                    {currentFactoryData.reduce((sum: number, f: any) => sum + f.award.quoted, 0)} / {currentFactoryData.reduce((sum: number, f: any) => sum + f.award.ordered, 0)} / {currentFactoryData.reduce((sum: number, f: any) => sum + f.award.po, 0)}
                   </TableCell>
                   <TableCell colSpan={3} className="text-center border-r">
-                    {factoryData.reduce((sum, f) => sum + f.shirt.quoted, 0)} / {factoryData.reduce((sum, f) => sum + f.shirt.ordered, 0)} / {factoryData.reduce((sum, f) => sum + f.shirt.po, 0)}
+                    {currentFactoryData.reduce((sum: number, f: any) => sum + f.shirt.quoted, 0)} / {currentFactoryData.reduce((sum: number, f: any) => sum + f.shirt.ordered, 0)} / {currentFactoryData.reduce((sum: number, f: any) => sum + f.shirt.po, 0)}
                   </TableCell>
                   <TableCell colSpan={3} className="text-center border-r">
-                    {factoryData.reduce((sum, f) => sum + f.other.quoted, 0)} / {factoryData.reduce((sum, f) => sum + f.other.ordered, 0)} / {factoryData.reduce((sum, f) => sum + f.other.po, 0)}
+                    {currentFactoryData.reduce((sum: number, f: any) => sum + f.other.quoted, 0)} / {currentFactoryData.reduce((sum: number, f: any) => sum + f.other.ordered, 0)} / {currentFactoryData.reduce((sum: number, f: any) => sum + f.other.po, 0)}
                   </TableCell>
                   <TableCell className="text-center">{grandTotal.quoted}</TableCell>
                   <TableCell className="text-center">{grandTotal.ordered}</TableCell>
@@ -409,7 +435,7 @@ export default function ProcurementReports() {
             <div>
               <h4 className="text-sm font-medium mb-4">กราฟแท่งเปรียบเทียบ (แยกประเภทสินค้า)</h4>
               <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={comparisonData}>
+                <BarChart data={currentComparisonData}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="name" />
                   <YAxis />
@@ -436,7 +462,7 @@ export default function ProcurementReports() {
                     fill="#8884d8"
                     dataKey="value"
                   >
-                    {pieData.map((entry, index) => (
+                    {pieData.map((entry: any, index: number) => (
                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                     ))}
                   </Pie>
@@ -460,7 +486,7 @@ export default function ProcurementReports() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {comparisonData.map((item, index) => (
+                {currentComparisonData.map((item: any, index: number) => (
                   <TableRow key={index}>
                     <TableCell className="font-medium">{item.name}</TableCell>
                     <TableCell className="text-center">{item.quoted}</TableCell>
@@ -480,10 +506,10 @@ export default function ProcurementReports() {
                 {/* Summary Row */}
                 <TableRow className="bg-muted font-bold">
                   <TableCell>รวมทั้งหมด</TableCell>
-                  <TableCell className="text-center">{comparisonData.reduce((sum, i) => sum + i.quoted, 0)}</TableCell>
-                  <TableCell className="text-center">{comparisonData.reduce((sum, i) => sum + i.ordered, 0)}</TableCell>
+                  <TableCell className="text-center">{currentComparisonData.reduce((sum: number, i: any) => sum + i.quoted, 0)}</TableCell>
+                  <TableCell className="text-center">{currentComparisonData.reduce((sum: number, i: any) => sum + i.ordered, 0)}</TableCell>
                   <TableCell className="text-center">
-                    {Math.round((comparisonData.reduce((sum, i) => sum + i.ordered, 0) / comparisonData.reduce((sum, i) => sum + i.quoted, 0)) * 100)}%
+                    {Math.round((currentComparisonData.reduce((sum: number, i: any) => sum + i.ordered, 0) / (currentComparisonData.reduce((sum: number, i: any) => i.quoted, 0) || 1)) * 100)}%
                   </TableCell>
                   <TableCell></TableCell>
                 </TableRow>
@@ -503,7 +529,7 @@ export default function ProcurementReports() {
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={350}>
-            <BarChart data={mockData}>
+            <BarChart data={reportData?.monthlyTrend || mockData}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="month" />
               <YAxis />
@@ -527,7 +553,7 @@ export default function ProcurementReports() {
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={350}>
-            <LineChart data={mockData}>
+            <LineChart data={reportData?.monthlyTrend || mockData}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="month" />
               <YAxis />
