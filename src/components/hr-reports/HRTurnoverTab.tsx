@@ -9,18 +9,19 @@ import { type Employee } from "@/lib/employeeData";
 
 type Props = {
   employees: Employee[];
+  employeeMovements: EmployeeMovement[];
   selectedMonth: string;
 };
 
 const COLORS = ["hsl(var(--primary))", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899"];
 
-export default function HRTurnoverTab({ employees, selectedMonth }: Props) {
+export default function HRTurnoverTab({ employees, employeeMovements, selectedMonth }: Props) {
   const activeEmployees = employees.filter(e => e.status === "ACTIVE");
   const resignedAll = employees.filter(e => e.status === "RESIGNED");
 
   const monthMovements = useMemo(() =>
-    mockEmployeeMovements.filter(m => m.month === selectedMonth),
-    [selectedMonth]
+    employeeMovements.filter(m => m.month === selectedMonth),
+    [employeeMovements, selectedMonth]
   );
 
   const newJoiners = monthMovements.filter(m => m.type === "NEW");

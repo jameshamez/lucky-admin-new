@@ -28,7 +28,8 @@ import {
   type MadeToOrderConfig,
 } from "@/lib/commissionConfig";
 import { defaultEmployees, getSaleEmployees, type Employee, type EmployeeRole, type EmployeeStatus } from "@/lib/employeeData";
-import { supabase } from "@/integrations/supabase/client";
+import { hrService } from "@/services/hrService";
+import { Loader2 } from "lucide-react";
 
 type CommissionStatus = "PENDING" | "COMPLETED";
 
@@ -52,18 +53,10 @@ type MadeToOrderEntry = {
 const now = new Date();
 const currentPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
-const mockOrders: MadeToOrderEntry[] = [
-  { id: "1", deliveryDate: "2025-01-15", poNumber: "PO-MTO-2025-001", jobName: "โล่อะคริลิค บริษัท XYZ", productCategory: "โล่สั่งผลิต (อะคริลิค/ไม้/คริสตัล/เรซิ่น/เหรียญอะคริลิค)", saleName: "คุณสมชาย ใจดี", quantity: 30, totalSalesAmount: 120000, tierCondition: "Tier 11-50 ชิ้น", commissionAmount: 100, calcDescription: "Tier 11-50 ชิ้น → เหมา ฿100", commissionStatus: "COMPLETED", processedAt: "2025-01-20T10:00:00", commissionPeriod: "2025-01" },
-  { id: "2", deliveryDate: "2025-01-18", poNumber: "PO-MTO-2025-002", jobName: "เหรียญรางวัลกีฬาสี", productCategory: "เหรียญรางวัล (สั่งผลิต)", saleName: "คุณสมหญิง รวยเงิน", quantity: 5000, totalSalesAmount: 85000, tierCondition: "Tier 1-10,000 ชิ้น", commissionAmount: 250, calcDescription: "Tier 1-10,000 ชิ้น → เหมา ฿250", commissionStatus: "COMPLETED", processedAt: "2025-01-22T14:30:00", commissionPeriod: "2025-01" },
-  { id: "6", deliveryDate: "2025-01-28", poNumber: "PO-MTO-2025-006", jobName: "BIB งานวิ่ง 500 ชิ้น", productCategory: "BIB", saleName: "คุณประยุทธ์ เก่ง", quantity: 500, totalSalesAmount: 25000, tierCondition: "Tier ทุกจำนวน", commissionAmount: 0, calcDescription: "Tier ทุกจำนวน → เหมา ฿0", commissionStatus: "COMPLETED", processedAt: "2025-01-30T09:00:00", commissionPeriod: "2025-01" },
-  { id: "3", deliveryDate: "2026-02-10", poNumber: "PO-MTO-2026-007", jobName: "เสื้อวิ่ง Fun Run 1,500 ตัว", productCategory: "เสื้อ", saleName: "คุณวิชัย ขยัน", quantity: 1500, totalSalesAmount: 300000, tierCondition: "", commissionAmount: 0, calcDescription: "", commissionStatus: "PENDING", processedAt: null, commissionPeriod: null },
-  { id: "4", deliveryDate: "2026-02-12", poNumber: "PO-MTO-2026-008", jobName: "งานออแกไนท์ Sports Day", productCategory: "ออแกไนท์", saleName: "คุณสุดา ดี", quantity: 1, totalSalesAmount: 120000, tierCondition: "", commissionAmount: 0, calcDescription: "", commissionStatus: "PENDING", processedAt: null, commissionPeriod: null },
-  { id: "5", deliveryDate: "2026-02-14", poNumber: "PO-MTO-2026-009", jobName: "โล่คริสตัล VIP 8 ชิ้น", productCategory: "โล่สั่งผลิต (อะคริลิค/ไม้/คริสตัล/เรซิ่น/เหรียญอะคริลิค)", saleName: "คุณสมศักดิ์ ทำงาน", quantity: 8, totalSalesAmount: 56000, tierCondition: "", commissionAmount: 0, calcDescription: "", commissionStatus: "PENDING", processedAt: null, commissionPeriod: null },
-];
-
-const thaiMonthNames = ["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน","กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"];
+const thaiMonthNames = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
 
 function formatPeriodLabel(period: string): string {
+  if (!period || period === "unknown") return "ไม่ระบุงวด";
   const [y, m] = period.split("-");
   const monthIdx = parseInt(m) - 1;
   const buddhistYear = parseInt(y) + 543;
@@ -90,57 +83,71 @@ export default function CommissionMadeToOrder() {
   const [selectedYear, setSelectedYear] = useState(currentDate.getFullYear().toString());
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
-  const [orders, setOrders] = useState<MadeToOrderEntry[]>(mockOrders);
+  const [orders, setOrders] = useState<MadeToOrderEntry[]>([]);
+  const [loading, setLoading] = useState(true);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("PENDING");
-  const [employees, setEmployees] = useState<Employee[]>(defaultEmployees);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [dbCategories, setDbCategories] = useState<string[]>([]);
+
+  const [configs, setConfigs] = useState<MadeToOrderConfig[]>([]);
+  const categories = useMemo(() => getMadeToOrderCategories(configs), [configs]);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [empRes, orderRes, catRes, configRes] = await Promise.all([
+        hrService.getEmployees(),
+        hrService.getMTOCommissions(activeTab === "PENDING" ? "PENDING" : "COMPLETED", selectedMonth, selectedYear),
+        hrService.getProductCategories(),
+        hrService.getSettings('mto')
+      ]);
+      if (empRes.status === 'success') setEmployees(empRes.data);
+      if (orderRes.status === 'success') setOrders(orderRes.data);
+      if (catRes.status === 'success') setDbCategories(catRes.data);
+      if (configRes.status === 'success') setConfigs(configRes.data);
+    } catch (error) {
+      toast({ title: "เกิดข้อผิดพลาด", description: "ไม่สามารถโหลดข้อมูลได้", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const load = async () => {
-      const { data } = await supabase.from("employees").select("*").eq("status", "ACTIVE").order("full_name");
-      if (data && data.length > 0) {
-        setEmployees(data.map(d => ({ id: d.id, fullName: d.full_name, nickname: d.nickname, position: d.position, role: d.role as EmployeeRole, status: d.status as EmployeeStatus })));
-      }
-    };
-    load();
-  }, []);
-
-  const configs = defaultMadeToOrderConfigs;
-  const categories = useMemo(() => getMadeToOrderCategories(configs), [configs]);
+    loadData();
+  }, [activeTab, selectedMonth, selectedYear]);
 
   const [addForm, setAddForm] = useState({
     poNumber: "", jobName: "", deliveryDate: new Date().toISOString().split("T")[0],
     productCategory: "", saleName: "", quantity: 0, totalSalesAmount: 0,
   });
 
-  const selectedConfig = configs.find(c => c.category === addForm.productCategory);
+  const selectedConfig = useMemo(() => {
+    if (!addForm.productCategory) return null;
+    // Map DB categories to internal configs for calculation logic
+    const cat = addForm.productCategory;
+    if (cat.includes("เหรียญ")) return configs.find(c => c.id === "b2");
+    if (cat.includes("โล่")) return configs.find(c => c.id === "b1");
+    if (cat.includes("เสื้อ")) return configs.find(c => c.id === "b3");
+
+    return configs.find(c => c.category === cat);
+  }, [configs, addForm.productCategory]);
 
   const computedCommission = useMemo(() => {
     if (!selectedConfig) return null;
     return calculateMadeToOrderCommission(selectedConfig, addForm.quantity);
   }, [selectedConfig, addForm.quantity]);
 
-  // Filter by month/year then by search
-  const monthYearFiltered = orders.filter(order => {
-    // Determine order's date — use deliveryDate for pending, commissionPeriod for completed
-    const dateStr = order.commissionPeriod || order.deliveryDate;
-    if (!dateStr) return true;
-    const [y, m] = dateStr.split("-");
-    if (selectedYear !== "all" && y !== selectedYear) return false;
-    if (selectedMonth !== "all" && String(parseInt(m)) !== selectedMonth) return false;
-    return true;
-  });
-
-  const searchFiltered = monthYearFiltered.filter(order => {
+  const searchFiltered = useMemo(() => {
     const q = searchQuery.toLowerCase();
-    return !q || order.poNumber.toLowerCase().includes(q) || order.jobName.toLowerCase().includes(q) || order.saleName.toLowerCase().includes(q);
-  });
+    return orders.filter(order => !q || order.poNumber.toLowerCase().includes(q) || order.jobName.toLowerCase().includes(q) || order.saleName.toLowerCase().includes(q));
+  }, [orders, searchQuery]);
 
-  const pendingOrders = searchFiltered.filter(o => o.commissionStatus === "PENDING");
-  const completedOrders = searchFiltered.filter(o => o.commissionStatus === "COMPLETED");
+  const pendingOrders = activeTab === "PENDING" ? searchFiltered : [];
+  const completedOrders = activeTab === "HISTORY" ? searchFiltered : [];
 
-  // Group completed orders by commissionPeriod
   const groupedByMonth = useMemo(() => {
+    if (activeTab !== "HISTORY") return [];
     const groups: Record<string, MadeToOrderEntry[]> = {};
     completedOrders.forEach(o => {
       const period = o.commissionPeriod || "unknown";
@@ -148,52 +155,101 @@ export default function CommissionMadeToOrder() {
       groups[period].push(o);
     });
     return Object.entries(groups).sort(([a], [b]) => b.localeCompare(a));
-  }, [completedOrders]);
+  }, [completedOrders, activeTab]);
 
-  const totalCommissionCompleted = completedOrders.reduce((sum, o) => sum + o.commissionAmount, 0);
+  const totalCommissionCompleted = useMemo(() =>
+    completedOrders.reduce((sum, o) => sum + (o.commissionAmount || 0), 0)
+    , [completedOrders]);
 
   const handleSelectAll = (checked: boolean) => setSelectedOrders(checked ? pendingOrders.map(o => o.id) : []);
   const handleSelectOrder = (id: string, checked: boolean) => setSelectedOrders(checked ? [...selectedOrders, id] : selectedOrders.filter(x => x !== id));
 
-  const recalculateAndComplete = (order: MadeToOrderEntry): MadeToOrderEntry => {
+  const getRecalculatedValues = (order: MadeToOrderEntry) => {
     const config = configs.find(c => c.category === order.productCategory && c.active);
-    const processedAt = new Date().toISOString();
-    if (!config) return { ...order, commissionAmount: 0, calcDescription: "ไม่พบ config", commissionStatus: "COMPLETED", processedAt, commissionPeriod: currentPeriod };
-    const result = calculateMadeToOrderCommission(config, order.quantity);
-    return { ...order, tierCondition: result.tierCondition, commissionAmount: result.amount, calcDescription: result.description, commissionStatus: "COMPLETED", processedAt, commissionPeriod: currentPeriod };
+    if (!config) return { tierCondition: "ไม่พบ config", commissionAmount: 0, calcDescription: "ไม่พบเงื่อนไข Config B" };
+    const res = calculateMadeToOrderCommission(config, order.quantity);
+    return { tierCondition: res.tierCondition, commissionAmount: res.amount, calcDescription: res.description };
   };
 
-  const handleCalculateAll = () => {
-    const pendingIds = pendingOrders.map(o => o.id);
-    if (pendingIds.length === 0) { toast({ title: "ไม่มีรายการรอดำเนินการ", variant: "destructive" }); return; }
-    setOrders(orders.map(o => pendingIds.includes(o.id) ? recalculateAndComplete(o) : o));
-    setSelectedOrders([]);
-    toast({ title: "คำนวณและบันทึกเรียบร้อย", description: `${pendingIds.length} รายการย้ายไปประวัติ` });
+  const handleCalculateAll = async () => {
+    if (pendingOrders.length === 0) { toast({ title: "ไม่มีรายการรอดำเนินการ", variant: "destructive" }); return; }
+
+    setLoading(true);
+    try {
+      const updates: Record<string, any> = {};
+      pendingOrders.forEach(o => {
+        updates[o.id] = getRecalculatedValues(o);
+      });
+      const ids = pendingOrders.map(o => o.id);
+      const res = await hrService.completeMTOCommissions(ids, currentPeriod, updates);
+      if (res.status === 'success') {
+        toast({ title: "ถอนค่าคอมสำเร็จ", description: `ประมวลผล ${res.updated} รายการ เรียบร้อยแล้ว` });
+        loadData();
+      }
+    } catch (error) {
+      toast({ title: "ผิดพลาด", description: "ไม่สามารถประมวลผลได้", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleCalculateSelected = () => {
+  const handleCalculateSelected = async () => {
     if (selectedOrders.length === 0) { toast({ title: "กรุณาเลือกรายการ", variant: "destructive" }); return; }
-    setOrders(orders.map(o => selectedOrders.includes(o.id) ? recalculateAndComplete(o) : o));
-    const count = selectedOrders.length;
-    setSelectedOrders([]);
-    toast({ title: "คำนวณเรียบร้อย", description: `${count} รายการย้ายไปประวัติ` });
+
+    setLoading(true);
+    try {
+      const updates: Record<string, any> = {};
+      selectedOrders.forEach(id => {
+        const o = pendingOrders.find(x => x.id === id);
+        if (o) updates[id] = getRecalculatedValues(o);
+      });
+      const res = await hrService.completeMTOCommissions(selectedOrders, currentPeriod, updates);
+      if (res.status === 'success') {
+        toast({ title: "ประมวลผลสำเร็จ", description: `${res.updated} รายการย้ายไปประวัติ` });
+        loadData();
+        setSelectedOrders([]);
+      }
+    } catch (error) {
+      toast({ title: "ผิดพลาด", description: "ไม่สามารถประมวลผลได้", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleAddOrder = () => {
-    if (!addForm.productCategory || !addForm.poNumber) { toast({ title: "กรุณากรอกข้อมูล", variant: "destructive" }); return; }
+  const handleAddOrder = async () => {
+    if (!addForm.productCategory || !addForm.poNumber || !addForm.saleName) {
+      toast({ title: "กรุณากรอกข้อมูลให้ครบถ้วน", variant: "destructive" });
+      return;
+    }
     if (!selectedConfig || !computedCommission) return;
-    const newOrder: MadeToOrderEntry = {
-      id: String(Date.now()), deliveryDate: addForm.deliveryDate, poNumber: addForm.poNumber,
-      jobName: addForm.jobName, productCategory: addForm.productCategory, saleName: addForm.saleName,
-      quantity: addForm.quantity, totalSalesAmount: addForm.totalSalesAmount,
-      tierCondition: computedCommission.tierCondition, commissionAmount: computedCommission.amount,
-      calcDescription: computedCommission.description, commissionStatus: "PENDING",
-      processedAt: null, commissionPeriod: null,
-    };
-    setOrders([...orders, newOrder]);
-    setIsAddDialogOpen(false);
-    setAddForm({ poNumber: "", jobName: "", deliveryDate: new Date().toISOString().split("T")[0], productCategory: "", saleName: "", quantity: 0, totalSalesAmount: 0 });
-    toast({ title: "เพิ่มรายการสำเร็จ (รอดำเนินการ)", description: `ค่าคอม Preview: ฿${computedCommission.amount.toLocaleString()}` });
+
+    try {
+      const newOrder = {
+        deliveryDate: addForm.deliveryDate,
+        poNumber: addForm.poNumber,
+        jobName: addForm.jobName,
+        productCategory: addForm.productCategory,
+        saleName: addForm.saleName,
+        quantity: addForm.quantity,
+        totalSalesAmount: addForm.totalSalesAmount,
+        tierCondition: computedCommission.tierCondition,
+        commissionAmount: computedCommission.amount,
+        calcDescription: computedCommission.description,
+        commissionStatus: "PENDING"
+      };
+
+      const res = await hrService.createMTOCommission(newOrder);
+      if (res.status === 'success') {
+        toast({ title: "บันทึกรายการสำเร็จ", description: "รายการถูกเพิ่มในส่วนรอดำเนินการ" });
+        loadData();
+        setIsAddDialogOpen(false);
+        setAddForm({ poNumber: "", jobName: "", deliveryDate: new Date().toISOString().split("T")[0], productCategory: "", saleName: "", quantity: 0, totalSalesAmount: 0 });
+      } else {
+        toast({ title: "ผิดพลาด", description: res.message, variant: "destructive" });
+      }
+    } catch (error) {
+      toast({ title: "ผิดพลาด", description: "ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้", variant: "destructive" });
+    }
   };
 
   const handleExport = () => {
@@ -491,7 +547,12 @@ export default function CommissionMadeToOrder() {
                 <Label>กลุ่มสินค้า (Config B) *</Label>
                 <Select value={addForm.productCategory} onValueChange={v => setAddForm({ ...addForm, productCategory: v })}>
                   <SelectTrigger><SelectValue placeholder="เลือกกลุ่มสินค้า" /></SelectTrigger>
-                  <SelectContent>{categories.map(cat => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)}</SelectContent>
+                  <SelectContent>
+                    {dbCategories.length > 0
+                      ? dbCategories.map(cat => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)
+                      : categories.map(cat => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)
+                    }
+                  </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">

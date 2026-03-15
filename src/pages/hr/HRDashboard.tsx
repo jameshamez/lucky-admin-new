@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,63 +17,7 @@ import { defaultIncentiveTiers, calculateAdminIncentive } from "@/lib/commission
 import { useToast } from "@/hooks/use-toast";
 import * as XLSX from "xlsx";
 
-// Mock monthly data keyed by "YYYY-MM"
-const allMonthlyData: Record<string, {
-  sales: number;
-  readyMade: number;
-  madeToOrder: number;
-  top5: { rank: number; name: string; readyMade: number; madeToOrder: number; total: number }[];
-}> = {
-  "2026-01": {
-    sales: 2600000, readyMade: 3200, madeToOrder: 5200,
-    top5: [
-      { rank: 1, name: "คุณสมศักดิ์ ทำงาน", readyMade: 750, madeToOrder: 4800, total: 5550 },
-      { rank: 2, name: "คุณสมชาย ใจดี", readyMade: 2000, madeToOrder: 500, total: 2500 },
-      { rank: 3, name: "คุณวิชัย ขยัน", readyMade: 180, madeToOrder: 650, total: 830 },
-      { rank: 4, name: "คุณสมหญิง รวยเงิน", readyMade: 700, madeToOrder: 200, total: 900 },
-      { rank: 5, name: "คุณสุดา ดี", readyMade: 400, madeToOrder: 250, total: 650 },
-    ],
-  },
-  "2026-02": {
-    sales: 2850000, readyMade: 3650, madeToOrder: 5850,
-    top5: [
-      { rank: 1, name: "คุณสมศักดิ์ ทำงาน", readyMade: 850, madeToOrder: 5300, total: 6150 },
-      { rank: 2, name: "คุณสมชาย ใจดี", readyMade: 2200, madeToOrder: 600, total: 2800 },
-      { rank: 3, name: "คุณวิชัย ขยัน", readyMade: 200, madeToOrder: 700, total: 900 },
-      { rank: 4, name: "คุณสมหญิง รวยเงิน", readyMade: 850, madeToOrder: 250, total: 1100 },
-      { rank: 5, name: "คุณสุดา ดี", readyMade: 450, madeToOrder: 300, total: 750 },
-    ],
-  },
-  "2025-12": {
-    sales: 3100000, readyMade: 3400, madeToOrder: 5500,
-    top5: [
-      { rank: 1, name: "คุณสมศักดิ์ ทำงาน", readyMade: 900, madeToOrder: 4900, total: 5800 },
-      { rank: 2, name: "คุณสมชาย ใจดี", readyMade: 1900, madeToOrder: 550, total: 2450 },
-      { rank: 3, name: "คุณสมหญิง รวยเงิน", readyMade: 800, madeToOrder: 300, total: 1100 },
-      { rank: 4, name: "คุณวิชัย ขยัน", readyMade: 250, madeToOrder: 600, total: 850 },
-      { rank: 5, name: "คุณสุดา ดี", readyMade: 350, madeToOrder: 200, total: 550 },
-    ],
-  },
-  "2025-11": {
-    sales: 2400000, readyMade: 2900, madeToOrder: 4800,
-    top5: [
-      { rank: 1, name: "คุณสมศักดิ์ ทำงาน", readyMade: 700, madeToOrder: 4500, total: 5200 },
-      { rank: 2, name: "คุณสมชาย ใจดี", readyMade: 1800, madeToOrder: 400, total: 2200 },
-      { rank: 3, name: "คุณวิชัย ขยัน", readyMade: 150, madeToOrder: 500, total: 650 },
-      { rank: 4, name: "คุณสมหญิง รวยเงิน", readyMade: 600, madeToOrder: 200, total: 800 },
-      { rank: 5, name: "คุณสุดา ดี", readyMade: 300, madeToOrder: 150, total: 450 },
-    ],
-  },
-};
 
-const monthlyTrendBase: Record<string, { readyMade: number; madeToOrder: number }> = {
-  "2025-09": { readyMade: 2800, madeToOrder: 4200 },
-  "2025-10": { readyMade: 3100, madeToOrder: 5100 },
-  "2025-11": { readyMade: 2900, madeToOrder: 4800 },
-  "2025-12": { readyMade: 3400, madeToOrder: 5500 },
-  "2026-01": { readyMade: 3200, madeToOrder: 5200 },
-  "2026-02": { readyMade: 3650, madeToOrder: 5850 },
-};
 
 const thaiMonthShort = ["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
 
@@ -90,24 +34,57 @@ const years = [
   { value: "2024", label: "2567" }, { value: "2025", label: "2568" }, { value: "2026", label: "2569" },
 ];
 
+import { hrService } from "@/services/hrService";
+import { Loader2 } from "lucide-react";
+
 export default function HRDashboard() {
   const { toast } = useToast();
   const currentDate = new Date();
   const [selectedMonth, setSelectedMonth] = useState((currentDate.getMonth() + 1).toString());
   const [selectedYear, setSelectedYear] = useState(currentDate.getFullYear().toString());
+  const [loading, setLoading] = useState(true);
+  const [dashboardData, setDashboardData] = useState<{
+    sales: number;
+    readyMade: number;
+    madeToOrder: number;
+    top5: any[];
+    trend: Record<string, any>;
+  }>({
+    sales: 0,
+    readyMade: 0,
+    madeToOrder: 0,
+    top5: [],
+    trend: {}
+  });
 
-  const selectedKey = `${selectedYear}-${selectedMonth.padStart(2, "0")}`;
+  const [incentiveTiers, setIncentiveTiers] = useState<IncentiveTier[]>([]);
 
-  const data = useMemo(() => {
-    return allMonthlyData[selectedKey] ?? { sales: 0, readyMade: 0, madeToOrder: 0, top5: [] };
-  }, [selectedKey]);
+  const fetchDashboard = async () => {
+    setLoading(true);
+    try {
+      const [dashRes, incRes] = await Promise.all([
+        hrService.getDashboardData(selectedMonth, selectedYear),
+        hrService.getSettings('incentives')
+      ]);
+      if (dashRes.status === 'success') setDashboardData(dashRes.data);
+      if (incRes.status === 'success') setIncentiveTiers(incRes.data);
+    } catch (error) {
+      toast({ title: "เกิดข้อผิดพลาด", description: "ไม่สามารถดึงข้อมูลแดชบอร์ดได้", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const currentMonthSales = data.sales;
-  const readyMadeCommTotal = data.readyMade;
-  const madeToOrderCommTotal = data.madeToOrder;
+  useEffect(() => {
+    fetchDashboard();
+  }, [selectedMonth, selectedYear]);
+
+  const currentMonthSales = dashboardData.sales;
+  const readyMadeCommTotal = dashboardData.readyMade;
+  const madeToOrderCommTotal = dashboardData.madeToOrder;
   const totalCommission = readyMadeCommTotal + madeToOrderCommTotal;
 
-  const incentiveResult = useMemo(() => calculateAdminIncentive(defaultIncentiveTiers, currentMonthSales), [currentMonthSales]);
+  const incentiveResult = useMemo(() => calculateAdminIncentive(incentiveTiers, currentMonthSales), [incentiveTiers, currentMonthSales]);
 
   // Build 6-month trend ending at selected month
   const monthlyTrendData = useMemo(() => {
@@ -119,7 +96,7 @@ export default function HRDashboard() {
       let y = year;
       while (m <= 0) { m += 12; y -= 1; }
       const key = `${y}-${m.toString().padStart(2, "0")}`;
-      const d = monthlyTrendBase[key];
+      const d = dashboardData.trend[key];
       result.push({
         month: thaiMonthShort[m],
         readyMade: d?.readyMade ?? 0,
@@ -127,7 +104,7 @@ export default function HRDashboard() {
       });
     }
     return result;
-  }, [selectedMonth, selectedYear]);
+  }, [selectedMonth, selectedYear, dashboardData.trend]);
 
   const pieData = [
     { name: "สำเร็จรูป", value: readyMadeCommTotal, color: "hsl(var(--chart-1))" },
@@ -136,15 +113,16 @@ export default function HRDashboard() {
 
   const progressPercent = useMemo(() => {
     if (incentiveResult.nextTierSales === null) return 100;
-    const currentTier = defaultIncentiveTiers.find(t => currentMonthSales >= t.minSales && (t.maxSales === null || currentMonthSales <= t.maxSales));
+    const currentTier = incentiveTiers.find(t => currentMonthSales >= t.minSales && (t.maxSales === null || currentMonthSales <= t.maxSales));
     const base = currentTier?.minSales ?? 0;
     const target = incentiveResult.nextTierSales;
     if (target <= base) return 100;
     return Math.min(100, Math.round(((currentMonthSales - base) / (target - base)) * 100));
-  }, [incentiveResult, currentMonthSales]);
+  }, [incentiveResult, currentMonthSales, incentiveTiers]);
 
   const handleRefresh = () => {
-    toast({ title: "รีเฟรชข้อมูล", description: `โหลดข้อมูลเดือน ${months.find(m => m.value === selectedMonth)?.label} ${years.find(y => y.value === selectedYear)?.label} แล้ว` });
+    fetchDashboard();
+    toast({ title: "รีเฟรชข้อมูล", description: "อัปเดตข้อมูลล่าสุดเรียบร้อยแล้ว" });
   };
 
   const handleExportExcel = () => {
@@ -175,7 +153,7 @@ export default function HRDashboard() {
     // Sheet 2: Top 5
     const top5Data = [
       ["ลำดับ", "ชื่อพนักงาน", "สำเร็จรูป (฿)", "สั่งผลิต (฿)", "รวม (฿)"],
-      ...data.top5.map(e => [e.rank, e.name, e.readyMade, e.madeToOrder, e.total]),
+      ...dashboardData.top5.map(e => [e.rank, e.name, e.readyMade, e.madeToOrder, e.total]),
     ];
     const wsTop5 = XLSX.utils.aoa_to_sheet(top5Data);
     wsTop5["!cols"] = [{ wch: 8 }, { wch: 25 }, { wch: 15 }, { wch: 15 }, { wch: 15 }];
@@ -206,7 +184,16 @@ export default function HRDashboard() {
     toast({ title: "ส่งออกสำเร็จ", description: `ดาวน์โหลดไฟล์ Excel สรุปเดือน ${periodLabel} แล้ว` });
   };
 
-  const hasData = data.sales > 0;
+  const hasData = dashboardData.sales > 0 || dashboardData.top5.length > 0;
+
+  if (loading) {
+    return (
+      <div className="flex h-[400px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="ml-2">กำลังโหลดข้อมูล...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -407,7 +394,7 @@ export default function HRDashboard() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {data.top5.map(emp => (
+                  {dashboardData.top5.map(emp => (
                     <TableRow key={emp.rank}>
                       <TableCell>
                         <Badge variant={emp.rank <= 3 ? "default" : "secondary"}>{emp.rank}</Badge>

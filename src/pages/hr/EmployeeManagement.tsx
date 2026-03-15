@@ -21,7 +21,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Search, Plus, Edit, Users, Briefcase, ShieldCheck, UserMinus, X, UserX, History } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { defaultEmployees, defaultPositions, getSaleEmployees, getAdminEmployees, getActiveEmployees, getResignedEmployees, type Employee, type EmployeeRole, type EmployeeStatus } from "@/lib/employeeData";
-import { supabase } from "@/integrations/supabase/client";
+import { hrService } from "@/services/hrService";
+import { Loader2 } from "lucide-react";
 
 const ROLE_CONFIG: Record<EmployeeRole, { label: string; desc: string; color: string }> = {
   Sale: { label: "Sales (Commission)", desc: "ชื่อจะปรากฏในหน้าบันทึกค่าคอมฯ — คำนวณตามสูตรสินค้า", color: "bg-blue-500/15 text-blue-700 border-blue-200" },
@@ -31,8 +32,9 @@ const ROLE_CONFIG: Record<EmployeeRole, { label: string; desc: string; color: st
 
 export default function EmployeeManagement() {
   const { toast } = useToast();
-  const [employees, setEmployees] = useState<Employee[]>(defaultEmployees);
-  const [positions, setPositions] = useState<string[]>(defaultPositions);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [positions, setPositions] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterRole, setFilterRole] = useState<string>("all");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -48,35 +50,32 @@ export default function EmployeeManagement() {
     nickname: "",
     position: "",
     role: "Sale" as EmployeeRole,
+    status: "ACTIVE" as EmployeeStatus
   });
 
-  // Load from Supabase
+  // Load from API
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [empRes, posRes] = await Promise.all([
+        hrService.getEmployees(),
+        hrService.getPositions()
+      ]);
+      if (empRes.status === 'success') setEmployees(empRes.data);
+      if (posRes.status === 'success') setPositions(posRes.data);
+    } catch (error) {
+      toast({ title: "เกิดข้อผิดพลาด", description: "ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const loadEmployees = async () => {
-      const { data, error } = await supabase.from("employees").select("*").order("created_at");
-      if (data && data.length > 0) {
-        setEmployees(data.map(d => ({
-          id: d.id,
-          fullName: d.full_name,
-          nickname: d.nickname,
-          position: d.position,
-          role: d.role as EmployeeRole,
-          status: d.status as EmployeeStatus,
-        })));
-      }
-    };
-    const loadPositions = async () => {
-      const { data } = await supabase.from("employee_positions").select("name").order("name");
-      if (data && data.length > 0) {
-        setPositions(data.map(d => d.name));
-      }
-    };
-    loadEmployees();
-    loadPositions();
+    loadData();
   }, []);
 
   const resetForm = () => {
-    setForm({ id: "", fullName: "", nickname: "", position: "", role: "Sale" });
+    setForm({ id: "", fullName: "", nickname: "", position: "", role: "Sale", status: "ACTIVE" });
     setEditingEmployee(null);
     setNewPositionInput("");
   };
@@ -102,7 +101,7 @@ export default function EmployeeManagement() {
 
   const handleOpenEdit = (emp: Employee) => {
     setEditingEmployee(emp);
-    setForm({ id: emp.id, fullName: emp.fullName, nickname: emp.nickname, position: emp.position, role: emp.role });
+    setForm({ id: emp.id, fullName: emp.fullName, nickname: emp.nickname || "", position: emp.position, role: emp.role, status: emp.status });
     setIsDialogOpen(true);
   };
 
@@ -111,55 +110,36 @@ export default function EmployeeManagement() {
       toast({ title: "กรุณากรอกรหัส ชื่อ และตำแหน่ง", variant: "destructive" });
       return;
     }
-    if (!editingEmployee && employees.some(e => e.id === form.id)) {
-      toast({ title: "รหัสพนักงานซ้ำ", description: `รหัส "${form.id}" มีอยู่แล้ว`, variant: "destructive" });
-      return;
-    }
-    if (editingEmployee) {
-      const { error } = await supabase.from("employees").update({
-        full_name: form.fullName,
-        nickname: form.nickname,
-        position: form.position,
-        role: form.role,
-      }).eq("id", editingEmployee.id);
-      if (error) {
-        toast({ title: "เกิดข้อผิดพลาด", description: error.message, variant: "destructive" });
-        return;
+
+    try {
+      const res = await hrService.saveEmployee(form, !!editingEmployee);
+      if (res.status === 'success') {
+        toast({ title: editingEmployee ? "อัพเดทสำเร็จ" : "เพิ่มพนักงานสำเร็จ", description: `${form.fullName}` });
+        loadData();
+        setIsDialogOpen(false);
+        resetForm();
+      } else {
+        toast({ title: "เกิดข้อผิดพลาด", description: res.message, variant: "destructive" });
       }
-      setEmployees(employees.map(e => e.id === editingEmployee.id ? { ...e, fullName: form.fullName, nickname: form.nickname, position: form.position, role: form.role } : e));
-      toast({ title: "อัพเดทสำเร็จ", description: `แก้ไขข้อมูล ${form.fullName}` });
-    } else {
-      const { error } = await supabase.from("employees").insert({
-        id: form.id,
-        full_name: form.fullName,
-        nickname: form.nickname,
-        position: form.position,
-        role: form.role,
-        status: "ACTIVE",
-      });
-      if (error) {
-        toast({ title: "เกิดข้อผิดพลาด", description: error.message, variant: "destructive" });
-        return;
-      }
-      const newEmp: Employee = { ...form, status: "ACTIVE" };
-      setEmployees([...employees, newEmp]);
-      toast({ title: "เพิ่มพนักงานสำเร็จ", description: `${form.fullName} — ${ROLE_CONFIG[form.role].label}` });
+    } catch (error) {
+      toast({ title: "เกิดข้อผิดพลาด", description: "ไม่สามารถบันทึกข้อมูลได้", variant: "destructive" });
     }
-    setIsDialogOpen(false);
-    resetForm();
   };
 
   const handleResign = (id: string) => { setResignTargetId(id); setIsResignDialogOpen(true); };
 
   const confirmResign = async () => {
     if (resignTargetId) {
-      const { error } = await supabase.from("employees").update({ status: "RESIGNED" }).eq("id", resignTargetId);
-      if (error) {
-        toast({ title: "เกิดข้อผิดพลาด", description: error.message, variant: "destructive" });
-      } else {
-        setEmployees(employees.map(e => e.id === resignTargetId ? { ...e, status: "RESIGNED" as EmployeeStatus } : e));
-        const emp = employees.find(e => e.id === resignTargetId);
-        toast({ title: "แจ้งลาออกสำเร็จ", description: `${emp?.fullName} ถูกย้ายไปประวัติพนักงานเก่า` });
+      try {
+        const res = await hrService.resignEmployee(resignTargetId);
+        if (res.status === 'success') {
+          toast({ title: "แจ้งลาออกสำเร็จ", description: "พนักงานถูกย้ายไปประวัติพนักงานเก่าแล้ว" });
+          loadData();
+        } else {
+          toast({ title: "เกิดข้อผิดพลาด", description: res.message, variant: "destructive" });
+        }
+      } catch (error) {
+        toast({ title: "เกิดข้อผิดพลาด", description: "ไม่สามารถดำเนินการได้", variant: "destructive" });
       }
     }
     setIsResignDialogOpen(false);
@@ -173,15 +153,17 @@ export default function EmployeeManagement() {
       toast({ title: "ตำแหน่งนี้มีอยู่แล้ว", variant: "destructive" });
       return;
     }
-    const { error } = await supabase.from("employee_positions").insert({ name: val });
-    if (error) {
-      toast({ title: "เกิดข้อผิดพลาด", description: error.message, variant: "destructive" });
-      return;
+    try {
+      const res = await hrService.addPosition(val);
+      if (res.status === 'success') {
+        setPositions([...positions, val]);
+        setForm({ ...form, position: val });
+        setNewPositionInput("");
+        toast({ title: "เพิ่มตำแหน่งใหม่สำเร็จ", description: val });
+      }
+    } catch (error) {
+      toast({ title: "เพิ่มตำแหน่งล้มเหลว", variant: "destructive" });
     }
-    setPositions([...positions, val]);
-    setForm({ ...form, position: val });
-    setNewPositionInput("");
-    toast({ title: "เพิ่มตำแหน่งใหม่สำเร็จ", description: val });
   };
 
   const handleDeletePosition = async (pos: string) => {
@@ -190,17 +172,28 @@ export default function EmployeeManagement() {
       toast({ title: "ไม่สามารถลบได้", description: `ตำแหน่ง "${pos}" ยังมีพนักงานใช้งานอยู่`, variant: "destructive" });
       return;
     }
-    const { error } = await supabase.from("employee_positions").delete().eq("name", pos);
-    if (error) {
-      toast({ title: "เกิดข้อผิดพลาด", description: error.message, variant: "destructive" });
-      return;
+    try {
+      const res = await hrService.deletePosition(pos);
+      if (res.status === 'success') {
+        setPositions(positions.filter(p => p !== pos));
+        if (form.position === pos) setForm({ ...form, position: "" });
+        toast({ title: "ลบตำแหน่งสำเร็จ", description: pos });
+      }
+    } catch (error) {
+      toast({ title: "ลบตำแหน่งล้มเหลว", variant: "destructive" });
     }
-    setPositions(positions.filter(p => p !== pos));
-    if (form.position === pos) setForm({ ...form, position: "" });
-    toast({ title: "ลบตำแหน่งสำเร็จ", description: pos });
   };
 
   const resignTargetEmployee = resignTargetId ? employees.find(e => e.id === resignTargetId) : null;
+
+  if (loading && employees.length === 0) {
+    return (
+      <div className="flex h-[400px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="ml-2">กำลังโหลดข้อมูลพนักงาน...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

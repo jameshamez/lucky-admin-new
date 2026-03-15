@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { adminService } from "@/services/adminService";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -9,50 +10,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from "recharts";
-import { CalendarIcon, RefreshCw, Download, Filter, TrendingUp, TrendingDown, DollarSign, Users, Package, Activity } from "lucide-react";
+import { CalendarIcon, RefreshCw, Download, Filter, TrendingUp, TrendingDown, DollarSign, Users, Package, Activity, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { th } from "date-fns/locale";
 import { toast } from "sonner";
-
-// Sample data
-const financialData = [
-  { month: "ม.ค.", revenue: 2400000, costs: 1800000, profit: 600000 },
-  { month: "ก.พ.", revenue: 2100000, costs: 1600000, profit: 500000 },
-  { month: "มี.ค.", revenue: 2800000, costs: 2000000, profit: 800000 },
-  { month: "เม.ย.", revenue: 2200000, costs: 1700000, profit: 500000 },
-  { month: "พ.ค.", revenue: 3200000, costs: 2300000, profit: 900000 },
-  { month: "มิ.ย.", revenue: 2900000, costs: 2100000, profit: 800000 }
-];
-
-const operationalData = [
-  { department: "ฝ่ายขาย", orders: 85, avgTime: 3.2, efficiency: 92 },
-  { department: "ฝ่ายกราฟิก", orders: 78, avgTime: 2.8, efficiency: 88 },
-  { department: "ฝ่ายผลิต", orders: 92, avgTime: 4.1, efficiency: 85 },
-  { department: "ฝ่ายจัดซื้อ", orders: 67, avgTime: 2.5, efficiency: 94 }
-];
-
-const salesData = [
-  { product: "ป้ายไวนิล", sales: 450000, quantity: 89, growth: 12 },
-  { product: "นามบัตร", sales: 280000, quantity: 156, growth: -5 },
-  { product: "สติ๊กเกอร์", sales: 320000, quantity: 234, growth: 18 },
-  { product: "โบรชัวร์", sales: 180000, quantity: 45, growth: 8 },
-  { product: "ปฏิทิน", sales: 220000, quantity: 67, growth: 15 }
-];
-
-const customerData = [
-  { segment: "ลูกค้าใหม่", count: 45, revenue: 890000 },
-  { segment: "ลูกค้าประจำ", count: 123, revenue: 2400000 },
-  { segment: "ลูกค้า VIP", count: 18, revenue: 1200000 }
-];
-
-const kpiData = [
-  { name: "ยอดขายรวม", value: "4.2M", change: 12, trend: "up" },
-  { name: "ต้นทุนรวม", value: "3.1M", change: 8, trend: "up" },
-  { name: "กำไรสุทธิ", value: "1.1M", change: 18, trend: "up" },
-  { name: "จำนวนออเดอร์", value: "342", change: 15, trend: "up" },
-  { name: "ลูกค้าใหม่", value: "45", change: 22, trend: "up" },
-  { name: "เวลาเฉลี่ย", value: "3.2 วัน", change: -5, trend: "down" }
-];
 
 const COLORS = ['#FF5A5F', '#FF7F8A', '#FFA5A8', '#FFB3B5', '#FFC2C3'];
 
@@ -61,14 +22,56 @@ export default function ComprehensiveReports() {
   const [date, setDate] = useState<Date>(new Date());
   const [selectedDepartment, setSelectedDepartment] = useState("all");
   const [activeTab, setActiveTab] = useState("financial");
+  const [loading, setLoading] = useState(true);
+  const [reportData, setReportData] = useState<any>(null);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const dateStr = format(date, "yyyy-MM-dd");
+      const res = await adminService.getComprehensiveReports(selectedPeriod, selectedDepartment, dateStr);
+      if (res.status === "success") {
+        setReportData(res.data);
+      } else {
+        toast.error("ไม่สามารถโหลดข้อมูลรายงานได้: " + res.message);
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, [selectedPeriod, selectedDepartment, date]);
 
   const handleExport = (format: string) => {
     toast.success(`ส่งออกรายงานเป็น ${format.toUpperCase()} สำเร็จ`);
   };
 
   const handleRefresh = () => {
+    loadData();
     toast.success("อัปเดตข้อมูลสำเร็จ");
   };
+
+  if (loading && !reportData) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
+        <Loader2 className="w-10 h-10 animate-spin text-primary" />
+        <p className="text-muted-foreground animate-pulse">กำลังจัดทำรายงานผลรวมทั้งหมด...</p>
+      </div>
+    );
+  }
+
+  const {
+    financialData = [],
+    operationalData = [],
+    salesData = [],
+    customerData = [],
+    kpiData = []
+  } = reportData || {};
 
   return (
     <div className="space-y-6">
@@ -156,9 +159,8 @@ export default function ComprehensiveReports() {
                   <p className="text-sm font-medium text-muted-foreground">{kpi.name}</p>
                   <p className="text-2xl font-bold">{kpi.value}</p>
                 </div>
-                <div className={`flex items-center gap-1 ${
-                  kpi.trend === 'up' ? 'text-green-600' : 'text-red-600'
-                }`}>
+                <div className={`flex items-center gap-1 ${kpi.trend === 'up' ? 'text-green-600' : 'text-red-600'
+                  }`}>
                   {kpi.trend === 'up' ? (
                     <TrendingUp className="w-4 h-4" />
                   ) : (
@@ -194,9 +196,9 @@ export default function ComprehensiveReports() {
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="month" />
                     <YAxis />
-                    <Tooltip 
+                    <Tooltip
                       formatter={(value: number) => [
-                        new Intl.NumberFormat('th-TH').format(value), 
+                        new Intl.NumberFormat('th-TH').format(value),
                         value === financialData[0]?.revenue ? 'รายรับ' : value === financialData[0]?.costs ? 'รายจ่าย' : 'กำไร'
                       ]}
                     />
@@ -219,10 +221,10 @@ export default function ComprehensiveReports() {
                     <XAxis dataKey="month" />
                     <YAxis />
                     <Tooltip formatter={(value: number) => [new Intl.NumberFormat('th-TH').format(value), 'กำไร']} />
-                    <Line 
-                      type="monotone" 
-                      dataKey="profit" 
-                      stroke="#FF5A5F" 
+                    <Line
+                      type="monotone"
+                      dataKey="profit"
+                      stroke="#FF5A5F"
                       strokeWidth={2}
                       dot={{ fill: '#FF5A5F', strokeWidth: 2, r: 4 }}
                     />
@@ -351,13 +353,13 @@ export default function ComprehensiveReports() {
                         </div>
                       </TableCell>
                       <TableCell className="text-right">
-                        <Badge 
+                        <Badge
                           variant={item.efficiency >= 90 ? "default" : item.efficiency >= 80 ? "secondary" : "destructive"}
                           className={
-                            item.efficiency >= 90 
-                              ? "bg-green-100 text-green-800" 
-                              : item.efficiency >= 80 
-                                ? "bg-yellow-100 text-yellow-800" 
+                            item.efficiency >= 90
+                              ? "bg-green-100 text-green-800"
+                              : item.efficiency >= 80
+                                ? "bg-yellow-100 text-yellow-800"
                                 : "bg-red-100 text-red-800"
                           }
                         >
@@ -472,9 +474,9 @@ export default function ComprehensiveReports() {
                         <span className="text-muted-foreground">รายรับ:</span>
                         <span className="font-medium">{new Intl.NumberFormat('th-TH').format(segment.revenue)} บาท</span>
                       </div>
-                      <Progress 
-                        value={(segment.revenue / Math.max(...customerData.map(c => c.revenue))) * 100} 
-                        className="h-2" 
+                      <Progress
+                        value={(segment.revenue / Math.max(...customerData.map(c => c.revenue))) * 100}
+                        className="h-2"
                       />
                     </div>
                   ))}

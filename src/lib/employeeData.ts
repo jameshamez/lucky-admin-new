@@ -8,7 +8,9 @@ export type Employee = {
   id: string;
   fullName: string;
   nickname: string;
+  department?: string;
   position: string;
+  isSales?: boolean | number;
   role: EmployeeRole;
   status: EmployeeStatus;
 };
@@ -42,7 +44,10 @@ export const defaultEmployees: Employee[] = [
 
 // Helper functions for filtering
 export function getSaleEmployees(employees: Employee[]): Employee[] {
-  return employees.filter(e => e.role === "Sale" && e.status === "ACTIVE");
+  return employees.filter(e =>
+    (e.department === "ฝ่ายขาย" || e.isSales === 1 || e.isSales === true) &&
+    e.status === "ACTIVE"
+  );
 }
 
 export function getAdminEmployees(employees: Employee[]): Employee[] {

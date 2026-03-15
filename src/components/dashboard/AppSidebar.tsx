@@ -380,7 +380,7 @@ export function AppSidebar() {
           <>
             {/* Regular User Mode */}
             {/* Main Menu Section */}
-            {/* <SidebarGroup>
+            <SidebarGroup>
               <SidebarGroupLabel>หลัก</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
@@ -389,7 +389,7 @@ export function AppSidebar() {
                   ))}
                 </SidebarMenu>
               </SidebarGroupContent>
-            </SidebarGroup> */}
+            </SidebarGroup>
 
             {/* Department Section */}
             {currentDepartmentItems.length > 0 && (

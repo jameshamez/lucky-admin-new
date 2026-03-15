@@ -12,6 +12,8 @@ import { type Employee } from "@/lib/employeeData";
 type Props = {
   transactions: CommissionTransaction[];
   employees: Employee[];
+  salesTargets: SalesTarget[];
+  kpiRecords: any[];
   selectedMonth: string;
 };
 
@@ -27,7 +29,7 @@ type EmployeeKPI = {
   orders: CommissionTransaction[];
 };
 
-export default function KPIPerformanceTab({ transactions, employees, selectedMonth }: Props) {
+export default function KPIPerformanceTab({ transactions, employees, salesTargets, kpiRecords, selectedMonth }: Props) {
   const [expandedEmployee, setExpandedEmployee] = useState<string | null>(null);
 
   const monthTxns = useMemo(() =>
@@ -38,7 +40,7 @@ export default function KPIPerformanceTab({ transactions, employees, selectedMon
   const totalMonthSales = monthTxns.reduce((s, t) => s + t.totalSales, 0);
 
   const kpiData: EmployeeKPI[] = useMemo(() => {
-    const targets = mockSalesTargets.filter(t => t.month === selectedMonth);
+    const targets = salesTargets.filter(t => t.month === selectedMonth);
 
     return targets.map(tgt => {
       const emp = employees.find(e => e.id === tgt.employeeId);

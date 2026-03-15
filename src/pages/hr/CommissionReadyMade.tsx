@@ -18,17 +18,16 @@ import {
   Accordion, AccordionContent, AccordionItem, AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Label } from "@/components/ui/label";
-import { Calculator, FileSpreadsheet, Search, Plus, Clock, CheckCircle2, History, CalendarDays } from "lucide-react";
+import { Calculator, FileSpreadsheet, Search, Plus, Clock, CheckCircle2, History, CalendarDays, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import * as XLSX from "xlsx";
 import {
   defaultReadyMadeConfigs,
   getReadyMadeCategories,
   calculateReadyMadeCommission,
-  type ReadyMadeConfig,
 } from "@/lib/commissionConfig";
-import { defaultEmployees, getSaleEmployees, type Employee, type EmployeeRole, type EmployeeStatus } from "@/lib/employeeData";
-import { supabase } from "@/integrations/supabase/client";
+import { getSaleEmployees, type Employee } from "@/lib/employeeData";
+import { hrService } from "@/services/hrService";
 
 type CommissionStatus = "PENDING" | "COMPLETED";
 
@@ -53,19 +52,10 @@ type ReadyMadeOrder = {
 const now = new Date();
 const currentPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
-const mockOrders: ReadyMadeOrder[] = [
-  { id: "1", deliveryDate: "2025-01-15", poNumber: "PO-RM-2025-001", jobName: "ถ้วยรางวัลพลาสติกไทย 100 ชิ้น", productCategory: "ถ้วยรางวัล พลาสติก ไทย", saleName: "คุณสมชาย ใจดี", quantity: 100, totalSalesAmount: 15000, rateDisplay: "3 บาท/ชิ้น", baseAmount: "100 ชิ้น", commissionAmount: 300, calcDescription: "3 บาท × 100 ชิ้น = ฿300", commissionStatus: "COMPLETED", processedAt: "2025-01-20T10:00:00", commissionPeriod: "2025-01" },
-  { id: "2", deliveryDate: "2025-01-18", poNumber: "PO-RM-2025-002", jobName: "ถ้วยรางวัลพลาสติกจีน 50 ชิ้น", productCategory: "ถ้วยรางวัล พลาสติก จีน", saleName: "คุณสมหญิง รวยเงิน", quantity: 50, totalSalesAmount: 25000, rateDisplay: "5 บาท/ชิ้น", baseAmount: "50 ชิ้น", commissionAmount: 250, calcDescription: "5 บาท × 50 ชิ้น = ฿250", commissionStatus: "COMPLETED", processedAt: "2025-01-22T14:30:00", commissionPeriod: "2025-01" },
-  { id: "7", deliveryDate: "2025-01-28", poNumber: "PO-RM-2025-006", jobName: "อะไหล่ฐานถ้วยรางวัล (เก่า)", productCategory: "อะไหล่ชิ้นส่วนถ้วยรางวัล", saleName: "คุณสมชาย ใจดี", quantity: 1, totalSalesAmount: 38000, rateDisplay: "5%", baseAmount: "฿38,000", commissionAmount: 1900, calcDescription: "5% ของยอดขาย ฿38,000 = ฿1,900", commissionStatus: "COMPLETED", processedAt: "2025-01-30T09:00:00", commissionPeriod: "2025-01" },
-  { id: "3", deliveryDate: "2026-02-10", poNumber: "PO-RM-2026-008", jobName: "ถ้วยรางวัลโลหะ L/XL 20 ชิ้น", productCategory: "ถ้วยรางวัล โลหะ (L/XL)", saleName: "คุณวิชัย ขยัน", quantity: 20, totalSalesAmount: 30000, rateDisplay: "", baseAmount: "", commissionAmount: 0, calcDescription: "", commissionStatus: "PENDING", processedAt: null, commissionPeriod: null },
-  { id: "4", deliveryDate: "2026-02-12", poNumber: "PO-RM-2026-009", jobName: "โล่รางวัลมาตรฐาน 80 ชิ้น", productCategory: "โล่รางวัล (มาตรฐาน)", saleName: "คุณสุดา ดี", quantity: 80, totalSalesAmount: 12000, rateDisplay: "", baseAmount: "", commissionAmount: 0, calcDescription: "", commissionStatus: "PENDING", processedAt: null, commissionPeriod: null },
-  { id: "5", deliveryDate: "2026-02-14", poNumber: "PO-RM-2026-010", jobName: "อะไหล่ฐานถ้วยรางวัล", productCategory: "อะไหล่ชิ้นส่วนถ้วยรางวัล", saleName: "คุณสมชาย ใจดี", quantity: 1, totalSalesAmount: 22000, rateDisplay: "", baseAmount: "", commissionAmount: 0, calcDescription: "", commissionStatus: "PENDING", processedAt: null, commissionPeriod: null },
-  { id: "6", deliveryDate: "2026-02-15", poNumber: "PO-RM-2026-011", jobName: "ระบบวิ่ง 300 คน", productCategory: "ระบบวิ่ง", saleName: "คุณนิภา สวย", quantity: 300, totalSalesAmount: 50000, rateDisplay: "", baseAmount: "", commissionAmount: 0, calcDescription: "", commissionStatus: "PENDING", processedAt: null, commissionPeriod: null },
-];
-
-const thaiMonthNames = ["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน","กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"];
+const thaiMonthNames = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
 
 function formatPeriodLabel(period: string): string {
+  if (!period || period === "unknown") return "ไม่ระบุงวด";
   const [y, m] = period.split("-");
   const monthIdx = parseInt(m) - 1;
   const buddhistYear = parseInt(y) + 543;
@@ -92,30 +82,69 @@ export default function CommissionReadyMade() {
   const [selectedYear, setSelectedYear] = useState(currentDate.getFullYear().toString());
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
-  const [orders, setOrders] = useState<ReadyMadeOrder[]>(mockOrders);
+  const [orders, setOrders] = useState<ReadyMadeOrder[]>([]);
+  const [loading, setLoading] = useState(true);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("PENDING");
-  const [employees, setEmployees] = useState<Employee[]>(defaultEmployees);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [dbCategories, setDbCategories] = useState<string[]>([]);
+
+  const [configs, setConfigs] = useState<ReadyMadeConfig[]>([]);
+  const categories = useMemo(() => getReadyMadeCategories(configs), [configs]);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [empRes, orderRes, catRes, configRes] = await Promise.all([
+        hrService.getEmployees(),
+        hrService.getReadyMadeCommissions(activeTab === "PENDING" ? "PENDING" : "COMPLETED", selectedMonth, selectedYear),
+        hrService.getProductCategories(),
+        hrService.getSettings('ready_made')
+      ]);
+      if (empRes.status === 'success') setEmployees(empRes.data);
+      if (orderRes.status === 'success') setOrders(orderRes.data);
+      if (catRes.status === 'success') setDbCategories(catRes.data);
+      if (configRes.status === 'success') setConfigs(configRes.data);
+    } catch (error) {
+      toast({ title: "เกิดข้อผิดพลาด", description: "ไม่สามารถโหลดข้อมูลได้", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const load = async () => {
-      const { data } = await supabase.from("employees").select("*").eq("status", "ACTIVE").order("full_name");
-      if (data && data.length > 0) {
-        setEmployees(data.map(d => ({ id: d.id, fullName: d.full_name, nickname: d.nickname, position: d.position, role: d.role as EmployeeRole, status: d.status as EmployeeStatus })));
-      }
-    };
-    load();
-  }, []);
-
-  const configs = defaultReadyMadeConfigs;
-  const categories = useMemo(() => getReadyMadeCategories(configs), [configs]);
+    loadData();
+  }, [activeTab, selectedMonth, selectedYear]);
 
   const [addForm, setAddForm] = useState({
     poNumber: "", jobName: "", deliveryDate: new Date().toISOString().split("T")[0],
     productCategory: "", saleName: "", quantity: 0, totalSalesAmount: 0,
   });
 
-  const selectedConfig = configs.find(c => c.category === addForm.productCategory);
+  const selectedConfig = useMemo(() => {
+    if (!addForm.productCategory) return null;
+    const cat = addForm.productCategory;
+    let found = configs.find(c => c.category === cat);
+    if (!found) {
+      if (cat.includes("ถ้วยรางวัล")) {
+        if (cat.includes("พลาสติก") && cat.includes("ไทย")) found = configs.find(c => c.id === "a1");
+        else if (cat.includes("พลาสติก") && cat.includes("จีน")) found = configs.find(c => c.id === "a2");
+        else if (cat.includes("พิวเตอร์") || cat.includes("เบญจรงค์")) found = configs.find(c => c.id === "a3");
+        else if (cat.includes("โลหะ") && (cat.includes("S") || cat.includes("M"))) found = configs.find(c => c.id === "a4");
+        else if (cat.includes("โลหะ") && (cat.includes("L") || cat.includes("XL"))) found = configs.find(c => c.id === "a5");
+      } else if (cat.includes("โล่")) {
+        found = configs.find(c => c.id === "a6");
+      } else if (cat.includes("เหรียญ")) {
+        found = configs.find(c => c.id === "a7");
+      } else if (cat.includes("วิ่ง")) {
+        found = configs.find(c => c.id === "a8");
+      } else if (cat.includes("อะไหล่")) {
+        found = configs.find(c => c.id === "a9");
+      }
+    }
+    return found;
+  }, [configs, addForm.productCategory]);
+
   const needsSalesAmount = selectedConfig?.calcMethod === "percentSales";
 
   const computedCommission = useMemo(() => {
@@ -123,80 +152,140 @@ export default function CommissionReadyMade() {
     return calculateReadyMadeCommission(selectedConfig, addForm.quantity, addForm.totalSalesAmount);
   }, [selectedConfig, addForm.quantity, addForm.totalSalesAmount]);
 
-  const monthYearFiltered = orders.filter(order => {
-    const dateStr = order.commissionPeriod || order.deliveryDate;
-    if (!dateStr) return true;
-    const [y, m] = dateStr.split("-");
-    if (selectedYear !== "all" && y !== selectedYear) return false;
-    if (selectedMonth !== "all" && String(parseInt(m)) !== selectedMonth) return false;
-    return true;
-  });
-
-  const searchFiltered = monthYearFiltered.filter(order => {
+  const searchFiltered = useMemo(() => {
     const q = searchQuery.toLowerCase();
-    return !q || order.poNumber.toLowerCase().includes(q) || order.jobName.toLowerCase().includes(q) || order.saleName.toLowerCase().includes(q);
-  });
+    return orders.filter(order => !q || order.poNumber.toLowerCase().includes(q) || order.jobName.toLowerCase().includes(q) || order.saleName.toLowerCase().includes(q));
+  }, [orders, searchQuery]);
 
-  const pendingOrders = searchFiltered.filter(o => o.commissionStatus === "PENDING");
-  const completedOrders = searchFiltered.filter(o => o.commissionStatus === "COMPLETED");
+  const pendingOrders = activeTab === "PENDING" ? searchFiltered : [];
+  const completedOrders = activeTab === "HISTORY" ? searchFiltered : [];
 
-  // Group completed orders by commissionPeriod for history tab
   const groupedByMonth = useMemo(() => {
+    if (activeTab !== "HISTORY") return [];
     const groups: Record<string, ReadyMadeOrder[]> = {};
     completedOrders.forEach(o => {
       const period = o.commissionPeriod || "unknown";
       if (!groups[period]) groups[period] = [];
       groups[period].push(o);
     });
-    // Sort periods descending (newest first)
     return Object.entries(groups).sort(([a], [b]) => b.localeCompare(a));
-  }, [completedOrders]);
+  }, [completedOrders, activeTab]);
 
-  const totalCommissionCompleted = completedOrders.reduce((sum, o) => sum + o.commissionAmount, 0);
-  const totalRevenueCompleted = completedOrders.reduce((sum, o) => sum + o.totalSalesAmount, 0);
+  const totalCommissionCompleted = useMemo(() =>
+    completedOrders.reduce((sum, o) => sum + (o.commissionAmount || 0), 0)
+    , [completedOrders]);
+
+  const totalRevenueCompleted = useMemo(() =>
+    completedOrders.reduce((sum, o) => sum + (o.totalSalesAmount || 0), 0)
+    , [completedOrders]);
 
   const handleSelectAll = (checked: boolean) => setSelectedOrders(checked ? pendingOrders.map(o => o.id) : []);
   const handleSelectOrder = (id: string, checked: boolean) => setSelectedOrders(checked ? [...selectedOrders, id] : selectedOrders.filter(x => x !== id));
 
-  const recalculateAndComplete = (order: ReadyMadeOrder): ReadyMadeOrder => {
-    const config = configs.find(c => c.category === order.productCategory && c.active);
-    const processedAt = new Date().toISOString();
-    if (!config) return { ...order, commissionAmount: 0, calcDescription: "ไม่พบ config", commissionStatus: "COMPLETED", processedAt, commissionPeriod: currentPeriod };
-    const result = calculateReadyMadeCommission(config, order.quantity, order.totalSalesAmount);
-    return { ...order, rateDisplay: result.rateDisplay, baseAmount: result.baseAmount, commissionAmount: result.amount, calcDescription: result.description, commissionStatus: "COMPLETED", processedAt, commissionPeriod: currentPeriod };
+  const getRecalculatedValues = (order: ReadyMadeOrder) => {
+    const cat = order.productCategory;
+    let config = configs.find(c => c.category === cat && c.active);
+    if (!config) {
+      if (cat.includes("ถ้วยรางวัล")) {
+        if (cat.includes("พลาสติก") && cat.includes("ไทย")) config = configs.find(c => c.id === "a1");
+        else if (cat.includes("พลาสติก") && cat.includes("จีน")) config = configs.find(c => c.id === "a2");
+        else if (cat.includes("พิวเตอร์") || cat.includes("เบญจรงค์")) config = configs.find(c => c.id === "a3");
+        else if (cat.includes("โลหะ") && (cat.includes("S") || cat.includes("M"))) config = configs.find(c => c.id === "a4");
+        else if (cat.includes("โลหะ") && (cat.includes("L") || cat.includes("XL"))) config = configs.find(c => c.id === "a5");
+      } else if (cat.includes("โล่")) {
+        config = configs.find(c => c.id === "a6");
+      } else if (cat.includes("เหรียญ")) {
+        config = configs.find(c => c.id === "a7");
+      } else if (cat.includes("วิ่ง")) {
+        config = configs.find(c => c.id === "a8");
+      } else if (cat.includes("อะไหล่")) {
+        config = configs.find(c => c.id === "a9");
+      }
+    }
+    if (!config) return { rateDisplay: "ไม่พบ config", baseAmount: "-", commissionAmount: 0, calcDescription: "ไม่พบเงื่อนไข Config A" };
+    const res = calculateReadyMadeCommission(config, order.quantity, order.totalSalesAmount);
+    return { rateDisplay: res.rateDisplay, baseAmount: res.baseAmount, commissionAmount: res.amount, calcDescription: res.description };
   };
 
-  const handleCalculateAll = () => {
-    const pendingIds = pendingOrders.map(o => o.id);
-    if (pendingIds.length === 0) { toast({ title: "ไม่มีรายการรอดำเนินการ", variant: "destructive" }); return; }
-    setOrders(orders.map(o => pendingIds.includes(o.id) ? recalculateAndComplete(o) : o));
-    setSelectedOrders([]);
-    toast({ title: "คำนวณและบันทึกเรียบร้อย", description: `${pendingIds.length} รายการย้ายไปประวัติ` });
+  const handleCalculateAll = async () => {
+    if (pendingOrders.length === 0) { toast({ title: "ไม่มีรายการรอดำเนินการ", variant: "destructive" }); return; }
+    const updates: Record<string, any> = {};
+    pendingOrders.forEach(o => { updates[o.id] = getRecalculatedValues(o); });
+    try {
+      const res = await hrService.completeReadyMadeCommissions(pendingOrders.map(o => o.id), currentPeriod, updates);
+      if (res.status === 'success') {
+        toast({ title: "คำนวณและบันทึกเรียบร้อย", description: `${res.updated} รายการย้ายไปประวัติ` });
+        loadData();
+      }
+    } catch (e) {
+      toast({ title: "เกิดข้อผิดพลาด", variant: "destructive" });
+    }
   };
 
-  const handleCalculateSelected = () => {
+  const handleCalculateSelected = async () => {
     if (selectedOrders.length === 0) { toast({ title: "กรุณาเลือกรายการ", variant: "destructive" }); return; }
-    setOrders(orders.map(o => selectedOrders.includes(o.id) ? recalculateAndComplete(o) : o));
-    const count = selectedOrders.length;
-    setSelectedOrders([]);
-    toast({ title: "คำนวณเรียบร้อย", description: `${count} รายการย้ายไปประวัติ` });
+    const updates: Record<string, any> = {};
+    selectedOrders.forEach(id => {
+      const o = orders.find(x => x.id === id);
+      if (o) updates[id] = getRecalculatedValues(o);
+    });
+    try {
+      const res = await hrService.completeReadyMadeCommissions(selectedOrders, currentPeriod, updates);
+      if (res.status === 'success') {
+        toast({ title: "คำนวณเรียบร้อย", description: `${res.updated} รายการย้ายไปประวัติ` });
+        setSelectedOrders([]);
+        loadData();
+      }
+    } catch (e) {
+      toast({ title: "เกิดข้อผิดพลาด", variant: "destructive" });
+    }
   };
 
-  const handleAddOrder = () => {
-    if (!addForm.productCategory || !addForm.poNumber) { toast({ title: "กรุณากรอกข้อมูลให้ครบ", variant: "destructive" }); return; }
-    if (!selectedConfig || !computedCommission) return;
-    const newOrder: ReadyMadeOrder = {
-      id: String(Date.now()), deliveryDate: addForm.deliveryDate, poNumber: addForm.poNumber,
-      jobName: addForm.jobName, productCategory: addForm.productCategory, saleName: addForm.saleName,
-      quantity: addForm.quantity, totalSalesAmount: addForm.totalSalesAmount,
-      rateDisplay: computedCommission.rateDisplay, baseAmount: computedCommission.baseAmount,
-      commissionAmount: computedCommission.amount, calcDescription: computedCommission.description,
-      commissionStatus: "PENDING", processedAt: null, commissionPeriod: null,
-    };
-    setOrders([...orders, newOrder]);
-    setIsAddDialogOpen(false);
-    setAddForm({ poNumber: "", jobName: "", deliveryDate: new Date().toISOString().split("T")[0], productCategory: "", saleName: "", quantity: 0, totalSalesAmount: 0 });
-    toast({ title: "เพิ่มรายการสำเร็จ (รอดำเนินการ)", description: `ค่าคอม Preview: ฿${computedCommission.amount.toLocaleString()}` });
+  const handleAddOrder = async () => {
+    if (!addForm.productCategory || !addForm.poNumber || !addForm.saleName) {
+      toast({ title: "กรุณากรอกข้อมูลให้ครบ", variant: "destructive" });
+      return;
+    }
+
+    if (!selectedConfig) {
+      toast({
+        title: "ไม่พบเงื่อนไขการคำนวณ",
+        description: `หมวดหมู่ "${addForm.productCategory}" ยังไม่ได้ตั้งค่าในระบบ Config A`,
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!computedCommission) {
+      toast({ title: "คำนวณไม่สำเร็จ", description: "กรุณาตรวจสอบจำนวนและยอดขาย", variant: "destructive" });
+      return;
+    }
+
+    try {
+      const res = await hrService.createReadyMadeCommission({
+        ...addForm,
+        rateDisplay: computedCommission.rateDisplay,
+        baseAmount: computedCommission.baseAmount,
+        commissionAmount: computedCommission.amount,
+        calcDescription: computedCommission.description,
+        commissionStatus: "PENDING"
+      });
+
+      if (res.status === 'success') {
+        setIsAddDialogOpen(false);
+        setAddForm({ poNumber: "", jobName: "", deliveryDate: new Date().toISOString().split("T")[0], productCategory: "", saleName: "", quantity: 0, totalSalesAmount: 0 });
+        toast({ title: "เพิ่มรายการสำเร็จ", description: `เพิ่มรายการรอดำเนินการเรียบร้อย` });
+        loadData();
+      } else {
+        toast({
+          title: "บันทึกไม่สำเร็จ",
+          description: res.message || "อาจมีเลข PO นี้อยู่แล้วในระบบ",
+          variant: "destructive"
+        });
+      }
+    } catch (e) {
+      toast({ title: "เกิดข้อผิดพลาด", description: "ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้", variant: "destructive" });
+    }
   };
 
   const handleExport = () => {
@@ -234,12 +323,14 @@ export default function CommissionReadyMade() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">ค่าคอมมิชชั่น (งานสำเร็จรูป)</h1>
-        <p className="text-muted-foreground">คำนวณค่าคอมจาก Config A — อัตราต่อชิ้น หรือ %ยอดขาย</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">ค่าคอมมิชชั่น (งานสำเร็จรูป)</h1>
+          <p className="text-muted-foreground">คำนวณค่าคอมจาก Config A — อัตราต่อชิ้น หรือ %ยอดขาย</p>
+        </div>
+        {loading && <Loader2 className="h-6 w-6 animate-spin text-primary" />}
       </div>
 
-      {/* Filters */}
       <Card>
         <CardContent className="pt-6">
           <div className="grid gap-4 md:grid-cols-4">
@@ -274,7 +365,6 @@ export default function CommissionReadyMade() {
         </CardContent>
       </Card>
 
-      {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v); setSelectedOrders([]); }}>
         <div className="flex items-center justify-between flex-wrap gap-3">
           <TabsList>
@@ -306,7 +396,6 @@ export default function CommissionReadyMade() {
           </div>
         </div>
 
-        {/* Tab 1: Pending */}
         <TabsContent value="PENDING">
           <Card>
             <CardHeader>
@@ -334,7 +423,9 @@ export default function CommissionReadyMade() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {pendingOrders.length === 0 ? (
+                    {loading ? (
+                      <TableRow><TableCell colSpan={9} className="text-center py-8"><Loader2 className="h-6 w-6 animate-spin mx-auto" /></TableCell></TableRow>
+                    ) : pendingOrders.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                           🎉 ไม่มีรายการรอดำเนินการ — งานเสร็จหมดแล้ว!
@@ -366,7 +457,6 @@ export default function CommissionReadyMade() {
           </Card>
         </TabsContent>
 
-        {/* Tab 2: History grouped by month */}
         <TabsContent value="HISTORY">
           <Card>
             <CardHeader>
@@ -376,13 +466,15 @@ export default function CommissionReadyMade() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {groupedByMonth.length === 0 ? (
+              {loading ? (
+                <div className="text-center py-8"><Loader2 className="h-6 w-6 animate-spin mx-auto" /></div>
+              ) : groupedByMonth.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">ยังไม่มีประวัติการคำนวณ</div>
               ) : (
                 <Accordion type="multiple" className="space-y-3">
                   {groupedByMonth.map(([period, items]) => {
-                    const periodTotal = items.reduce((s, o) => s + o.commissionAmount, 0);
-                    const periodSales = items.reduce((s, o) => s + o.totalSalesAmount, 0);
+                    const periodTotal = items.reduce((s, o) => s + (o.commissionAmount || 0), 0);
+                    const periodSales = items.reduce((s, o) => s + (o.totalSalesAmount || 0), 0);
                     return (
                       <AccordionItem key={period} value={period} className="border rounded-lg px-4">
                         <AccordionTrigger className="hover:no-underline">
@@ -432,7 +524,7 @@ export default function CommissionReadyMade() {
                                       {order.rateDisplay ? <Badge variant="outline" className="text-xs">{order.rateDisplay}</Badge> : "—"}
                                     </TableCell>
                                     <TableCell className="text-xs text-muted-foreground max-w-[200px]">{order.calcDescription || "—"}</TableCell>
-                                    <TableCell className="text-right font-bold text-primary">฿{order.commissionAmount.toLocaleString()}</TableCell>
+                                    <TableCell className="text-right font-bold text-primary">฿{(order.commissionAmount || 0).toLocaleString()}</TableCell>
                                     <TableCell>
                                       <Badge className="bg-emerald-500/15 text-emerald-700 border-emerald-200 hover:bg-emerald-500/20">
                                         <CheckCircle2 className="w-3 h-3 mr-1" />คำนวณแล้ว
@@ -454,7 +546,6 @@ export default function CommissionReadyMade() {
         </TabsContent>
       </Tabs>
 
-      {/* Summary */}
       <div className="grid gap-4 md:grid-cols-4">
         <Card><CardHeader><CardTitle className="text-base">รอดำเนินการ</CardTitle></CardHeader><CardContent><div className="text-3xl font-bold text-amber-600">{pendingOrders.length}</div><p className="text-sm text-muted-foreground">รายการ</p></CardContent></Card>
         <Card><CardHeader><CardTitle className="text-base">คำนวณแล้ว</CardTitle></CardHeader><CardContent><div className="text-3xl font-bold text-emerald-600">{completedOrders.length}</div><p className="text-sm text-muted-foreground">รายการ</p></CardContent></Card>
@@ -462,7 +553,6 @@ export default function CommissionReadyMade() {
         <Card><CardHeader><CardTitle className="text-base">รวมค่าคอมสำเร็จรูป</CardTitle></CardHeader><CardContent><div className="text-3xl font-bold text-primary">฿{totalCommissionCompleted.toLocaleString()}</div><p className="text-sm text-muted-foreground">เฉพาะที่คำนวณแล้ว</p></CardContent></Card>
       </div>
 
-      {/* Add Dialog */}
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
@@ -486,10 +576,15 @@ export default function CommissionReadyMade() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>ประเภทสินค้า (Config A) *</Label>
+                <Label>กลุ่มสินค้า (Config A) *</Label>
                 <Select value={addForm.productCategory} onValueChange={v => setAddForm({ ...addForm, productCategory: v })}>
-                  <SelectTrigger><SelectValue placeholder="เลือกประเภทสินค้า" /></SelectTrigger>
-                  <SelectContent>{categories.map(cat => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)}</SelectContent>
+                  <SelectTrigger><SelectValue placeholder="เลือกกลุ่มสินค้า" /></SelectTrigger>
+                  <SelectContent>
+                    {dbCategories.length > 0
+                      ? dbCategories.map(cat => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)
+                      : categories.map(cat => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)
+                    }
+                  </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">

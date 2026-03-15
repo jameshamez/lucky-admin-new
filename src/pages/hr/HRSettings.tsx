@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,12 +19,12 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Plus, Edit, Trash2, Calendar, Package, Layers, Award, Save, ChevronLeft, Eye, Users, TrendingUp } from "lucide-react";
+import { Plus, Edit, Trash2, Package, Layers, Award, Save, ChevronLeft, Eye, Users, TrendingUp, Loader2 } from "lucide-react";
 import {
-  defaultReadyMadeConfigs, defaultMadeToOrderConfigs, defaultIncentiveTiers,
   type ReadyMadeConfig, type MadeToOrderConfig, type IncentiveTier, type TierRange,
 } from "@/lib/commissionConfig";
 import { useToast } from "@/hooks/use-toast";
+import { hrService } from "@/services/hrService";
 
 type KPIRecord = {
   id: string; employeeId: string; employeeName: string; department: string; month: string; kpiScore: number; remark: string;
@@ -34,40 +34,12 @@ type KPIIntegration = {
   id: string; department: string; dataSourceType: string; sheetUrl: string; apiEndpoint: string; note: string; active: boolean;
 };
 
-const initialKPIRecords: KPIRecord[] = [
-  // ธ.ค. 2567
-  { id: "1", employeeId: "1", employeeName: "คุณสมชาย ใจดี", department: "Sale", month: "2024-12", kpiScore: 95, remark: "ผลงานดีเยี่ยม" },
-  { id: "2", employeeId: "2", employeeName: "คุณสมหญิง รวยเงิน", department: "Sale", month: "2024-12", kpiScore: 92, remark: "" },
-  { id: "3", employeeId: "3", employeeName: "คุณวิชัย ขยัน", department: "Sale", month: "2024-12", kpiScore: 88, remark: "ดี" },
-  { id: "4", employeeId: "4", employeeName: "คุณสมศักดิ์ ทำงาน", department: "Sale", month: "2024-12", kpiScore: 97, remark: "ยอดเยี่ยม" },
-  { id: "5", employeeId: "5", employeeName: "คุณสุดา ดี", department: "Admin", month: "2024-12", kpiScore: 90, remark: "" },
-  // พ.ย. 2567
-  { id: "6", employeeId: "1", employeeName: "คุณสมชาย ใจดี", department: "Sale", month: "2024-11", kpiScore: 91, remark: "" },
-  { id: "7", employeeId: "2", employeeName: "คุณสมหญิง รวยเงิน", department: "Sale", month: "2024-11", kpiScore: 89, remark: "" },
-  { id: "8", employeeId: "3", employeeName: "คุณวิชัย ขยัน", department: "Sale", month: "2024-11", kpiScore: 85, remark: "" },
-  { id: "9", employeeId: "5", employeeName: "คุณสุดา ดี", department: "Admin", month: "2024-11", kpiScore: 88, remark: "" },
-  // ต.ค. 2567
-  { id: "10", employeeId: "1", employeeName: "คุณสมชาย ใจดี", department: "Sale", month: "2024-10", kpiScore: 93, remark: "" },
-  { id: "11", employeeId: "2", employeeName: "คุณสมหญิง รวยเงิน", department: "Sale", month: "2024-10", kpiScore: 90, remark: "" },
-  { id: "12", employeeId: "4", employeeName: "คุณสมศักดิ์ ทำงาน", department: "Sale", month: "2024-10", kpiScore: 94, remark: "ดีมาก" },
-  // ม.ค. 2568
-  { id: "13", employeeId: "1", employeeName: "คุณสมชาย ใจดี", department: "Sale", month: "2025-01", kpiScore: 96, remark: "เริ่มปีใหม่ได้ดี" },
-  { id: "14", employeeId: "2", employeeName: "คุณสมหญิง รวยเงิน", department: "Sale", month: "2025-01", kpiScore: 93, remark: "" },
-  { id: "15", employeeId: "5", employeeName: "คุณสุดา ดี", department: "Admin", month: "2025-01", kpiScore: 91, remark: "" },
-];
-
-const initialKPIIntegrations: KPIIntegration[] = [
-  { id: "1", department: "Sale", dataSourceType: "GoogleSheet", sheetUrl: "https://docs.google.com/spreadsheets/d/...", apiEndpoint: "", note: "Sheet KPI ฝ่ายขาย", active: true },
-  { id: "2", department: "Admin", dataSourceType: "Manual", sheetUrl: "", apiEndpoint: "", note: "บันทึกด้วยตนเอง", active: true },
-  { id: "3", department: "Accounting", dataSourceType: "API", sheetUrl: "", apiEndpoint: "https://api.example.com/kpi", note: "ดึงจากระบบบัญชี", active: false },
-];
-
 export default function HRSettings() {
   const { toast } = useToast();
-  const [selectedMonth, setSelectedMonth] = useState("2024-12");
-  const [readyMadeConfigs, setReadyMadeConfigs] = useState<ReadyMadeConfig[]>(defaultReadyMadeConfigs);
-  const [madeToOrderConfigs, setMadeToOrderConfigs] = useState<MadeToOrderConfig[]>(defaultMadeToOrderConfigs);
-  const [incentiveTiers, setIncentiveTiers] = useState<IncentiveTier[]>(defaultIncentiveTiers);
+  const [loading, setLoading] = useState(true);
+  const [readyMadeConfigs, setReadyMadeConfigs] = useState<ReadyMadeConfig[]>([]);
+  const [madeToOrderConfigs, setMadeToOrderConfigs] = useState<MadeToOrderConfig[]>([]);
+  const [incentiveTiers, setIncentiveTiers] = useState<IncentiveTier[]>([]);
   const [commissionSubTab, setCommissionSubTab] = useState("ready-made");
 
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -84,14 +56,40 @@ export default function HRSettings() {
   const [editIncentive, setEditIncentive] = useState<IncentiveTier | null>(null);
 
   // KPI states
-  const [kpiRecords, setKpiRecords] = useState<KPIRecord[]>(initialKPIRecords);
-  const [kpiIntegrations, setKpiIntegrations] = useState<KPIIntegration[]>(initialKPIIntegrations);
+  const [kpiRecords, setKpiRecords] = useState<KPIRecord[]>([]);
+  const [kpiIntegrations, setKpiIntegrations] = useState<KPIIntegration[]>([]);
   const [editKPIOpen, setEditKPIOpen] = useState(false);
   const [editKPI, setEditKPI] = useState<KPIRecord | null>(null);
   const [editIntegrationOpen, setEditIntegrationOpen] = useState(false);
   const [editIntegration, setEditIntegration] = useState<KPIIntegration | null>(null);
   const [isAddMode, setIsAddMode] = useState(false);
   const [viewingMonth, setViewingMonth] = useState<string | null>(null);
+
+  const loadSettings = async () => {
+    setLoading(true);
+    try {
+      const [rm, mto, inc, kpi, integ] = await Promise.all([
+        hrService.getSettings('ready_made'),
+        hrService.getSettings('mto'),
+        hrService.getSettings('incentives'),
+        hrService.getSettings('kpi_records'),
+        hrService.getSettings('kpi_integrations')
+      ]);
+      if (rm.status === 'success') setReadyMadeConfigs(rm.data);
+      if (mto.status === 'success') setMadeToOrderConfigs(mto.data);
+      if (inc.status === 'success') setIncentiveTiers(inc.data);
+      if (kpi.status === 'success') setKpiRecords(kpi.data);
+      if (integ.status === 'success') setKpiIntegrations(integ.data);
+    } catch (e) {
+      toast({ title: "เกิดข้อผิดพลาด", description: "โหลดข้อมูลตั้งค่าไม่สำเร็จ", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadSettings();
+  }, []);
 
   // Compute monthly summaries
   const monthlySummaries = useMemo(() => {
@@ -112,14 +110,21 @@ export default function HRSettings() {
 
   const handleAddNew = (type: string) => {
     setIsAddMode(true);
-    if (type === "คะแนน KPI") {
-      setEditKPI({ id: crypto.randomUUID(), employeeId: "", employeeName: "", department: "Sale", month: viewingMonth || new Date().toISOString().slice(0, 7), kpiScore: 0, remark: "" });
+    if (type === "Config A") {
+      setEditConfigA({ id: "", category: "", ratePerUnit: 0, unit: "ชิ้น", calcMethod: "perUnit", active: true });
+      setEditConfigAOpen(true);
+    } else if (type === "Config B") {
+      setEditConfigB({ id: "", category: "", calcMethod: "tier", active: true, tiers: [] });
+      setEditConfigBOpen(true);
+    } else if (type === "Incentive Tier") {
+      setEditIncentive({ id: "", label: "", minSales: 0, maxSales: null, incentivePerPerson: 0, active: true });
+      setEditIncentiveOpen(true);
+    } else if (type === "คะแนน KPI") {
+      setEditKPI({ id: "", employeeId: "", employeeName: "", department: "Sale", month: viewingMonth || new Date().toISOString().slice(0, 7), kpiScore: 0, remark: "" });
       setEditKPIOpen(true);
     } else if (type === "แหล่งข้อมูล KPI") {
-      setEditIntegration({ id: crypto.randomUUID(), department: "", dataSourceType: "Manual", sheetUrl: "", apiEndpoint: "", note: "", active: true });
+      setEditIntegration({ id: "", department: "", dataSourceType: "Manual", sheetUrl: "", apiEndpoint: "", note: "", active: true });
       setEditIntegrationOpen(true);
-    } else {
-      toast({ title: "เพิ่มข้อมูลใหม่", description: `เปิดฟอร์มเพิ่ม${type}` });
     }
   };
 
@@ -145,45 +150,116 @@ export default function HRSettings() {
 
   const handleDelete = (type: string, id: string) => { setDeleteTarget({ type, id }); setIsDeleteDialogOpen(true); };
 
-  const confirmDelete = () => {
-    if (deleteTarget) {
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      setLoading(true);
       const { type, id } = deleteTarget;
-      if (type === "Config A") {
-        setReadyMadeConfigs(prev => prev.filter(c => c.id !== id));
-      } else if (type === "Config B") {
-        setMadeToOrderConfigs(prev => prev.filter(c => c.id !== id));
-      } else if (type === "Incentive") {
-        setIncentiveTiers(prev => prev.filter(t => t.id !== id));
-      } else if (type === "KPI") {
-        setKpiRecords(prev => prev.filter(r => r.id !== id));
-      } else if (type === "Integration") {
-        setKpiIntegrations(prev => prev.filter(i => i.id !== id));
+      let apiType = '';
+      if (type === "Config A") apiType = 'ready_made';
+      else if (type === "Config B") apiType = 'mto';
+      else if (type === "Incentive") apiType = 'incentives';
+      else if (type === "KPI") apiType = 'kpi_records';
+      else if (type === "Integration") apiType = 'kpi_integrations';
+
+      const res = await hrService.deleteSetting(apiType, id);
+      if (res.status === 'success') {
+        toast({ title: "ลบข้อมูลสำเร็จ", description: `ลบ ${type} เรียบร้อยแล้ว`, variant: "destructive" });
+        loadSettings();
       }
-      toast({ title: "ลบข้อมูลสำเร็จ", description: `ลบ ${type} เรียบร้อยแล้ว`, variant: "destructive" });
+    } catch (e) {
+      toast({ title: "ผิดพลาด", description: "ไม่สามารถลบข้อมูลได้", variant: "destructive" });
+    } finally {
+      setLoading(false);
+      setIsDeleteDialogOpen(false);
+      setDeleteTarget(null);
     }
-    setIsDeleteDialogOpen(false); setDeleteTarget(null);
   };
 
   // Save handlers
-  const saveConfigA = () => {
+  const saveConfigA = async () => {
     if (!editConfigA) return;
-    setReadyMadeConfigs(prev => prev.map(c => c.id === editConfigA.id ? editConfigA : c));
-    setEditConfigAOpen(false);
-    toast({ title: "บันทึกสำเร็จ", description: `อัปเดต "${editConfigA.category}" แล้ว` });
+    try {
+      setLoading(true);
+      const res = await hrService.saveSetting('ready_made', editConfigA, !isAddMode);
+      if (res.status === 'success') {
+        toast({ title: "บันทึกสำเร็จ", description: `อัปเดต "${editConfigA.category}" แล้ว` });
+        setEditConfigAOpen(false);
+        loadSettings();
+      }
+    } catch (e) {
+      toast({ title: "ผิดพลาด", description: "บันทึกข้อมูลไม่สำเร็จ", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const saveConfigB = () => {
+  const saveConfigB = async () => {
     if (!editConfigB) return;
-    setMadeToOrderConfigs(prev => prev.map(c => c.id === editConfigB.id ? editConfigB : c));
-    setEditConfigBOpen(false);
-    toast({ title: "บันทึกสำเร็จ", description: `อัปเดต "${editConfigB.category}" แล้ว` });
+    try {
+      setLoading(true);
+      const res = await hrService.saveSetting('mto', editConfigB, !isAddMode);
+      if (res.status === 'success') {
+        toast({ title: "บันทึกสำเร็จ", description: `อัปเดต "${editConfigB.category}" แล้ว` });
+        setEditConfigBOpen(false);
+        loadSettings();
+      }
+    } catch (e) {
+      toast({ title: "ผิดพลาด", description: "บันทึกข้อมูลไม่สำเร็จ", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const saveIncentive = () => {
+  const saveIncentive = async () => {
     if (!editIncentive) return;
-    setIncentiveTiers(prev => prev.map(t => t.id === editIncentive.id ? editIncentive : t));
-    setEditIncentiveOpen(false);
-    toast({ title: "บันทึกสำเร็จ", description: `อัปเดต Tier "${editIncentive.label}" แล้ว` });
+    try {
+      setLoading(true);
+      const res = await hrService.saveSetting('incentives', editIncentive, !isAddMode);
+      if (res.status === 'success') {
+        toast({ title: "บันทึกสำเร็จ", description: `อัปเดต Tier "${editIncentive.label}" แล้ว` });
+        setEditIncentiveOpen(false);
+        loadSettings();
+      }
+    } catch (e) {
+      toast({ title: "ผิดพลาด", description: "บันทึกข้อมูลไม่สำเร็จ", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const saveKPI = async () => {
+    if (!editKPI) return;
+    try {
+      setLoading(true);
+      const res = await hrService.saveSetting('kpi_records', editKPI, !isAddMode);
+      if (res.status === 'success') {
+        toast({ title: "บันทึกสำเร็จ", description: `บันทึก KPI ของ "${editKPI.employeeName}" แล้ว` });
+        setEditKPIOpen(false);
+        loadSettings();
+      }
+    } catch (e) {
+      toast({ title: "ผิดพลาด", description: "บันทึกข้อมูลไม่สำเร็จ", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const saveIntegration = async () => {
+    if (!editIntegration) return;
+    try {
+      setLoading(true);
+      const res = await hrService.saveSetting('kpi_integrations', editIntegration, !isAddMode);
+      if (res.status === 'success') {
+        toast({ title: "บันทึกสำเร็จ", description: `อัปเดตแหล่งข้อมูล "${editIntegration.department}" แล้ว` });
+        setEditIntegrationOpen(false);
+        loadSettings();
+      }
+    } catch (e) {
+      toast({ title: "ผิดพลาด", description: "บันทึกข้อมูลไม่สำเร็จ", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const updateConfigBTier = (tierIdx: number, field: keyof TierRange, value: string) => {
@@ -198,37 +274,31 @@ export default function HRSettings() {
     setEditConfigB({ ...editConfigB, tiers: newTiers });
   };
 
-  const saveKPI = () => {
-    if (!editKPI) return;
-    if (isAddMode) {
-      setKpiRecords(prev => [...prev, editKPI]);
-      toast({ title: "เพิ่มสำเร็จ", description: `เพิ่ม KPI "${editKPI.employeeName}" แล้ว` });
-    } else {
-      setKpiRecords(prev => prev.map(r => r.id === editKPI.id ? editKPI : r));
-      toast({ title: "บันทึกสำเร็จ", description: `อัปเดต KPI "${editKPI.employeeName}" แล้ว` });
-    }
-    setEditKPIOpen(false);
+  const addConfigBTier = () => {
+    if (!editConfigB) return;
+    setEditConfigB({
+      ...editConfigB,
+      tiers: [...editConfigB.tiers, { minQty: 0, maxQty: null, fixedAmount: 0, label: `Tier ${editConfigB.tiers.length + 1}` }]
+    });
   };
 
-  const saveIntegration = () => {
-    if (!editIntegration) return;
-    if (isAddMode) {
-      setKpiIntegrations(prev => [...prev, editIntegration]);
-      toast({ title: "เพิ่มสำเร็จ", description: `เพิ่มแหล่งข้อมูล "${editIntegration.department}" แล้ว` });
-    } else {
-      setKpiIntegrations(prev => prev.map(i => i.id === editIntegration.id ? editIntegration : i));
-      toast({ title: "บันทึกสำเร็จ", description: `อัปเดต "${editIntegration.department}" แล้ว` });
-    }
-    setEditIntegrationOpen(false);
+  const removeConfigBTier = (idx: number) => {
+    if (!editConfigB) return;
+    const newTiers = [...editConfigB.tiers];
+    newTiers.splice(idx, 1);
+    setEditConfigB({ ...editConfigB, tiers: newTiers });
   };
 
   const filteredKPIRecords = viewingMonth ? kpiRecords.filter(r => r.month === viewingMonth) : [];
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">ตั้งค่า (Commission & KPI)</h1>
-        <p className="text-muted-foreground">ตั้งค่าสูตรคำนวณค่าคอมมิชชั่น, Incentive และ KPI — จัดการพนักงานได้ที่หน้า "จัดการพนักงาน"</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">ตั้งค่า (Commission & KPI)</h1>
+          <p className="text-muted-foreground">ตั้งค่าสูตรคำนวณค่าคอมมิชชั่น, Incentive และ KPI</p>
+        </div>
+        {loading && <Loader2 className="w-6 h-6 animate-spin text-primary" />}
       </div>
 
       {/* Delete Dialog */}
@@ -249,8 +319,8 @@ export default function HRSettings() {
       <Dialog open={editConfigAOpen} onOpenChange={setEditConfigAOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>แก้ไข Config A</DialogTitle>
-            <DialogDescription>แก้ไขอัตราค่าคอมมิชชั่นสินค้าสำเร็จรูป</DialogDescription>
+            <DialogTitle>{isAddMode ? "เพิ่ม Config A" : "แก้ไข Config A"}</DialogTitle>
+            <DialogDescription>ตั้งค่าอัตราค่าคอมมิชชั่นสินค้าสำเร็จรูป</DialogDescription>
           </DialogHeader>
           {editConfigA && (
             <div className="space-y-4">
@@ -294,7 +364,7 @@ export default function HRSettings() {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditConfigAOpen(false)}>ยกเลิก</Button>
-            <Button onClick={saveConfigA} className="gap-2"><Save className="w-4 h-4" />บันทึก</Button>
+            <Button onClick={saveConfigA} className="gap-2" disabled={loading}>{loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}บันทึก</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -303,8 +373,8 @@ export default function HRSettings() {
       <Dialog open={editConfigBOpen} onOpenChange={setEditConfigBOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>แก้ไข Config B</DialogTitle>
-            <DialogDescription>แก้ไขอัตราค่าคอมมิชชั่นสินค้าสั่งผลิต</DialogDescription>
+            <DialogTitle>{isAddMode ? "เพิ่ม Config B" : "แก้ไข Config B"}</DialogTitle>
+            <DialogDescription>ตั้งค่าอัตราค่าคอมมิชชั่นสินค้าสั่งผลิต</DialogDescription>
           </DialogHeader>
           {editConfigB && (
             <div className="space-y-4">
@@ -336,28 +406,35 @@ export default function HRSettings() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  <Label>Tier ช่วงจำนวน</Label>
-                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                  <div className="flex items-center justify-between">
+                    <Label>Tier ช่วงจำนวน</Label>
+                    <Button variant="outline" size="sm" onClick={addConfigBTier} className="h-7 gap-1 text-xs"><Plus className="w-3 h-3" />เพิ่ม Tier</Button>
+                  </div>
+                  <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
                     {editConfigB.tiers.map((tier, idx) => (
-                      <div key={idx} className="grid grid-cols-4 gap-2 items-center border rounded-md p-2">
-                        <div>
-                          <span className="text-xs text-muted-foreground">ต่ำสุด</span>
-                          <Input type="number" value={tier.minQty} onChange={e => updateConfigBTier(idx, "minQty", e.target.value)} className="h-8 text-sm" />
+                      <div key={idx} className="grid grid-cols-12 gap-2 items-center border rounded-md p-2">
+                        <div className="col-span-2">
+                          <span className="text-[10px] text-muted-foreground uppercase">Min</span>
+                          <Input type="number" value={tier.minQty} onChange={e => updateConfigBTier(idx, "minQty", e.target.value)} className="h-8 text-sm px-1" />
                         </div>
-                        <div>
-                          <span className="text-xs text-muted-foreground">สูงสุด</span>
-                          <Input type="number" value={tier.maxQty ?? ""} placeholder="ไม่จำกัด" onChange={e => updateConfigBTier(idx, "maxQty", e.target.value)} className="h-8 text-sm" />
+                        <div className="col-span-2">
+                          <span className="text-[10px] text-muted-foreground uppercase">Max</span>
+                          <Input type="number" value={tier.maxQty ?? ""} placeholder="∞" onChange={e => updateConfigBTier(idx, "maxQty", e.target.value)} className="h-8 text-sm px-1" />
                         </div>
-                        <div>
-                          <span className="text-xs text-muted-foreground">ค่าคอม (฿)</span>
-                          <Input type="number" value={tier.fixedAmount} onChange={e => updateConfigBTier(idx, "fixedAmount", e.target.value)} className="h-8 text-sm" />
+                        <div className="col-span-3">
+                          <span className="text-[10px] text-muted-foreground uppercase">฿ Amount</span>
+                          <Input type="number" value={tier.fixedAmount} onChange={e => updateConfigBTier(idx, "fixedAmount", e.target.value)} className="h-8 text-sm px-1" />
                         </div>
-                        <div>
-                          <span className="text-xs text-muted-foreground">Label</span>
-                          <Input value={tier.label} onChange={e => updateConfigBTier(idx, "label", e.target.value)} className="h-8 text-sm" />
+                        <div className="col-span-4">
+                          <span className="text-[10px] text-muted-foreground uppercase">Label</span>
+                          <Input value={tier.label} onChange={e => updateConfigBTier(idx, "label", e.target.value)} className="h-8 text-sm px-1" />
+                        </div>
+                        <div className="col-span-1 pt-4 text-center">
+                          <Button variant="ghost" size="sm" onClick={() => removeConfigBTier(idx)} className="h-7 w-7 p-0 text-destructive"><Trash2 className="w-3 h-3" /></Button>
                         </div>
                       </div>
                     ))}
+                    {editConfigB.tiers.length === 0 && <p className="text-center text-xs text-muted-foreground py-4">ยังไม่มี Tier — กดปุ่มด้านบนเพื่อเพิ่ม</p>}
                   </div>
                 </div>
               )}
@@ -365,7 +442,7 @@ export default function HRSettings() {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditConfigBOpen(false)}>ยกเลิก</Button>
-            <Button onClick={saveConfigB} className="gap-2"><Save className="w-4 h-4" />บันทึก</Button>
+            <Button onClick={saveConfigB} className="gap-2" disabled={loading}>{loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}บันทึก</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -374,8 +451,8 @@ export default function HRSettings() {
       <Dialog open={editIncentiveOpen} onOpenChange={setEditIncentiveOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>แก้ไข Incentive Tier</DialogTitle>
-            <DialogDescription>แก้ไขช่วงยอดขายและจำนวน Incentive ต่อคน</DialogDescription>
+            <DialogTitle>{isAddMode ? "เพิ่ม Incentive Tier" : "แก้ไข Incentive Tier"}</DialogTitle>
+            <DialogDescription>ช่วงยอดขายและจำนวน Incentive ต่อคน</DialogDescription>
           </DialogHeader>
           {editIncentive && (
             <div className="space-y-4">
@@ -406,7 +483,7 @@ export default function HRSettings() {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditIncentiveOpen(false)}>ยกเลิก</Button>
-            <Button onClick={saveIncentive} className="gap-2"><Save className="w-4 h-4" />บันทึก</Button>
+            <Button onClick={saveIncentive} className="gap-2" disabled={loading}>{loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}บันทึก</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -416,7 +493,7 @@ export default function HRSettings() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{isAddMode ? "เพิ่ม KPI" : "แก้ไข KPI"}</DialogTitle>
-            <DialogDescription>{isAddMode ? "เพิ่มคะแนน KPI พนักงานใหม่" : "แก้ไขคะแนน KPI พนักงาน"}</DialogDescription>
+            <DialogDescription>บันทึกคะแนน KPI พนักงาน</DialogDescription>
           </DialogHeader>
           {editKPI && (
             <div className="space-y-4">
@@ -456,7 +533,7 @@ export default function HRSettings() {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditKPIOpen(false)}>ยกเลิก</Button>
-            <Button onClick={saveKPI} className="gap-2"><Save className="w-4 h-4" />บันทึก</Button>
+            <Button onClick={saveKPI} className="gap-2" disabled={loading}>{loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}บันทึก</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -466,7 +543,7 @@ export default function HRSettings() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{isAddMode ? "เพิ่มแหล่งข้อมูล" : "แก้ไขแหล่งข้อมูล"}</DialogTitle>
-            <DialogDescription>{isAddMode ? "เพิ่มแหล่งข้อมูล KPI ใหม่" : "แก้ไขการเชื่อม KPI แผนก"}</DialogDescription>
+            <DialogDescription>การเชื่อมโยง KPI จากภายนอก</DialogDescription>
           </DialogHeader>
           {editIntegration && (
             <div className="space-y-4">
@@ -520,7 +597,7 @@ export default function HRSettings() {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditIntegrationOpen(false)}>ยกเลิก</Button>
-            <Button onClick={saveIntegration} className="gap-2"><Save className="w-4 h-4" />บันทึก</Button>
+            <Button onClick={saveIntegration} className="gap-2" disabled={loading}>{loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}บันทึก</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -565,11 +642,14 @@ export default function HRSettings() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
+                      {readyMadeConfigs.length === 0 && !loading && (
+                        <TableRow><TableCell colSpan={6} className="text-center py-6 text-muted-foreground">ไม่พบข้อมูล — กรุณาคลิก "เพิ่ม" เพื่อเริ่มตั้งค่า</TableCell></TableRow>
+                      )}
                       {readyMadeConfigs.map(c => (
                         <TableRow key={c.id}>
                           <TableCell className="font-medium">{c.category}</TableCell>
                           <TableCell className="text-right font-bold">
-                            {c.calcMethod === "percentSales" ? `${c.ratePerUnit}%` : `฿${c.ratePerUnit}`}
+                            {c.calcMethod === "percentSales" ? `${c.ratePerUnit}%` : `฿${c.ratePerUnit.toLocaleString()}`}
                           </TableCell>
                           <TableCell>{c.unit}</TableCell>
                           <TableCell>
@@ -603,6 +683,9 @@ export default function HRSettings() {
                   <Button onClick={() => handleAddNew("Config B")} size="sm" className="gap-2"><Plus className="w-4 h-4" />เพิ่ม</Button>
                 </CardHeader>
                 <CardContent className="space-y-6">
+                  {madeToOrderConfigs.length === 0 && !loading && (
+                    <p className="text-center py-10 text-muted-foreground border rounded-lg">ไม่พบข้อมูล Config B</p>
+                  )}
                   {madeToOrderConfigs.map(c => (
                     <div key={c.id} className="border rounded-lg p-4">
                       <div className="flex items-center justify-between mb-3">
@@ -630,6 +713,7 @@ export default function HRSettings() {
                                 </TableCell>
                               </TableRow>
                             ))}
+                            {c.tiers.length === 0 && <TableRow><TableCell colSpan={2} className="text-center text-xs text-muted-foreground">ไม่มีข้อมูล Tier — กรุณากดแก้ไขเพื่อเพิ่ม</TableCell></TableRow>}
                           </TableBody>
                         </Table>
                       )}
@@ -662,6 +746,9 @@ export default function HRSettings() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
+                      {incentiveTiers.length === 0 && !loading && (
+                        <TableRow><TableCell colSpan={6} className="text-center py-6 text-muted-foreground">ไม่พบข้อมูลเงื่อนไข Incentive</TableCell></TableRow>
+                      )}
                       {incentiveTiers.map(tier => (
                         <TableRow key={tier.id}>
                           <TableCell className="font-medium">{tier.label}</TableCell>
@@ -679,9 +766,6 @@ export default function HRSettings() {
                       ))}
                     </TableBody>
                   </Table>
-                  <div className="mt-4 p-3 rounded-lg bg-muted/50 text-sm text-muted-foreground">
-                    <strong>หมายเหตุ:</strong> ผู้ได้สิทธิ์: แอดมิน | เงื่อนไข: ยอดขายรวมทั้งบริษัทต้องไม่ต่ำกว่า ฿2,300,000/เดือน
-                  </div>
                 </CardContent>
               </Card>
             </TabsContent>
@@ -691,7 +775,6 @@ export default function HRSettings() {
         {/* Tab 2: KPI */}
         <TabsContent value="kpi" className="space-y-4">
           {viewingMonth ? (
-            /* Detail view for a specific month */
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -703,7 +786,7 @@ export default function HRSettings() {
                     <p className="text-sm text-muted-foreground mt-1">พนักงาน {filteredKPIRecords.length} คน | เฉลี่ย {filteredKPIRecords.length > 0 ? Math.round(filteredKPIRecords.reduce((s, r) => s + r.kpiScore, 0) / filteredKPIRecords.length) : 0} คะแนน</p>
                   </div>
                 </div>
-                <Button onClick={() => { setSelectedMonth(viewingMonth); handleAddNew("คะแนน KPI"); }} className="gap-2"><Plus className="w-4 h-4" />เพิ่ม KPI</Button>
+                <Button onClick={() => handleAddNew("คะแนน KPI")} className="gap-2"><Plus className="w-4 h-4" />เพิ่ม KPI</Button>
               </CardHeader>
               <CardContent>
                 <Table>
@@ -717,6 +800,9 @@ export default function HRSettings() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
+                    {filteredKPIRecords.length === 0 && (
+                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-8">ไม่มีข้อมูล KPI ในเดือนนี้</TableCell></TableRow>
+                    )}
                     {filteredKPIRecords.map(r => (
                       <TableRow key={r.id}>
                         <TableCell className="font-medium">{r.employeeName}</TableCell>
@@ -735,17 +821,11 @@ export default function HRSettings() {
                         </TableCell>
                       </TableRow>
                     ))}
-                    {filteredKPIRecords.length === 0 && (
-                      <TableRow>
-                        <TableCell colSpan={5} className="text-center text-muted-foreground py-8">ไม่มีข้อมูล KPI ในเดือนนี้</TableCell>
-                      </TableRow>
-                    )}
                   </TableBody>
                 </Table>
               </CardContent>
             </Card>
           ) : (
-            /* Monthly overview cards */
             <>
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between">
@@ -760,7 +840,7 @@ export default function HRSettings() {
                     {monthlySummaries.map(summary => (
                       <Card
                         key={summary.month}
-                        className="cursor-pointer hover:shadow-md transition-shadow border-2 hover:border-primary/50"
+                        className="cursor-pointer hover:shadow-md transition-shadow border-2 hover:border-primary/20"
                         onClick={() => setViewingMonth(summary.month)}
                       >
                         <CardContent className="p-5">
@@ -774,20 +854,20 @@ export default function HRSettings() {
                           </div>
                           <div className="grid grid-cols-3 gap-3">
                             <div className="text-center">
-                              <div className="flex items-center justify-center gap-1 text-muted-foreground text-xs mb-1">
+                              <div className="flex items-center justify-center gap-1 text-muted-foreground text-[10px] mb-1">
                                 <Users className="w-3 h-3" />พนักงาน
                               </div>
                               <p className="text-xl font-bold">{summary.count}</p>
                             </div>
                             <div className="text-center">
-                              <div className="flex items-center justify-center gap-1 text-muted-foreground text-xs mb-1">
+                              <div className="flex items-center justify-center gap-1 text-muted-foreground text-[10px] mb-1">
                                 <TrendingUp className="w-3 h-3" />เฉลี่ย
                               </div>
                               <p className="text-xl font-bold">{summary.avgScore}</p>
                             </div>
                             <div className="text-center">
-                              <div className="text-muted-foreground text-xs mb-1">ระดับ</div>
-                              <Badge variant={summary.avgScore >= 90 ? "default" : summary.avgScore >= 80 ? "secondary" : "destructive"}>
+                              <div className="text-muted-foreground text-[10px] mb-1">ระดับ</div>
+                              <Badge variant={summary.avgScore >= 90 ? "default" : summary.avgScore >= 80 ? "secondary" : "destructive"} className="text-[10px] px-1 h-5">
                                 {summary.avgScore >= 90 ? "ดีเยี่ยม" : summary.avgScore >= 80 ? "ดี" : "ปรับปรุง"}
                               </Badge>
                             </div>
@@ -796,8 +876,8 @@ export default function HRSettings() {
                       </Card>
                     ))}
                   </div>
-                  {monthlySummaries.length === 0 && (
-                    <div className="text-center text-muted-foreground py-12">ยังไม่มีข้อมูล KPI</div>
+                  {monthlySummaries.length === 0 && !loading && (
+                    <div className="text-center text-muted-foreground py-12 border-2 border-dashed rounded-xl">ยังไม่มีข้อมูล KPI บันทึกไว้</div>
                   )}
                 </CardContent>
               </Card>
@@ -809,26 +889,41 @@ export default function HRSettings() {
         <TabsContent value="kpi-integration" className="space-y-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle>การเชื่อม KPI จากแต่ละแผนก</CardTitle>
-              <Button onClick={() => handleAddNew("แหล่งข้อมูล KPI")} className="gap-2"><Plus className="w-4 h-4" />เพิ่มแหล่งข้อมูล</Button>
+              <div>
+                <CardTitle>การเชื่อมต่อ KPI รายแผนก</CardTitle>
+                <p className="text-sm text-muted-foreground mt-1">ตั้งค่าแหล่งข้อมูลสำหรับดึง KPI (Google Sheets / API)</p>
+              </div>
+              <Button onClick={() => handleAddNew("แหล่งข้อมูล KPI")} size="sm" className="gap-2"><Plus className="w-4 h-4" />เพิ่ม</Button>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
-                  <TableRow><TableHead>แผนก</TableHead><TableHead>ประเภท</TableHead><TableHead>URL / Endpoint</TableHead><TableHead>หมายเหตุ</TableHead><TableHead>สถานะ</TableHead><TableHead className="text-right">จัดการ</TableHead></TableRow>
+                  <TableRow>
+                    <TableHead>แผนก</TableHead>
+                    <TableHead>ประเภท</TableHead>
+                    <TableHead>ข้อมูล</TableHead>
+                    <TableHead>สถานะ</TableHead>
+                    <TableHead className="text-right">จัดการ</TableHead>
+                  </TableRow>
                 </TableHeader>
                 <TableBody>
+                  {kpiIntegrations.length === 0 && !loading && (
+                    <TableRow><TableCell colSpan={5} className="text-center py-6 text-muted-foreground">ยังไม่มีการตั้งค่าเชื่อมต่อ</TableCell></TableRow>
+                  )}
                   {kpiIntegrations.map(i => (
                     <TableRow key={i.id}>
                       <TableCell className="font-medium">{i.department}</TableCell>
-                      <TableCell><Badge variant="outline">{i.dataSourceType}</Badge></TableCell>
-                      <TableCell className="max-w-xs truncate">{i.sheetUrl || i.apiEndpoint || "-"}</TableCell>
-                      <TableCell>{i.note}</TableCell>
-                      <TableCell><Badge variant={i.active ? "default" : "secondary"}>{i.active ? "ใช้งาน" : "ปิด"}</Badge></TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{i.dataSourceType}</Badge>
+                      </TableCell>
+                      <TableCell className="max-w-[300px] truncate text-xs text-muted-foreground">
+                        {i.dataSourceType === "GoogleSheet" ? i.sheetUrl : i.dataSourceType === "API" ? i.apiEndpoint : i.note}
+                      </TableCell>
+                      <TableCell><Badge variant={i.active ? "default" : "secondary"}>{i.active ? "เปิด" : "ปิด"}</Badge></TableCell>
                       <TableCell className="text-right">
-                        <div className="flex gap-2 justify-end">
+                        <div className="flex gap-1 justify-end">
                           <Button variant="ghost" size="sm" onClick={() => handleEdit("Integration", i.id)}><Edit className="w-4 h-4" /></Button>
-                          <Button variant="ghost" size="sm" onClick={() => handleDelete("Integration", i.id)}><Trash2 className="w-4 h-4" /></Button>
+                          <Button variant="ghost" size="sm" onClick={() => handleDelete("Integration", i.id)} className="hover:text-destructive"><Trash2 className="w-4 h-4" /></Button>
                         </div>
                       </TableCell>
                     </TableRow>
