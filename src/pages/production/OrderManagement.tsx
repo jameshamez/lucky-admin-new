@@ -62,11 +62,11 @@ const mapOrder = (o: any) => ({
   productDetails: o.productDetails || [],
   paymentInfo: {
     status: o.payment_status === 'Paid' ? 'full' : 'deposit',
-    amount: parseFloat(o.total_amount) || 0,
+    amount: parseFloat(o.total_price ?? o.total_amount) || 0,
     proof: "#",
     bank: "-",
     receivedDate: "-",
-    netTotal: parseFloat(o.total_amount) || 0,
+    netTotal: parseFloat(o.total_price ?? o.total_amount) || 0,
   },
   shippingInfo: {
     province: "-",

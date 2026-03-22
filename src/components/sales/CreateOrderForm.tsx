@@ -29,15 +29,30 @@ import {
   getProvinces, getAmphoesByProvince, getDistricts, getZipcode, loadAddressData
 } from "@/utils/thaiAddress";
 
+// Set global Zod error map for Thai localization
+const customErrorMap: z.ZodErrorMap = (issue, ctx) => {
+  if (issue.code === z.ZodIssueCode.invalid_type) {
+    if (issue.received === 'undefined' || issue.received === 'null') {
+      return { message: 'กรุณากรอกข้อมูล' };
+    }
+  }
+  if (issue.code === z.ZodIssueCode.too_small && issue.type === 'string' && issue.minimum === 1) {
+    return { message: 'กรุณากรอกข้อมูล' };
+  }
+  return { message: ctx.defaultError };
+};
+
+z.setErrorMap(customErrorMap);
+
 // Define the form schema
 const createOrderSchema = z.object({
   // Section 1: Sales Employee
-  responsiblePerson: z.string().min(1, "กรุณาระบุพนักงานที่รับผิดชอบ"),
+  responsiblePerson: z.string({ required_error: "กรุณาระบุพนักงานที่รับผิดชอบ" }).min(1, "กรุณาระบุพนักงานที่รับผิดชอบ"),
 
   // Section 2: Customer Information
   customerSearch: z.string().optional(),
-  customerName: z.string().min(1, "กรุณาระบุชื่อลูกค้า"),
-  customerPhone: z.string().min(1, "กรุณาระบุเบอร์โทรศัพท์"),
+  customerName: z.string({ required_error: "กรุณาระบุชื่อลูกค้า" }).min(1, "กรุณาระบุชื่อลูกค้า"),
+  customerPhone: z.string({ required_error: "กรุณาระบุเบอร์โทรศัพท์" }).min(1, "กรุณาระบุเบอร์โทรศัพท์"),
   customerLine: z.string().optional(),
   customerEmail: z.string().optional(),
   requireTaxInvoice: z.boolean().optional(),
@@ -48,8 +63,8 @@ const createOrderSchema = z.object({
   // Section 3: Order Information
   jobId: z.string().optional(),
   quotationNumber: z.string().optional(),
-  urgencyLevel: z.string().min(1, "กรุณาเลือกความเร่งด่วน"),
-  jobName: z.string().min(1, "กรุณาระบุชื่องาน"),
+  urgencyLevel: z.string({ required_error: "กรุณาเลือกความเร่งด่วน" }).min(1, "กรุณาเลือกความเร่งด่วน"),
+  jobName: z.string({ required_error: "กรุณาระบุชื่องาน" }).min(1, "กรุณาระบุชื่องาน"),
   eventLocation: z.string().optional(),
   usageDate: z.date().optional(),
   deliveryDate: z.date().optional(),
@@ -83,7 +98,7 @@ const createOrderSchema = z.object({
   }).optional(),
 
   // Section 5: Delivery Information
-  deliveryType: z.string().min(1, "กรุณาเลือกรูปแบบการรับสินค้า"),
+  deliveryType: z.string({ required_error: "กรุณาเลือกรูปแบบการรับสินค้า" }).min(1, "กรุณาเลือกรูปแบบการรับสินค้า"),
   deliveryInfo: z.object({
     recipientName: z.string().optional(),
     recipientPhone: z.string().optional(),
@@ -530,8 +545,16 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
     setSelectedEstimations(prev => prev.filter(e => e.id !== estimationId));
   };
 
-  // Calculate total for selected estimations
-  const selectedEstimationsTotal = selectedEstimations.reduce((sum, est) => sum + est.price, 0);
+  // Calculate grand total price from both selected estimations and saved products
+  const orderTotalPrice = useMemo(() => {
+    const estimationsTotal = selectedEstimations.reduce((sum, est) => sum + est.price, 0);
+    const savedProductsTotal = savedProducts.reduce((sum, p) => {
+      const quantity = p.quantity || parseInt(p.details?.quantity) || 1;
+      const unitPrice = p.unitPrice || 0;
+      return sum + (unitPrice * quantity);
+    }, 0);
+    return estimationsTotal + savedProductsTotal;
+  }, [selectedEstimations, savedProducts]);
 
   // Select price estimation and auto-fill form (legacy single-select, kept for compatibility)
   const selectPriceEstimation = (estimation: typeof priceEstimations[0]) => {
@@ -1864,6 +1887,8 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
       // รายการสินค้า
       savedProducts: allItems,
       items: allItems,
+      // ราคารวม
+      totalPrice: orderTotalPrice,
       // ชำระเงิน
       paymentItems: paymentItems,
       payments: paymentItems,
@@ -2425,7 +2450,7 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                   <FormItem>
                     <FormLabel>JOB ID</FormLabel>
                     <FormControl>
-                      <Input {...field} placeholder="JOB-2024-XXX" />
+                      <Input {...field} placeholder="JOB-2025-XXX" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -4116,7 +4141,7 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                 <div className="border-t border-border bg-muted/30 px-4 py-3 flex justify-between items-center">
                   <span className="text-sm font-medium">รวมทั้งหมด</span>
                   <span className="text-lg font-bold text-primary">
-                    {selectedEstimationsTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท
+                    {orderTotalPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท
                   </span>
                 </div>
               </div>

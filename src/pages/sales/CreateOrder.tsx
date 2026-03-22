@@ -13,7 +13,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { format } from "date-fns";
+import { format, parseISO, isValid } from "date-fns";
+import { th } from "date-fns/locale";
 import CreateOrderForm from "@/components/sales/CreateOrderForm";
 
 const API_BASE = "https://finfinphone.com/api-lucky/admin";
@@ -110,10 +111,10 @@ export default function CreateOrder() {
           orderStatus: o.order_status,
           jobCreated: Boolean(o.job_created),
           departments: o.departments ?? [],
-          totalAmount: parseFloat(o.total_amount ?? 0),
+          totalPrice: parseFloat(o.total_price ?? o.total_amount ?? 0),
           subtotal: parseFloat(o.subtotal ?? 0),
           vatAmount: parseFloat(o.vat_amount ?? 0),
-          totalWithVat: parseFloat(o.total_amount ?? 0),
+          totalWithVat: parseFloat(o.total_price ?? o.total_amount ?? 0),
           paidAmount: parseFloat(o.paid_amount ?? 0),
           taxInvoice: Boolean(o.require_tax_invoice),
           taxCompanyName: o.tax_payer_name,
@@ -152,7 +153,7 @@ export default function CreateOrder() {
       taxCompanyName: "บริษัท สมชาย จำกัด", taxId: "0123456789012",
       deliveryMethod: "ส่งพัสดุ", deliveryCost: 150, paymentMethod: "โอนเงิน",
       paymentStatus: "ชำระเงินแล้ว", orderStatus: "ยืนยันคำสั่งซื้อ", jobCreated: false,
-      totalAmount: 10700, subtotal: 10000, vatAmount: 700, totalWithVat: 10700, taxInvoice: true,
+      totalPrice: 10700, subtotal: 10000, vatAmount: 700, totalWithVat: 10700, taxInvoice: true,
       paidAmount: 10700
     },
     {
@@ -169,7 +170,7 @@ export default function CreateOrder() {
       taxCompanyName: "สุดา เก่งมาก", taxId: null,
       deliveryMethod: "รับเอง", deliveryCost: 0, paymentMethod: "เงินสด",
       paymentStatus: "รอชำระเงิน", orderStatus: "สร้างคำสั่งซื้อใหม่", jobCreated: false,
-      totalAmount: 16050, subtotal: 15000, vatAmount: 1050, totalWithVat: 16050, taxInvoice: false,
+      totalPrice: 16050, subtotal: 15000, vatAmount: 1050, totalWithVat: 16050, taxInvoice: false,
       paidAmount: 0
     },
     {
@@ -187,7 +188,7 @@ export default function CreateOrder() {
       taxCompanyName: "ห้างหุ้นส่วนอนันต์", taxId: "9876543210987",
       deliveryMethod: "ส่งพัสดุ", deliveryCost: 300, paymentMethod: "โอนเงิน",
       paymentStatus: "เครดิต", orderStatus: "ยืนยันคำสั่งซื้อ", jobCreated: false,
-      totalAmount: 26750, subtotal: 25000, vatAmount: 1750, totalWithVat: 26750, taxInvoice: true,
+      totalPrice: 26750, subtotal: 25000, vatAmount: 1750, totalWithVat: 26750, taxInvoice: true,
       paidAmount: 0
     },
     {
@@ -204,7 +205,7 @@ export default function CreateOrder() {
       taxCompanyName: "กรมการปกครอง", taxId: "0994000123456",
       deliveryMethod: "ส่งพัสดุ", deliveryCost: 500, paymentMethod: "วางบิล",
       paymentStatus: "ชำระบางส่วน", orderStatus: "ส่งคำขอสั่งซื้อ", jobCreated: false,
-      totalAmount: 64200, subtotal: 60000, vatAmount: 4200, totalWithVat: 64200, taxInvoice: true,
+      totalPrice: 64200, subtotal: 60000, vatAmount: 4200, totalWithVat: 64200, taxInvoice: true,
       paidAmount: 30000
     },
     {
@@ -221,7 +222,7 @@ export default function CreateOrder() {
       taxCompanyName: "โรงเรียนสาธิต มศว", taxId: "0994000654321",
       deliveryMethod: "ส่งพัสดุ", deliveryCost: 200, paymentMethod: "โอนเงิน",
       paymentStatus: "ชำระเงินแล้ว", orderStatus: "สร้างงานแล้ว", jobCreated: true,
-      totalAmount: 7904, subtotal: 7200, vatAmount: 504, totalWithVat: 7704, taxInvoice: true,
+      totalPrice: 7904, subtotal: 7200, vatAmount: 504, totalWithVat: 7704, taxInvoice: true,
       paidAmount: 7904
     },
     {
@@ -238,7 +239,7 @@ export default function CreateOrder() {
       taxCompanyName: "บริษัท ปูนซิเมนต์ไทย จำกัด (มหาชน)", taxId: "0107536000781",
       deliveryMethod: "จัดส่งโดยพนักงาน", deliveryCost: 0, paymentMethod: "วางบิล",
       paymentStatus: "ชำระเงินแล้ว", orderStatus: "สร้างงานแล้ว", jobCreated: true,
-      totalAmount: 26750, subtotal: 25000, vatAmount: 1750, totalWithVat: 26750, taxInvoice: true,
+      totalPrice: 26750, subtotal: 25000, vatAmount: 1750, totalWithVat: 26750, taxInvoice: true,
       paidAmount: 26750
     }
   ];
@@ -397,7 +398,7 @@ export default function CreateOrder() {
         subtotal: parseFloat(data.subtotal ?? 0),
         delivery_cost: parseFloat(data.deliveryCost ?? 0),
         vat_amount: parseFloat(data.vatAmount ?? 0),
-        total_amount: parseFloat(data.totalAmount ?? 0),
+        total_price: parseFloat(data.totalPrice ?? data.totalAmount ?? 0),
 
         // ชำระเงิน
         payment_method: deliveryInfo.paymentMethod ?? data.paymentMethod ?? "",
@@ -528,8 +529,10 @@ export default function CreateOrder() {
       const displayOrders = orders.length > 0 ? orders : mockOrders;
       const statusCounts = {
         request: displayOrders.filter(o => o.orderStatus === "ส่งคำขอสั่งซื้อ").length,
-        draft: displayOrders.filter(o => o.orderStatus === "สร้างคำสั่งซื้อใหม่").length,
-        confirmed: displayOrders.filter(o => o.orderStatus === "ยืนยันคำสั่งซื้อ").length,
+        // For counting: Drafts should not have any payment status yet. If they do, they are practically confirmed.
+        draft: displayOrders.filter(o => o.orderStatus === "สร้างคำสั่งซื้อใหม่" && (o.paymentStatus === "" || !o.paymentStatus)).length,
+        // For counting: Categorize drafts with payment status as Confirmed to avoid user confusion.
+        confirmed: displayOrders.filter(o => o.orderStatus === "ยืนยันคำสั่งซื้อ" || (o.orderStatus === "สร้างคำสั่งซื้อใหม่" && o.paymentStatus && o.paymentStatus !== "")).length,
         jobCreated: displayOrders.filter(o => o.orderStatus === "สร้างงานแล้ว").length,
       };
       const paymentCounts = {
@@ -582,16 +585,14 @@ export default function CreateOrder() {
       // Card filter
       if (cardFilter) {
         const cardMatch = (() => {
-          switch (cardFilter) {
-            case "request": return order.orderStatus === "ส่งคำขอสั่งซื้อ";
-            case "draft": return order.orderStatus === "สร้างคำสั่งซื้อใหม่";
-            case "confirmed": return order.orderStatus === "ยืนยันคำสั่งซื้อ";
-            case "jobCreated": return order.orderStatus === "สร้างงานแล้ว";
-            case "partial": return order.paymentStatus === "ชำระบางส่วน";
-            case "pending": return order.paymentStatus === "รอชำระเงิน";
-            case "credit": return order.paymentStatus === "เครดิต";
-            default: return true;
-          }
+          if (cardFilter === "request") return order.orderStatus === "ส่งคำขอสั่งซื้อ";
+          if (cardFilter === "draft") return order.orderStatus === "สร้างคำสั่งซื้อใหม่" && (!order.paymentStatus || order.paymentStatus === "");
+          if (cardFilter === "confirmed") return order.orderStatus === "ยืนยันคำสั่งซื้อ" || (order.orderStatus === "สร้างคำสั่งซื้อใหม่" && order.paymentStatus && order.paymentStatus !== "");
+          if (cardFilter === "jobCreated") return order.orderStatus === "สร้างงานแล้ว";
+          if (cardFilter === "partial") return order.paymentStatus === "ชำระบางส่วน";
+          if (cardFilter === "pending") return order.paymentStatus === "รอชำระเงิน";
+          if (cardFilter === "credit") return order.paymentStatus === "เครดิต";
+          return true;
         })();
         if (!cardMatch) return false;
       }
@@ -646,14 +647,18 @@ export default function CreateOrder() {
     const a = document.createElement("a");
     a.href = url;
     a.download = `orders_export_${format(new Date(), "yyyyMMdd_HHmmss")}.csv`;
+    a.style.display = "none";
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
     toast({ title: "ส่งออกข้อมูลสำเร็จ", description: `ส่งออก ${filteredOrders.length} รายการเป็นไฟล์ CSV แล้ว` });
   };
 
   // --- Highlight helper ---
   const highlightText = (text: string, term: string) => {
-    if (!term || !text) return text;
+    if (!text) return "—"; // Fallback to "—" if empty string/null to match requested UI pattern
+    if (!term) return text;
     try {
       const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const regex = new RegExp(`(${escaped})`, "gi");
@@ -663,6 +668,18 @@ export default function CreateOrder() {
       );
     } catch {
       return text;
+    }
+  };
+
+  // Safe Date formatter
+  const formatDateDisplay = (dateString: string) => {
+    if (!dateString || dateString === "0000-00-00" || dateString.startsWith("0000")) return "—";
+    try {
+      // Split to handle 'YYYY-MM-DD HH:mm:ss' easily
+      const d = parseISO(dateString.includes(' ') ? dateString.split(' ')[0] : dateString);
+      return isValid(d) ? format(d, "dd/MM/yyyy", { locale: th }) : "—";
+    } catch {
+      return "—";
     }
   };
 
@@ -917,78 +934,87 @@ export default function CreateOrder() {
             )}
           </div>
 
-          {showAdvancedFilter && (
-            <div className="border rounded-lg p-4 space-y-4 bg-muted/30">
-              <p className="text-sm font-medium text-muted-foreground">ค้นหาขั้นสูง (ค้นหาทุกข้อมูลรวมถึงรายละเอียดที่ไม่แสดงในตาราง เช่น เบอร์โทร, อีเมล, ที่อยู่, วัสดุ, เลขผู้เสียภาษี)</p>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input placeholder="ค้นหาข้อมูลทั้งหมด เช่น เบอร์โทร, อีเมล, วัสดุ, ที่อยู่, เลขผู้เสียภาษี..." value={advancedSearchTerm} onChange={(e) => setAdvancedSearchTerm(e.target.value)} className="pl-10" />
+          {/* Advanced Search Filter Dialog */}
+          <Dialog open={showAdvancedFilter} onOpenChange={setShowAdvancedFilter}>
+            <DialogContent className="max-w-3xl">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <SlidersHorizontal className="w-5 h-5" />
+                  ค้นหาขั้นสูง
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <p className="text-sm font-medium text-muted-foreground">ค้นหาข้อมูลเชิงลึก รวมถึงรายละเอียดที่ไม่แสดงในตาราง เช่น เบอร์โทร, อีเมล, ที่อยู่, วัสดุ, เลขผู้เสียภาษี</p>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input placeholder="ค้นหาข้อมูลทั้งหมด เช่น เบอร์โทร, อีเมล, วัสดุ, ที่อยู่, เลขผู้เสียภาษี..." value={advancedSearchTerm} onChange={(e) => setAdvancedSearchTerm(e.target.value)} className="pl-10" />
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">สถานะคำสั่งซื้อ</p>
+                    <Select value={filterOrderStatus} onValueChange={setFilterOrderStatus}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">ทั้งหมด</SelectItem>
+                        <SelectItem value="ส่งคำขอสั่งซื้อ">ส่งคำขอสั่งซื้อ</SelectItem>
+                        <SelectItem value="สร้างคำสั่งซื้อใหม่">สร้างคำสั่งซื้อใหม่</SelectItem>
+                        <SelectItem value="ยืนยันคำสั่งซื้อ">ยืนยันคำสั่งซื้อ</SelectItem>
+                        <SelectItem value="สร้างงานแล้ว">สร้างงานแล้ว</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">สถานะชำระเงิน</p>
+                    <Select value={filterPaymentStatus} onValueChange={setFilterPaymentStatus}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">ทั้งหมด</SelectItem>
+                        <SelectItem value="ชำระเงินแล้ว">ชำระเงินแล้ว</SelectItem>
+                        <SelectItem value="ชำระบางส่วน">ชำระบางส่วน</SelectItem>
+                        <SelectItem value="รอชำระเงิน">รอชำระเงิน</SelectItem>
+                        <SelectItem value="เครดิต">เครดิต</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">วิธีจัดส่ง</p>
+                    <Select value={filterDeliveryMethod} onValueChange={setFilterDeliveryMethod}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">ทั้งหมด</SelectItem>
+                        <SelectItem value="ส่งพัสดุ">ส่งพัสดุ</SelectItem>
+                        <SelectItem value="รับเอง">รับเอง</SelectItem>
+                        <SelectItem value="จัดส่งโดยพนักงาน">จัดส่งโดยพนักงาน</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">วิธีชำระเงิน</p>
+                    <Select value={filterPaymentMethod} onValueChange={setFilterPaymentMethod}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">ทั้งหมด</SelectItem>
+                        <SelectItem value="โอนเงิน">โอนเงิน</SelectItem>
+                        <SelectItem value="เงินสด">เงินสด</SelectItem>
+                        <SelectItem value="วางบิล">วางบิล</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">ประเภทสินค้า</p>
+                    <Select value={filterProductCategory} onValueChange={setFilterProductCategory}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">ทั้งหมด</SelectItem>
+                        <SelectItem value="สินค้าสำเร็จรูป">สินค้าสำเร็จรูป</SelectItem>
+                        <SelectItem value="สินค้าสั่งผลิต">สินค้าสั่งผลิต</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">สถานะคำสั่งซื้อ</p>
-                  <Select value={filterOrderStatus} onValueChange={setFilterOrderStatus}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">ทั้งหมด</SelectItem>
-                      <SelectItem value="ส่งคำขอสั่งซื้อ">ส่งคำขอสั่งซื้อ</SelectItem>
-                      <SelectItem value="สร้างคำสั่งซื้อใหม่">สร้างคำสั่งซื้อใหม่</SelectItem>
-                      <SelectItem value="ยืนยันคำสั่งซื้อ">ยืนยันคำสั่งซื้อ</SelectItem>
-                      <SelectItem value="สร้างงานแล้ว">สร้างงานแล้ว</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">สถานะชำระเงิน</p>
-                  <Select value={filterPaymentStatus} onValueChange={setFilterPaymentStatus}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">ทั้งหมด</SelectItem>
-                      <SelectItem value="ชำระเงินแล้ว">ชำระเงินแล้ว</SelectItem>
-                      <SelectItem value="ชำระบางส่วน">ชำระบางส่วน</SelectItem>
-                      <SelectItem value="รอชำระเงิน">รอชำระเงิน</SelectItem>
-                      <SelectItem value="เครดิต">เครดิต</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">วิธีจัดส่ง</p>
-                  <Select value={filterDeliveryMethod} onValueChange={setFilterDeliveryMethod}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">ทั้งหมด</SelectItem>
-                      <SelectItem value="ส่งพัสดุ">ส่งพัสดุ</SelectItem>
-                      <SelectItem value="รับเอง">รับเอง</SelectItem>
-                      <SelectItem value="จัดส่งโดยพนักงาน">จัดส่งโดยพนักงาน</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">วิธีชำระเงิน</p>
-                  <Select value={filterPaymentMethod} onValueChange={setFilterPaymentMethod}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">ทั้งหมด</SelectItem>
-                      <SelectItem value="โอนเงิน">โอนเงิน</SelectItem>
-                      <SelectItem value="เงินสด">เงินสด</SelectItem>
-                      <SelectItem value="วางบิล">วางบิล</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">ประเภทสินค้า</p>
-                  <Select value={filterProductCategory} onValueChange={setFilterProductCategory}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">ทั้งหมด</SelectItem>
-                      <SelectItem value="สินค้าสำเร็จรูป">สินค้าสำเร็จรูป</SelectItem>
-                      <SelectItem value="สินค้าสั่งผลิต">สินค้าสั่งผลิต</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </div>
-          )}
+            </DialogContent>
+          </Dialog>
         </CardContent>
       </Card>
 
@@ -1114,7 +1140,7 @@ export default function CreateOrder() {
                           {highlightText(order.jobId, activeSearchTerm)}
                         </a>
                       </TableCell>
-                      <TableCell className="whitespace-nowrap">{highlightText(order.orderDate, activeSearchTerm)}</TableCell>
+                      <TableCell className="whitespace-nowrap">{highlightText(formatDateDisplay(order.orderDate), activeSearchTerm)}</TableCell>
                       <TableCell>
                         <Badge variant="outline">{highlightText(order.salesChannel, activeSearchTerm)}</Badge>
                       </TableCell>
@@ -1125,7 +1151,7 @@ export default function CreateOrder() {
                       <TableCell>{getOrderStatusBadge(order.orderStatus)}</TableCell>
                       <TableCell>{getPaymentStatusBadge(order.paymentStatus)}</TableCell>
                       <TableCell className="text-right whitespace-nowrap">
-                        <div className="font-medium">{order.totalAmount?.toLocaleString('th-TH')} ฿</div>
+                        <div className="font-medium">{order.totalPrice?.toLocaleString('th-TH')} ฿</div>
                         <div className="text-xs text-muted-foreground">{order.paymentMethod}</div>
                       </TableCell>
                       <TableCell>

@@ -1,10 +1,11 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -223,6 +224,10 @@ const AccountingProductInventory = () => {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [activeTab, setActiveTab] = useState("products");
 
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(12);
+
   // Detail dialog
   const [detailItem, setDetailItem] = useState<ProductItem | null>(null);
 
@@ -258,9 +263,22 @@ const AccountingProductInventory = () => {
       else if (statusFilter === "low_stock") matchesStatus = item.status === "low_stock";
       else if (statusFilter === "out_of_stock") matchesStatus = item.status === "out_of_stock";
       else if (statusFilter === "defective") matchesStatus = item.status === "defective";
+      else if (statusFilter === "low_and_out") matchesStatus = item.status === "low_stock" || item.status === "out_of_stock";
       return matchesSearch && matchesCategory && matchesSubcategory && matchesStatus;
     });
   }, [searchTerm, selectedCategory, selectedSubcategory, statusFilter, products]);
+
+  // Pagination Logic
+  const totalPages = Math.ceil(filteredItems.length / itemsPerPage);
+  const paginatedItems = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredItems.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredItems, currentPage, itemsPerPage]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedCategory, selectedSubcategory, statusFilter]);
 
   const getStatusBadge = (status: ProductItem["status"], stock: number) => {
     switch (status) {
@@ -339,7 +357,7 @@ const AccountingProductInventory = () => {
   // --- Card View ---
   const renderCardView = () => (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-      {filteredItems.map((item) => (
+      {paginatedItems.map((item) => (
         <Card key={item.id} className="relative overflow-hidden flex flex-col">
           <Badge className="absolute top-3 right-3 z-10 bg-red-500 text-white text-xs">
             {item.subcategory || item.category}
@@ -361,8 +379,8 @@ const AccountingProductInventory = () => {
           <CardContent className="flex-1 p-4 space-y-2">
             <h3 className="font-bold text-red-600 text-base leading-tight line-clamp-2">{item.name}</h3>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-              {item.color.length > 0 && <span>สี: {item.color.join(", ")}</span>}
-              {item.size.length > 0 && <span>ขนาด: {item.size.join(", ")}</span>}
+              <span>สี: {item.color.join(", ") || "-"}</span>
+              <span>ขนาด: {item.size.join(", ") || "-"}</span>
             </div>
             <p className="text-xs text-muted-foreground">Model: {item.model} • หมวดหมู่: {item.category}</p>
 
@@ -420,6 +438,8 @@ const AccountingProductInventory = () => {
               <TableHead>รหัส</TableHead>
               <TableHead>ชื่อสินค้า</TableHead>
               <TableHead>หมวดหมู่</TableHead>
+              <TableHead>สี</TableHead>
+              <TableHead>ขนาด</TableHead>
               <TableHead className="text-right">คงเหลือ</TableHead>
               <TableHead className="text-right">ขั้นต่ำ</TableHead>
               <TableHead className="text-right min-w-[120px]">ราคาต้นทุน</TableHead>
@@ -431,7 +451,7 @@ const AccountingProductInventory = () => {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredItems.map((item) => {
+            {paginatedItems.map((item) => {
               const isEditing = editingRowId === item.id;
               const editData = inlineEdits[item.id];
               return (
@@ -448,6 +468,8 @@ const AccountingProductInventory = () => {
                   <TableCell className="font-medium">{item.code}</TableCell>
                   <TableCell className="font-medium text-red-600 max-w-[150px] truncate">{item.name}</TableCell>
                   <TableCell><span className="text-xs">{item.subcategory}</span></TableCell>
+                  <TableCell className="text-xs">{item.color.join(", ") || "-"}</TableCell>
+                  <TableCell className="text-xs">{item.size.join(", ") || "-"}</TableCell>
                   <TableCell className="text-right font-semibold">
                     <span className={item.currentStock < item.minimumStock ? "text-red-600" : ""}>{item.currentStock}</span>
                   </TableCell>
@@ -563,7 +585,8 @@ const AccountingProductInventory = () => {
 
       {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-4">
-        <Card className={`cursor-pointer transition-all hover:shadow-md ${activeTab === "products" ? "ring-2 ring-primary" : ""}`} onClick={() => setActiveTab("products")}>
+        <Card className={`cursor-pointer transition-all hover:shadow-md ${activeTab === "products" && statusFilter === "all" && selectedCategory === "all" ? "ring-2 ring-primary" : ""}`}
+          onClick={() => { setActiveTab("products"); setStatusFilter("all"); setSelectedCategory("all"); }}>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">รายการสินค้าทั้งหมด</CardTitle>
             <Boxes className="h-4 w-4 text-muted-foreground" />
@@ -574,7 +597,8 @@ const AccountingProductInventory = () => {
           </CardContent>
         </Card>
 
-        <Card className="cursor-pointer transition-all hover:shadow-md" onClick={() => { setActiveTab("products"); setStatusFilter("low_stock"); }}>
+        <Card className={`cursor-pointer transition-all hover:shadow-md ${activeTab === "products" && statusFilter === "low_and_out" ? "ring-2 ring-primary" : ""}`}
+          onClick={() => { setActiveTab("products"); setStatusFilter("low_and_out"); }}>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">สินค้าใกล้หมด/ขาดแคลน</CardTitle>
             <TrendingDown className="h-4 w-4 text-muted-foreground" />
@@ -585,7 +609,8 @@ const AccountingProductInventory = () => {
           </CardContent>
         </Card>
 
-        <Card className="cursor-pointer transition-all hover:shadow-md" onClick={() => { setActiveTab("products"); setSelectedCategory("defective"); }}>
+        <Card className={`cursor-pointer transition-all hover:shadow-md ${activeTab === "products" && selectedCategory === "defective" ? "ring-2 ring-primary" : ""}`}
+          onClick={() => { setActiveTab("products"); setSelectedCategory("defective"); }}>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">สินค้ามีตำหนิ</CardTitle>
             <AlertTriangle className="h-4 w-4 text-muted-foreground" />
@@ -596,7 +621,8 @@ const AccountingProductInventory = () => {
           </CardContent>
         </Card>
 
-        <Card className={`cursor-pointer transition-all hover:shadow-md ${activeTab === "history" ? "ring-2 ring-primary" : ""}`} onClick={() => setActiveTab("history")}>
+        <Card className={`cursor-pointer transition-all hover:shadow-md ${activeTab === "history" ? "ring-2 ring-primary" : ""}`}
+          onClick={() => setActiveTab("history")}>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">เคลื่อนไหววันนี้</CardTitle>
             <History className="h-4 w-4 text-muted-foreground" />
@@ -694,6 +720,43 @@ const AccountingProductInventory = () => {
           </p>
 
           {viewMode === "card" ? renderCardView() : renderTableView()}
+
+          {/* Pagination UI */}
+          {filteredItems.length > itemsPerPage && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-muted/30 p-4 rounded-lg mt-6">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <span>แสดง</span>
+                <Select value={String(itemsPerPage)} onValueChange={(v) => { setItemsPerPage(Number(v)); setCurrentPage(1); }}>
+                  <SelectTrigger className="h-8 w-[70px] text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="12">12</SelectItem>
+                    <SelectItem value="24">24</SelectItem>
+                    <SelectItem value="48">48</SelectItem>
+                    <SelectItem value="100">100</SelectItem>
+                  </SelectContent>
+                </Select>
+                <span>จาก {filteredItems.length} รายการ</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <Button variant="outline" size="sm" disabled={currentPage === 1} onClick={() => setCurrentPage(1)} className="h-8 px-2 text-xs">«</Button>
+                <Button variant="outline" size="sm" disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} className="h-8 px-3 text-xs">ก่อนหน้า</Button>
+                {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                  let page: number;
+                  if (totalPages <= 5) { page = i + 1; }
+                  else if (currentPage <= 3) { page = i + 1; }
+                  else if (currentPage >= totalPages - 2) { page = totalPages - 4 + i; }
+                  else { page = currentPage - 2 + i; }
+                  return (
+                    <Button key={page} variant={currentPage === page ? "default" : "outline"} size="sm" onClick={() => setCurrentPage(page)} className="h-8 w-8 p-0 text-xs">
+                      {page}
+                    </Button>
+                  );
+                })}
+                <Button variant="outline" size="sm" disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => p + 1)} className="h-8 px-3 text-xs">ถัดไป</Button>
+                <Button variant="outline" size="sm" disabled={currentPage === totalPages} onClick={() => setCurrentPage(totalPages)} className="h-8 px-2 text-xs">»</Button>
+              </div>
+            </div>
+          )}
         </TabsContent>
 
         {/* Tab: Movement History */}
@@ -719,30 +782,55 @@ const AccountingProductInventory = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {[
-                    { id: "MOV-001", date: "2025-02-10", type: "รับเข้า", item: "ถ้วยรางวัลสีทอง", qty: 100, unit: "ชิ้น", by: "สมชาย", note: "รับจากซัพพลายเออร์" },
-                    { id: "MOV-002", date: "2025-02-10", type: "จ่ายออก", item: "เหรียญพลาสติก", qty: 50, unit: "ชิ้น", by: "วิชัย", note: "เบิกใช้งาน ORD-003" },
-                    { id: "MOV-003", date: "2025-02-09", type: "รับเข้า", item: "โล่คริสตัลพรีเมียม", qty: 30, unit: "ชิ้น", by: "สมชาย", note: "รับจากซัพพลายเออร์" },
-                    { id: "MOV-004", date: "2025-02-09", type: "จ่ายออก", item: "ถ้วยรางวัลสีเงิน", qty: 15, unit: "ชิ้น", by: "มานะ", note: "เบิกใช้งาน ORD-010" },
-                    { id: "MOV-005", date: "2025-02-08", type: "ปรับยอด", item: "ฝาครอบพลาสติก", qty: -5, unit: "ชิ้น", by: "สุชาติ", note: "สินค้าชำรุด" },
-                  ].map((mov) => (
-                    <TableRow key={mov.id}>
-                      <TableCell className="font-medium">{mov.id}</TableCell>
-                      <TableCell>{mov.date}</TableCell>
-                      <TableCell>
-                        {mov.type === "รับเข้า" ? <Badge className="bg-green-100 text-green-700"><ArrowDownCircle className="w-3 h-3 mr-1" />{mov.type}</Badge> :
-                         mov.type === "จ่ายออก" ? <Badge className="bg-red-100 text-red-700"><ArrowUpCircle className="w-3 h-3 mr-1" />{mov.type}</Badge> :
-                         <Badge className="bg-blue-100 text-blue-700">{mov.type}</Badge>}
-                      </TableCell>
-                      <TableCell>{mov.item}</TableCell>
-                      <TableCell className={mov.qty > 0 ? "text-green-600" : "text-red-600"}>
-                        {mov.qty > 0 ? `+${mov.qty}` : mov.qty}
-                      </TableCell>
-                      <TableCell>{mov.unit}</TableCell>
-                      <TableCell>{mov.by}</TableCell>
-                      <TableCell className="text-muted-foreground text-sm">{mov.note}</TableCell>
-                    </TableRow>
-                  ))}
+                  {(() => {
+                    const movements = [
+                      { id: "MOV-001", date: "2025-02-10", type: "รับเข้า", item: "ถ้วยรางวัลสีทอง", qty: 100, unit: "ชิ้น", by: "สมชาย", note: "รับจากซัพพลายเออร์" },
+                      { id: "MOV-002", date: "2025-02-10", type: "จ่ายออก", item: "เหรียญพลาสติก", qty: 50, unit: "ชิ้น", by: "วิชัย", note: "เบิกใช้งาน ORD-003" },
+                      { id: "MOV-003", date: "2025-02-09", type: "รับเข้า", item: "โล่คริสตัลพรีเมียม", qty: 30, unit: "ชิ้น", by: "สมชาย", note: "รับจากซัพพลายเออร์" },
+                      { id: "MOV-004", date: "2025-02-09", type: "จ่ายออก", item: "ถ้วยรางวัลสีเงิน", qty: 15, unit: "ชิ้น", by: "มานะ", note: "เบิกใช้งาน ORD-010" },
+                      { id: "MOV-005", date: "2025-02-08", type: "ปรับยอด", item: "ฝาครอบพลาสติก", qty: -5, unit: "ชิ้น", by: "สุชาติ", note: "สินค้าชำรุด" },
+                    ];
+
+                    // Set to empty array to test/observe empty state
+                    // const movements = [];
+
+                    if (movements.length === 0) {
+                      return (
+                        <TableRow>
+                          <TableCell colSpan={8} className="text-center py-10 text-muted-foreground italic">
+                            ไม่พบประวัติการเคลื่อนไหวในช่วงเวลาที่เลือก
+                          </TableCell>
+                        </TableRow>
+                      );
+                    }
+
+                    return movements.map((mov) => (
+                      <TableRow key={mov.id}>
+                        <TableCell className="font-medium">{mov.id}</TableCell>
+                        <TableCell>{mov.date}</TableCell>
+                        <TableCell>
+                          {mov.type === "รับเข้า" ? (
+                            <Badge className="bg-green-100 text-green-700">
+                              <ArrowDownCircle className="w-3 h-3 mr-1" />{mov.type}
+                            </Badge>
+                          ) : mov.type === "จ่ายออก" ? (
+                            <Badge className="bg-red-100 text-red-700">
+                              <ArrowUpCircle className="w-3 h-3 mr-1" />{mov.type}
+                            </Badge>
+                          ) : (
+                            <Badge className="bg-blue-100 text-blue-700">{mov.type}</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>{mov.item}</TableCell>
+                        <TableCell className={mov.qty > 0 ? "text-green-600" : "text-red-600"}>
+                          {mov.qty > 0 ? `+${mov.qty}` : mov.qty}
+                        </TableCell>
+                        <TableCell>{mov.unit}</TableCell>
+                        <TableCell>{mov.by}</TableCell>
+                        <TableCell className="text-muted-foreground text-sm">{mov.note}</TableCell>
+                      </TableRow>
+                    ));
+                  })()}
                 </TableBody>
               </Table>
             </CardContent>

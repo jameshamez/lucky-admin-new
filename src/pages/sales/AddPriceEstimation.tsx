@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -9,7 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { ArrowLeft, Upload, User, FileText, X, Search, XCircle, History, AlertCircle, Calendar, Package, Check, Copy, Plus, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation, useParams } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { NestedProductSelect } from "@/components/sales/NestedProductSelect";
 import { supabase } from "@/integrations/supabase/client";
@@ -196,7 +197,24 @@ export default function AddPriceEstimation({
 }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const { id } = useParams();
   const { toast } = useToast();
+
+  // Validation state
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [isSubmitted, setIsSubmitted] = useState(false);
+
+  // Field refs for auto-scroll
+  const fieldRefs = {
+    customerName: useRef<HTMLDivElement>(null),
+    customerContact: useRef<HTMLDivElement>(null),
+    salesOwner: useRef<HTMLDivElement>(null),
+    jobName: useRef<HTMLDivElement>(null),
+    productSelect: useRef<HTMLDivElement>(null),
+    quantity: useRef<HTMLDivElement>(null),
+  };
+
+  const isEditMode = !!id;
 
   // Customer search state
   const [customerSearch, setCustomerSearch] = useState("");
@@ -214,6 +232,65 @@ export default function AddPriceEstimation({
   const [customerEmail, setCustomerEmail] = useState("");
   const [customerNote, setCustomerNote] = useState("");
   const [customerTags, setCustomerTags] = useState("");
+
+  // Pre-fill data if in Edit Mode
+  useEffect(() => {
+    const fetchEstimationData = async () => {
+      if (!id) return;
+
+      try {
+        const res = await fetch(`https://finfinphone.com/api-lucky/admin/price_estimations.php/${id}`);
+        if (!res.ok) throw new Error("Failed to fetch data");
+        const json = await res.json();
+
+        if (json.status === "success" && json.data) {
+          const item = json.data;
+          setCustomerName(item.customer_name || "");
+          setCustomerPhone(item.customer_phone || "");
+          setCustomerLineId(item.customer_line || "");
+          setCustomerEmail(item.customer_email || "");
+          setSalesOwnerId(item.sales_owner_id || "");
+          setJobName(item.job_name || "");
+          setProductCategory(item.product_category || "");
+          setSelectedProductType(item.product_type || "");
+          setQuantity(item.quantity?.toString() || "");
+          setEstimateDate(item.estimation_date || "");
+          setEstimateNote(item.notes || "");
+
+          if (item.details) {
+            const details = typeof item.details === 'string' ? JSON.parse(item.details) : item.details;
+            setMaterial(details.material || "");
+            setColorQuantityRows(details.colorQuantityRows || [{ id: crypto.randomUUID(), color: "", quantities: [0], note: "" }]);
+            setQuantitySets(details.quantitySets || ["A"]);
+            setSelectedMedalSizes(details.selectedMedalSizes || []);
+            setSelectedMedalThicknesses(details.selectedMedalThicknesses || []);
+            setFrontDetails(details.frontDetails || []);
+            setBackDetails(details.backDetails || []);
+            setLanyardSize(details.lanyardSize || "");
+            setLanyardPatterns(details.lanyardPatterns || "");
+            setLanyardType(details.lanyardType || "");
+            setAwardDesignDetails(details.awardDesignDetails || "");
+            setPlaqueOption(details.plaqueOption || "no-plaque");
+            setPlaqueText(details.plaqueText || "");
+            setGenericDesignDetails(details.genericDesignDetails || "");
+            setDesignDescription(details.designDescription || "");
+            setInscriptionPlate(details.inscriptionPlate || "");
+            setInscriptionDetails(details.inscriptionDetails || "");
+            setEventDate(details.usage_date || "");
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching estimation:", err);
+        toast({
+          title: "เกิดข้อผิดพลาด",
+          description: "ไม่สามารถโหลดข้อมูลเดิมได้",
+          variant: "destructive"
+        });
+      }
+    };
+
+    fetchEstimationData();
+  }, [id, toast]);
 
   // Pre-fill customer data from navigation state (from approved price estimation)
   useEffect(() => {
@@ -958,48 +1035,91 @@ export default function AddPriceEstimation({
     setAttachedFiles(prev => prev.filter((_, i) => i !== index));
   };
 
+  // Clear error when field changes
+  useEffect(() => {
+    if (customerName && formErrors.customerName) {
+      setFormErrors(prev => { const n = { ...prev }; delete n.customerName; return n; });
+    }
+  }, [customerName]);
+
+  useEffect(() => {
+    if ((selectedCustomerId || customerPhone || customerLineId) && formErrors.customerContact) {
+      setFormErrors(prev => { const n = { ...prev }; delete n.customerContact; return n; });
+    }
+  }, [selectedCustomerId, customerPhone, customerLineId]);
+
+  useEffect(() => {
+    if (salesOwnerId && formErrors.salesOwner) {
+      setFormErrors(prev => { const n = { ...prev }; delete n.salesOwner; return n; });
+    }
+  }, [salesOwnerId]);
+
+  useEffect(() => {
+    if (jobName && formErrors.jobName) {
+      setFormErrors(prev => { const n = { ...prev }; delete n.jobName; return n; });
+    }
+  }, [jobName]);
+
+  useEffect(() => {
+    if (productCategory && selectedProductType && formErrors.productSelect) {
+      setFormErrors(prev => { const n = { ...prev }; delete n.productSelect; return n; });
+    }
+  }, [productCategory, selectedProductType]);
+
+  useEffect(() => {
+    const q = parseInt(quantity);
+    if (!isNaN(q) && q > 0 && formErrors.quantity) {
+      setFormErrors(prev => { const n = { ...prev }; delete n.quantity; return n; });
+    }
+  }, [quantity]);
+
   const handleSave = async () => {
-    // Validate customer key (phone or line_id required) - skip if existing customer selected
+    setIsSubmitted(true);
+    const newErrors: Record<string, string> = {};
+
+    if (!customerName) newErrors.customerName = "กรุณากรอกชื่อลูกค้า";
     if (!selectedCustomerId && !customerPhone && !customerLineId) {
+      newErrors.customerContact = "กรุณากรอกเบอร์โทรหรือ LINE ID อย่างน้อย 1 อย่าง";
+    }
+    if (!salesOwnerId) newErrors.salesOwner = "กรุณาเลือกเซลล์ผู้รับผิดชอบ";
+    if (!jobName) newErrors.jobName = "กรุณากรอกชื่องาน";
+    if (!productCategory || !selectedProductType) newErrors.productSelect = "กรุณาเลือกสินค้า";
+
+    const qtyInt = parseInt(quantity);
+    if (!quantity || isNaN(qtyInt) || qtyInt <= 0) {
+      // Only require quantity if it's visible (product selected)
+      if (selectedProductType) newErrors.quantity = "กรุณากรอกจำนวนที่ถูกต้อง";
+    }
+
+    setFormErrors(newErrors);
+
+    if (Object.keys(newErrors).length > 0) {
+      // Auto-scroll to first error
+      const firstError = Object.keys(newErrors)[0];
+      const ref = fieldRefs[firstError as keyof typeof fieldRefs];
+      if (ref.current) {
+        ref.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+
       toast({
         title: "ไม่สามารถบันทึกได้",
-        description: "กรุณากรอกเบอร์โทรหรือ LINE ID อย่างน้อย 1 อย่าง",
+        description: "กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน",
         variant: "destructive",
       });
       return;
     }
 
-    if (!customerName) {
-      toast({
-        title: "ไม่สามารถบันทึกได้",
-        description: "กรุณากรอกชื่อลูกค้า",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!selectedProductType) {
-      toast({
-        title: "ไม่สามารถบันทึกได้",
-        description: "กรุณาเลือกสินค้า",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // Show summary popup for เหรียญสั่งผลิต
+    // Show summary popup for specific products
     if (selectedProductType === 'medal') {
       setShowSummaryPopup(true);
       return;
     }
 
-    // Show summary popup for โล่สั่งผลิต
     if (selectedProductType === 'award') {
       setShowAwardSummaryPopup(true);
       return;
     }
 
-    // Show summary popup for สายคล้อง
     if (selectedProductType === 'lanyard') {
       setShowLanyardSummaryPopup(true);
       return;
@@ -1008,6 +1128,7 @@ export default function AddPriceEstimation({
     // For other products, save directly
     handleConfirmSave();
   };
+
 
   const handleConfirmSave = async () => {
     setShowSummaryPopup(false);
@@ -1052,18 +1173,18 @@ export default function AddPriceEstimation({
         }
       };
 
-      const res = await fetch('https://finfinphone.com/api-lucky/admin/price_estimations.php', {
-        method: "POST",
+      const res = await fetch(`https://finfinphone.com/api-lucky/admin/price_estimations.php${isEditMode ? `/${id}` : ''}`, {
+        method: isEditMode ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
 
       const json = await res.json();
-      if (!res.ok || json.status === "error") throw new Error(json.message || "Failed to save estimation");
+      if (!res.ok || json.status === "error") throw new Error(json.message || `Failed to ${isEditMode ? 'update' : 'save'} estimation`);
 
       toast({
         title: "สำเร็จ",
-        description: "บันทึกคำขอประเมินราคาเรียบร้อยแล้ว",
+        description: `${isEditMode ? 'อัปเดต' : 'บันทึก'}คำขอประเมินราคาเรียบร้อยแล้ว`,
       });
 
       // Reset previous model tracking
@@ -1161,7 +1282,7 @@ export default function AddPriceEstimation({
           ย้อนกลับ
         </Button>
         <div>
-          <h1 className="text-3xl font-bold">เพิ่มประเมินราคา</h1>
+          <h1 className="text-3xl font-bold">{isEditMode ? 'แก้ไขประเมินราคา' : 'เพิ่มประเมินราคา'}</h1>
           <p className="text-muted-foreground">กรอกข้อมูลลูกค้าและรายละเอียดการประเมินราคา</p>
         </div>
       </div>
@@ -1242,38 +1363,78 @@ export default function AddPriceEstimation({
             </div>
 
             {/* ชื่อลูกค้า - เต็มแถว */}
-            <div className="space-y-2">
+            <div className="space-y-2" ref={fieldRefs.customerName}>
               <Label htmlFor="customer-name">ชื่อลูกค้า <span className="text-destructive">*</span></Label>
-              <Input
-                id="customer-name"
-                placeholder="กรอกชื่อลูกค้า"
-                value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
-              />
+              <div className="relative group">
+                <Input
+                  id="customer-name"
+                  placeholder="กรอกชื่อลูกค้า"
+                  value={customerName}
+                  onChange={(e) => setCustomerName(e.target.value)}
+                  className={cn(
+                    formErrors.customerName ? "border-destructive focus-visible:ring-destructive" :
+                      (isSubmitted && customerName) ? "border-green-500 focus-visible:ring-green-500 pr-10" : ""
+                  )}
+                />
+                {isSubmitted && customerName && !formErrors.customerName && (
+                  <Check className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-green-500" />
+                )}
+                {formErrors.customerName && (
+                  <div className="flex items-center gap-1.5 mt-1.5 text-xs text-destructive animate-in fade-in slide-in-from-top-1">
+                    <AlertCircle className="h-3.5 w-3.5" />
+                    <span>{formErrors.customerName}</span>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* เบอร์โทร | LINE ID */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4" ref={fieldRefs.customerContact}>
               <div className="space-y-2">
                 <Label htmlFor="customer-phone">เบอร์โทร <span className="text-muted-foreground text-xs">(key หลัก)</span></Label>
-                <Input
-                  id="customer-phone"
-                  placeholder="กรอกเบอร์โทร"
-                  value={customerPhone}
-                  onChange={(e) => setCustomerPhone(e.target.value)}
-                />
+                <div className="relative group">
+                  <Input
+                    id="customer-phone"
+                    placeholder="กรอกเบอร์โทร"
+                    value={customerPhone}
+                    onChange={(e) => setCustomerPhone(e.target.value)}
+                    className={cn(
+                      formErrors.customerContact ? "border-destructive focus-visible:ring-destructive" :
+                        (isSubmitted && (customerPhone || customerLineId || selectedCustomerId)) ? "border-green-500 focus-visible:ring-green-500 pr-10" : ""
+                    )}
+                  />
+                  {isSubmitted && customerPhone && !formErrors.customerContact && (
+                    <Check className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-green-500" />
+                  )}
+                </div>
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="customer-line">ชื่อไลน์ <span className="text-muted-foreground text-xs">(key รอง)</span></Label>
-                <Input
-                  id="customer-line"
-                  placeholder="กรอกชื่อไลน์"
-                  value={customerLineId}
-                  onChange={(e) => setCustomerLineId(e.target.value)}
-                />
+                <div className="relative group">
+                  <Input
+                    id="customer-line"
+                    placeholder="กรอกชื่อไลน์"
+                    value={customerLineId}
+                    onChange={(e) => setCustomerLineId(e.target.value)}
+                    className={cn(
+                      formErrors.customerContact ? "border-destructive focus-visible:ring-destructive" :
+                        (isSubmitted && (customerPhone || customerLineId || selectedCustomerId)) ? "border-green-500 focus-visible:ring-green-500 pr-10" : ""
+                    )}
+                  />
+                  {isSubmitted && customerLineId && !formErrors.customerContact && (
+                    <Check className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-green-500" />
+                  )}
+                </div>
               </div>
             </div>
+
+            {formErrors.customerContact && (
+              <div className="flex items-center gap-1.5 -mt-2 text-xs text-destructive animate-in fade-in slide-in-from-top-1">
+                <AlertCircle className="h-3.5 w-3.5" />
+                <span>{formErrors.customerContact}</span>
+              </div>
+            )}
 
             {/* อีเมล | ประเภทลูกค้า */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1338,10 +1499,13 @@ export default function AddPriceEstimation({
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="sales-owner">เซลล์ผู้รับผิดชอบ</Label>
+              <div className="space-y-2" ref={fieldRefs.salesOwner}>
+                <Label htmlFor="sales-owner">เซลล์ผู้รับผิดชอบ <span className="text-destructive">*</span></Label>
                 <Select value={salesOwnerId} onValueChange={setSalesOwnerId}>
-                  <SelectTrigger>
+                  <SelectTrigger className={cn(
+                    formErrors.salesOwner ? "border-destructive focus:ring-destructive" :
+                      (isSubmitted && salesOwnerId) ? "border-green-500 focus:ring-green-500" : ""
+                  )}>
                     <SelectValue placeholder="เลือกเซลล์" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1352,19 +1516,40 @@ export default function AddPriceEstimation({
                     ))}
                   </SelectContent>
                 </Select>
+                {formErrors.salesOwner && (
+                  <div className="flex items-center gap-1.5 mt-1.5 text-xs text-destructive animate-in fade-in slide-in-from-top-1">
+                    <AlertCircle className="h-3.5 w-3.5" />
+                    <span>{formErrors.salesOwner}</span>
+                  </div>
+                )}
               </div>
             </div>
 
             {/* ชื่องาน | วันที่ใช้งาน - อยู่บรรทัดเดียวกัน */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="job-name">ชื่องาน</Label>
-                <Input
-                  id="job-name"
-                  placeholder="กรอกชื่องาน"
-                  value={jobName}
-                  onChange={(e) => setJobName(e.target.value)}
-                />
+              <div className="space-y-2" ref={fieldRefs.jobName}>
+                <Label htmlFor="job-name">ชื่องาน <span className="text-destructive">*</span></Label>
+                <div className="relative group">
+                  <Input
+                    id="job-name"
+                    placeholder="กรอกชื่องาน"
+                    value={jobName}
+                    onChange={(e) => setJobName(e.target.value)}
+                    className={cn(
+                      formErrors.jobName ? "border-destructive focus-visible:ring-destructive" :
+                        (isSubmitted && jobName) ? "border-green-500 focus-visible:ring-green-500 pr-10" : ""
+                    )}
+                  />
+                  {isSubmitted && jobName && !formErrors.jobName && (
+                    <Check className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-green-500" />
+                  )}
+                </div>
+                {formErrors.jobName && (
+                  <div className="flex items-center gap-1.5 mt-1.5 text-xs text-destructive animate-in fade-in slide-in-from-top-1">
+                    <AlertCircle className="h-3.5 w-3.5" />
+                    <span>{formErrors.jobName}</span>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -1379,29 +1564,54 @@ export default function AddPriceEstimation({
             </div>
 
             {/* เลือกสินค้าแบบ 2 คอลัมน์ */}
-            <div className="space-y-2">
-              <Label>เลือกประเภทสินค้า / สินค้า</Label>
+            <div className="space-y-2" ref={fieldRefs.productSelect}>
+              <Label>เลือกประเภทสินค้า / สินค้า <span className="text-destructive">*</span></Label>
               <NestedProductSelect
                 productCategory={productCategory}
                 selectedProduct={selectedProductType}
                 onSelect={handleProductSelect}
                 productsByCategory={productsByCategory}
                 categoryOptions={productCategoryOptions}
+                error={!!formErrors.productSelect}
+                className={cn(
+                  (isSubmitted && productCategory && selectedProductType) ? "border-green-500 focus:ring-green-500" : ""
+                )}
               />
+              {formErrors.productSelect && (
+                <div className="flex items-center gap-1.5 mt-1.5 text-xs text-destructive animate-in fade-in slide-in-from-top-1">
+                  <AlertCircle className="h-3.5 w-3.5" />
+                  <span>{formErrors.productSelect}</span>
+                </div>
+              )}
             </div>
 
             {/* จำนวน | งบประมาณของลูกค้า - แสดงต่อจากเลือกสินค้า */}
             {selectedProductType && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4" ref={fieldRefs.quantity}>
                 <div className="space-y-2">
-                  <Label htmlFor="quantity">จำนวน</Label>
-                  <Input
-                    id="quantity"
-                    type="number"
-                    placeholder="กรอกจำนวน"
-                    value={quantity}
-                    onChange={(e) => setQuantity(e.target.value)}
-                  />
+                  <Label htmlFor="quantity">จำนวน <span className="text-destructive">*</span></Label>
+                  <div className="relative group">
+                    <Input
+                      id="quantity"
+                      type="number"
+                      placeholder="กรอกจำนวน"
+                      value={quantity}
+                      onChange={(e) => setQuantity(e.target.value)}
+                      className={cn(
+                        formErrors.quantity ? "border-destructive focus-visible:ring-destructive" :
+                          (isSubmitted && parseInt(quantity) > 0) ? "border-green-500 focus-visible:ring-green-500 pr-10" : ""
+                      )}
+                    />
+                    {isSubmitted && parseInt(quantity) > 0 && !formErrors.quantity && (
+                      <Check className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-green-500" />
+                    )}
+                  </div>
+                  {formErrors.quantity && (
+                    <div className="flex items-center gap-1.5 mt-1.5 text-xs text-destructive animate-in fade-in slide-in-from-top-1">
+                      <AlertCircle className="h-3.5 w-3.5" />
+                      <span>{formErrors.quantity}</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-2">
@@ -2776,7 +2986,7 @@ export default function AddPriceEstimation({
       {(!usePreviousModel || isFieldLocked) && (
         <div className="flex gap-4 max-w-4xl">
           <Button size="lg" onClick={handleSave}>
-            บันทึกประเมินราคา
+            {isEditMode ? 'อัปเดตข้อมูล' : 'บันทึกประเมินราคา'}
           </Button>
           {isFieldLocked ? (
             <Button variant="outline" size="lg" onClick={handleCancelPreviousModel}>

@@ -34,37 +34,85 @@ foreach ($db_options as $db) {
 }
 $conn->set_charset("utf8mb4");
 
-// Dynamic Column Detection
-function getOrderRevenueColumn($conn)
+// Dynamic Column Detection - detect ALL available columns
+function getAvailableColumns($conn)
 {
     $res = $conn->query("SHOW COLUMNS FROM orders");
     $cols = [];
     while ($row = $res->fetch_assoc())
         $cols[] = strtolower($row['Field']);
-    if (in_array('total_amount', $cols))
-        return 'total_amount';
-    if (in_array('total_price', $cols))
-        return 'total_price';
-    return 'subtotal';
+    return $cols;
 }
 
-$rev_col = getOrderRevenueColumn($conn);
+$all_cols = getAvailableColumns($conn);
+
+// Revenue Expression: pick the best non-zero amount
+// Use GREATEST to find the largest non-zero value among the available columns
+$rev_parts = [];
+if (in_array('total_amount', $all_cols))
+    $rev_parts[] = 'COALESCE(total_amount, 0)';
+if (in_array('total_price', $all_cols))
+    $rev_parts[] = 'COALESCE(total_price, 0)';
+if (in_array('subtotal', $all_cols))
+    $rev_parts[] = 'COALESCE(subtotal, 0)';
+if (in_array('budget', $all_cols))
+    $rev_parts[] = 'COALESCE(budget, 0)';
+$rev_expr = count($rev_parts) > 1 ? 'GREATEST(' . implode(', ', $rev_parts) . ')' : ($rev_parts[0] ?? '0');
+
+// Status Expression: COALESCE order_status and status columns
+$has_order_status = in_array('order_status', $all_cols);
+$has_status = in_array('status', $all_cols);
+$status_expr = $has_order_status && $has_status
+    ? "COALESCE(NULLIF(order_status,''), NULLIF(status,''), 'ไม่ระบุ')"
+    : ($has_order_status ? "COALESCE(order_status, 'ไม่ระบุ')" : "COALESCE(status, 'ไม่ระบุ')");
+
+// Category Expression: COALESCE product_category and product_type 
+$has_product_category = in_array('product_category', $all_cols);
+$has_product_type = in_array('product_type', $all_cols);
+$cat_expr = "COALESCE(NULLIF(" . ($has_product_category ? 'product_category' : "''") . ",''), NULLIF(" . ($has_product_type ? 'product_type' : "''") . ",''), 'อื่นๆ')";
+
+// Date Expression: handle both date and datetime in order_date
+$date_expr = "DATE(order_date)";
+
+$period = $_GET['period'] ?? 'month';
 $response = ["status" => "success", "data" => []];
 
-// 1. Dashboard Monthly Summary
-$current_month = date('Y-m');
+// ============================
+// 1. Dashboard Summary (Current Period)
+// ============================
+$where_period = "";
+$current_label = "";
+$period_label_th = "";
+if ($period === 'day') {
+    $current_label = date('Y-m-d');
+    $where_period = "$date_expr = '$current_label'";
+    $period_label_th = "วันนี้";
+} elseif ($period === 'year') {
+    $current_label = date('Y');
+    $where_period = "YEAR(order_date) = $current_label";
+    $period_label_th = "ปีนี้";
+} else {
+    $current_label = date('Y-m');
+    $where_period = "DATE_FORMAT(order_date, '%Y-%m') = '$current_label'";
+    $period_label_th = "เดือนนี้";
+}
+
 $summary_sql = "SELECT 
-                    SUM(COALESCE($rev_col, 0)) as current_revenue,
+                    SUM($rev_expr) as current_revenue,
                     SUM(COALESCE(paid_amount, 0)) as real_revenue,
                     COUNT(*) as total_orders
                 FROM orders 
-                WHERE order_date LIKE '$current_month%'";
+                WHERE $where_period";
 $summary = $conn->query($summary_sql)->fetch_assoc();
 
-// Target calculation
-$target_sql = "SELECT SUM(target_amount) as target FROM sales_targets WHERE period_value LIKE '$current_month%'";
-$target_res = $conn->query($target_sql)->fetch_assoc();
-$target_amount = (float) ($target_res['target'] ?? 2000000);
+// Target calculation (safe query - table may not exist)
+$target_amount = 2000000; // default
+$target_check = @$conn->query("SHOW TABLES LIKE 'sales_targets'");
+if ($target_check && $target_check->num_rows > 0) {
+    $target_sql = "SELECT SUM(target_amount) as target FROM sales_targets WHERE period_value LIKE '$current_label%'";
+    $target_res = $conn->query($target_sql)->fetch_assoc();
+    $target_amount = (float) ($target_res['target'] ?? 2000000);
+}
 
 $current_rev = (float) ($summary['current_revenue'] ?? 0);
 $real_rev = (float) ($summary['real_revenue'] ?? 0);
@@ -75,79 +123,240 @@ $response['data']['dashboardSummary'] = [
     "percentage" => $target_amount > 0 ? round(($current_rev / $target_amount) * 100) : 0,
     "realRevenue" => $real_rev,
     "pendingRevenue" => $current_rev - $real_rev,
-    "totalOrders" => (int) $summary['total_orders']
+    "totalOrders" => (int) ($summary['total_orders'] ?? 0),
+    "periodLabel" => $period_label_th
 ];
 
+// ============================
 // 2. Pipeline Status Counts
-$status_counts_sql = "SELECT order_status, COUNT(*) as count FROM orders GROUP BY order_status";
+// ============================
+// Use the COALESCE status expression for reliable status detection
+$status_counts_sql = "SELECT $status_expr as resolved_status, COUNT(*) as count FROM orders GROUP BY resolved_status";
 $res = $conn->query($status_counts_sql);
 $status_map = [];
 while ($row = $res->fetch_assoc()) {
-    $status_map[$row['order_status']] = (int) $row['count'];
+    $status_map[$row['resolved_status']] = (int) $row['count'];
 }
 
+// Map all known statuses - including Thai and English variants
 $response['data']['pipelineStats'] = [
-    "estimate" => $status_map['ประเมินราคา'] ?? 0,
-    "quotation" => $status_map['ใบเสนอราคา'] ?? 0,
-    "pendingDeposit" => $status_map['รอชำระมัดจำ'] ?? 0,
-    "graphicDesign" => $status_map['รอออกแบบ'] ?? 0,
-    "production" => $status_map['กำลังผลิต'] ?? 0,
-    "qcReadyToShip" => $status_map['ตรวจสอบคุณภาพ'] ?? 0,
-    "completed" => $status_map['จัดส่งสำเร็จ'] ?? 0
+    "estimate" => ($status_map['ประเมินราคา'] ?? 0),
+    "quotation" => ($status_map['ใบเสนอราคา'] ?? 0),
+    "pendingDeposit" => ($status_map['รอชำระมัดจำ'] ?? 0) + ($status_map['รอชำระเงิน'] ?? 0) + ($status_map['pending'] ?? 0),
+    "graphicDesign" => ($status_map['รอออกแบบ'] ?? 0),
+    "production" => ($status_map['กำลังผลิต'] ?? 0),
+    "qcReadyToShip" => ($status_map['ตรวจสอบคุณภาพ'] ?? 0),
+    "completed" => ($status_map['จัดส่งสำเร็จ'] ?? 0) + ($status_map['completed'] ?? 0),
+    "newOrders" => ($status_map['สร้างคำสั่งซื้อใหม่'] ?? 0)
 ];
 
+// Also send raw status map for debugging / future use
+$response['data']['rawStatusCounts'] = $status_map;
+
+// ============================
 // 3. Urgent Orders
+// ============================
 $urgent_sql = "SELECT 
-                job_id as id, customer_name as customer, job_name as mainItem, 
-                delivery_date, order_status as reason,
-                DATEDIFF(CURDATE(), delivery_date) as overdueDays
+                orders.order_id as numeric_id,
+                COALESCE(NULLIF(orders.job_id, ''), CONCAT('JOB-', orders.order_id)) as id, 
+                COALESCE(NULLIF(orders.customer_name, ''), customers.full_name, customers.line_id, 'ไม่ระบุชื่อ') as customer,
+                COALESCE(NULLIF(orders.job_name, ''), (SELECT product_name FROM order_items WHERE order_id = orders.order_id LIMIT 1), 'ไม่ระบุงาน') as mainItem,
+                orders.delivery_date, 
+                $status_expr as reason,
+                DATEDIFF(CURDATE(), orders.delivery_date) as overdueDays
                FROM orders 
-               WHERE order_status != 'จัดส่งสำเร็จ' 
-               AND (delivery_date <= DATE_ADD(CURDATE(), INTERVAL 1 DAY) OR delivery_date IS NULL)
-               ORDER BY delivery_date ASC LIMIT 10";
+               LEFT JOIN customers ON orders.customer_id = customers.id
+               WHERE $status_expr NOT IN ('จัดส่งสำเร็จ', 'completed')
+               AND orders.order_date IS NOT NULL
+               ORDER BY orders.delivery_date ASC LIMIT 10";
 $res = $conn->query($urgent_sql);
 $urgentOrders = [];
-while ($row = $res->fetch_assoc()) {
-    $days = (int) $row['overdueDays'];
-    $row['dueDateType'] = $days > 0 ? 'overdue' : ($days == 0 ? 'today' : 'tomorrow');
-    $row['dueDate'] = $days > 0 ? "เกินกำหนด" : ($days == 0 ? "วันนี้" : "พรุ่งนี้");
-    $urgentOrders[] = $row;
+if ($res) {
+    while ($row = $res->fetch_assoc()) {
+        $days = (int) ($row['overdueDays'] ?? 0);
+        $row['overdueDays'] = max(0, $days);
+        $row['dueDateType'] = $days > 0 ? 'overdue' : ($days == 0 ? 'today' : 'tomorrow');
+        $row['dueDate'] = $row['delivery_date'] ?: 'วันนี้';
+        $urgentOrders[] = $row;
+    }
 }
 $response['data']['urgentOrders'] = $urgentOrders;
 
+// ============================
 // 4. Jobs By Status Details
-$status_keys = [
+// ============================
+// Use resolved status + include common statuses from actual data
+$all_status_keys = [
     'ประเมินราคา' => 'estimate',
     'ใบเสนอราคา' => 'quotation',
     'รอชำระมัดจำ' => 'pendingDeposit',
+    'รอชำระเงิน' => 'pendingDeposit',
+    'pending' => 'pendingDeposit',
     'รอออกแบบ' => 'graphicDesign',
     'กำลังผลิต' => 'production',
     'ตรวจสอบคุณภาพ' => 'qcReadyToShip',
-    'จัดส่งสำเร็จ' => 'completed'
+    'จัดส่งสำเร็จ' => 'completed',
+    'completed' => 'completed',
+    'สร้างคำสั่งซื้อใหม่' => 'newOrders'
 ];
 
-$jobs_by_status = [];
-foreach ($status_keys as $db_status => $key) {
-    $sql = "SELECT job_id as jobId, order_date as orderDate, sales_channel as salesChannel, 
-            customer_line as lineName, customer_name as customerName, job_name as product, 
-            delivery_date as deliveryDate 
-            FROM orders WHERE order_status = '$db_status' ORDER BY order_date DESC LIMIT 15";
-    $job_res = $conn->query($sql);
-    $jobs_by_status[$key] = [];
-    while ($j = $job_res->fetch_assoc())
+$jobs_by_status = [
+    'estimate' => [],
+    'quotation' => [],
+    'pendingDeposit' => [],
+    'graphicDesign' => [],
+    'production' => [],
+    'qcReadyToShip' => [],
+    'completed' => [],
+    'newOrders' => []
+];
+
+$jobs_sql = "SELECT orders.order_id, orders.job_id as jobId, orders.order_date as orderDate, orders.sales_channel as salesChannel, 
+        orders.customer_line as lineName, 
+        COALESCE(NULLIF(orders.customer_name, ''), customers.full_name, 'ไม่ระบุ') as customerName, 
+        COALESCE(NULLIF(orders.job_name, ''), (SELECT product_name FROM order_items WHERE order_id = orders.order_id LIMIT 1), 'ไม่ระบุ') as product, 
+        orders.delivery_date as deliveryDate, $status_expr as resolved_status,
+        $rev_expr as revenue
+        FROM orders 
+        LEFT JOIN customers ON orders.customer_id = customers.id
+        ORDER BY orders.order_date DESC LIMIT 100";
+$job_res = $conn->query($jobs_sql);
+while ($j = $job_res->fetch_assoc()) {
+    $rs = $j['resolved_status'];
+    $key = $all_status_keys[$rs] ?? null;
+    if ($key && isset($jobs_by_status[$key]) && count($jobs_by_status[$key]) < 15) {
+        unset($j['resolved_status'], $j['revenue']);
         $jobs_by_status[$key][] = $j;
+    }
 }
 $response['data']['jobsByStatus'] = $jobs_by_status;
 
-// 5. Sales Trend (Chart)
-$trend_sql = "SELECT DATE_FORMAT(order_date, '%b') as month, SUM(COALESCE($rev_col, 0)) as revenue 
-              FROM orders GROUP BY YEAR(order_date), MONTH(order_date) 
-              ORDER BY YEAR(order_date) DESC, MONTH(order_date) DESC LIMIT 6";
-$res = $conn->query($trend_sql);
-$trend = [];
-while ($row = $res->fetch_assoc())
-    $trend[] = ["name" => $row['month'], "revenue" => (float) $row['revenue']];
-$response['data']['salesTrend'] = array_reverse($trend);
+// ============================
+// 5. Sales Trend (Stacked Chart Data)
+// ============================
+$trend_group = "";
+$trend_format = "";
+$trend_order = "";
+$trend_limit = 6;
 
-echo json_encode($response);
+if ($period === 'day') {
+    $trend_group = "DATE(order_date)";
+    $trend_format = "%d/%m";
+    $trend_order = "DATE(order_date) DESC";
+    $trend_limit = 14; // 2 weeks of daily data
+} elseif ($period === 'year') {
+    $trend_group = "YEAR(order_date)";
+    $trend_format = "%Y";
+    $trend_order = "YEAR(order_date) DESC";
+    $trend_limit = 5;
+} else {
+    // Monthly (default)  
+    $trend_group = "DATE_FORMAT(order_date, '%Y-%m')";
+    $trend_format = "%Y-%m";
+    $trend_order = "DATE_FORMAT(order_date, '%Y-%m') DESC";
+    $trend_limit = 12;
+}
+
+$trend_sql = "SELECT 
+                $trend_group as period_key,
+                DATE_FORMAT(order_date, '$trend_format') as name,
+                $cat_expr as category,
+                SUM($rev_expr) as revenue,
+                COUNT(*) as order_count
+              FROM orders
+              WHERE order_date IS NOT NULL AND order_date != '0000-00-00' AND order_date != '0000-00-00 00:00:00'
+              GROUP BY period_key, category
+              ORDER BY $trend_order";
+
+$res = $conn->query($trend_sql);
+$temp_trend = [];
+$seen_periods = [];
+
+if ($res) {
+    while ($row = $res->fetch_assoc()) {
+        $period_key = $row['period_key'];
+        $name = $row['name'];
+        $cat = $row['category'] ?: 'อื่นๆ';
+
+        // Normalize Category Name for chart display
+        $cat_lower = mb_strtolower($cat);
+        if (stripos($cat, 'Medal') !== false || mb_stripos($cat, 'เหรียญ') !== false) {
+            $cat = 'เหรียญรางวัล';
+        } else if (stripos($cat, 'Trophy') !== false || mb_stripos($cat, 'ถ้วย') !== false) {
+            $cat = 'ถ้วยรางวัล';
+        } else if (stripos($cat, 'Plaque') !== false || mb_stripos($cat, 'โล่') !== false) {
+            $cat = 'โล่รางวัล';
+        } else {
+            $cat = 'อื่นๆ';
+        }
+
+        // Track unique periods and limit
+        if (!isset($seen_periods[$period_key])) {
+            if (count($seen_periods) >= $trend_limit)
+                continue; // skip if we have enough periods
+            $seen_periods[$period_key] = true;
+        }
+
+        // Format month names for Thai display
+        if ($period === 'month') {
+            $month_map = [
+                '01' => 'ม.ค.',
+                '02' => 'ก.พ.',
+                '03' => 'มี.ค.',
+                '04' => 'เม.ย.',
+                '05' => 'พ.ค.',
+                '06' => 'มิ.ย.',
+                '07' => 'ก.ค.',
+                '08' => 'ส.ค.',
+                '09' => 'ก.ย.',
+                '10' => 'ต.ค.',
+                '11' => 'พ.ย.',
+                '12' => 'ธ.ค.'
+            ];
+            $parts = explode('-', $name);
+            if (count($parts) === 2) {
+                $name = $month_map[$parts[1]] ?? $name;
+            }
+        }
+
+        if (!isset($temp_trend[$period_key])) {
+            $temp_trend[$period_key] = [
+                "name" => $name,
+                "เหรียญรางวัล" => 0,
+                "ถ้วยรางวัล" => 0,
+                "โล่รางวัล" => 0,
+                "อื่นๆ" => 0,
+                "_orderCount" => 0
+            ];
+        }
+        $revenue = (float) $row['revenue'];
+        $count = (int) $row['order_count'];
+        $temp_trend[$period_key][$cat] += $revenue;
+        $temp_trend[$period_key]['_orderCount'] += $count;
+    }
+}
+
+// Convert to array, strip internal keys, and reverse to chronological order
+$trend = [];
+foreach (array_reverse(array_values($temp_trend)) as $item) {
+    $orderCount = $item['_orderCount'];
+    unset($item['_orderCount']);
+    $item['orderCount'] = $orderCount;
+    $trend[] = $item;
+}
+$response['data']['salesTrend'] = $trend;
+
+// ============================
+// 6. Debug info (column detection)
+// ============================
+$response['data']['_debug'] = [
+    "revExpr" => $rev_expr,
+    "statusExpr" => $status_expr,
+    "catExpr" => $cat_expr,
+    "period" => $period,
+    "currentLabel" => $current_label,
+    "availableCols" => $all_cols
+];
+
+echo json_encode($response, JSON_UNESCAPED_UNICODE);
 $conn->close();

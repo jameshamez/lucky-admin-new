@@ -54,7 +54,7 @@ if ($method === 'GET') {
 
     if ($id) {
         // ดึงคำสั่งซื้อเดี่ยว พร้อม items และ payments
-        $sql = "SELECT * FROM orders WHERE id = ?";
+        $sql = "SELECT * FROM orders WHERE order_id = ?";
         $stmt = $conn->prepare($sql);
         $stmt->bind_param("i", $id);
         $stmt->execute();
@@ -68,7 +68,7 @@ if ($method === 'GET') {
 
         // === Compatibility: merge legacy columns → ชื่อใหม่ ===
         $order['order_status'] = $order['order_status'] ?? ($order['status'] ?? 'สร้างคำสั่งซื้อใหม่');
-        $order['total_amount'] = $order['total_amount'] ?? ($order['total_price'] ?? 0);
+        $order['total_price'] = $order['total_price'] ?? ($order['total_amount'] ?? 0);
         $order['require_tax_invoice'] = $order['require_tax_invoice'] ?? ($order['needs_tax_invoice'] ?? 0);
         $order['paid_amount'] = $order['paid_amount'] ?? 0;
 
@@ -140,50 +140,51 @@ if ($method === 'GET') {
 
     if ($search !== '') {
         $like = '%' . $search . '%';
-        $where[] = "(job_id LIKE ? OR customer_name LIKE ? OR customer_phone LIKE ? OR customer_line LIKE ? OR job_name LIKE ?)";
-        $params = array_merge($params, [$like, $like, $like, $like, $like]);
-        $types .= 'sssss';
+        $where[] = "(orders.job_id LIKE ? OR orders.customer_name LIKE ? OR orders.customer_phone LIKE ? OR orders.customer_line LIKE ? OR orders.job_name LIKE ? OR customers.full_name LIKE ? OR customers.phone LIKE ? OR customers.line_id LIKE ? OR customers.email LIKE ?)";
+        $params = array_merge($params, [$like, $like, $like, $like, $like, $like, $like, $like, $like]);
+        $types .= 'sssssssss';
     }
     if ($order_status !== '') {
-        $where[] = "order_status = ?";
+        $where[] = "orders.order_status = ?";
         $params[] = $order_status;
         $types .= 's';
     }
     if ($payment_status !== '') {
-        $where[] = "payment_status = ?";
+        $where[] = "orders.payment_status = ?";
         $params[] = $payment_status;
         $types .= 's';
     }
     if ($product_cat !== '') {
-        $where[] = "product_category = ?";
+        $where[] = "orders.product_category = ?";
         $params[] = $product_cat;
         $types .= 's';
     }
     if ($delivery_method !== '') {
-        $where[] = "delivery_method = ?";
+        $where[] = "orders.delivery_method = ?";
         $params[] = $delivery_method;
         $types .= 's';
     }
     if ($payment_method !== '') {
-        $where[] = "payment_method = ?";
+        $where[] = "orders.payment_method = ?";
         $params[] = $payment_method;
         $types .= 's';
     }
     if ($date_from !== '') {
-        $where[] = "order_date >= ?";
+        $where[] = "orders.order_date >= ?";
         $params[] = $date_from;
         $types .= 's';
     }
     if ($date_to !== '') {
-        $where[] = "order_date <= ?";
+        $where[] = "orders.order_date <= ?";
         $params[] = $date_to;
         $types .= 's';
     }
 
     $where_sql = count($where) > 0 ? "WHERE " . implode(" AND ", $where) : "";
+    $from_sql = "FROM orders LEFT JOIN customers ON orders.customer_id = customers.id";
 
     // Count total
-    $count_sql = "SELECT COUNT(*) AS total FROM orders $where_sql";
+    $count_sql = "SELECT COUNT(*) AS total $from_sql $where_sql";
     if (!empty($params)) {
         $count_stmt = $conn->prepare($count_sql);
         $count_stmt->bind_param($types, ...$params);
@@ -194,7 +195,14 @@ if ($method === 'GET') {
     }
 
     // Get paginated orders
-    $data_sql = "SELECT * FROM orders $where_sql ORDER BY created_at DESC LIMIT ? OFFSET ?";
+    $data_sql = "SELECT orders.*, 
+                        customers.full_name AS cust_full_name, 
+                        customers.phone AS cust_phone, 
+                        customers.line_id AS cust_line_id, 
+                        customers.email AS cust_email,
+                        customers.created_at AS cust_created_at
+                 $from_sql $where_sql 
+                 ORDER BY orders.created_at DESC LIMIT ? OFFSET ?";
     $data_params = array_merge($params, [$limit, $offset]);
     $data_types = $types . 'ii';
 
@@ -213,9 +221,20 @@ if ($method === 'GET') {
         if (!empty($row['production_workflow'])) {
             $row['production_workflow'] = json_decode($row['production_workflow'], true);
         }
+        // Fallback to customer data if missing in orders
+        if (empty($row['customer_name']))
+            $row['customer_name'] = $row['cust_full_name'] ?? '';
+        if (empty($row['customer_phone']))
+            $row['customer_phone'] = $row['cust_phone'] ?? '';
+        if (empty($row['customer_line']))
+            $row['customer_line'] = $row['cust_line_id'] ?? '';
+        if (empty($row['customer_email']))
+            $row['customer_email'] = $row['cust_email'] ?? '';
+        $row['customer_created_at'] = $row['cust_created_at'] ?? null;
+
         // Compatibility: ใช้คอลัมน์ใหม่ก่อน fallback คอลัมน์เดิม
         $row['order_status'] = $row['order_status'] ?? ($row['status'] ?? 'สร้างคำสั่งซื้อใหม่');
-        $row['total_amount'] = $row['total_amount'] ?? ($row['total_price'] ?? 0);
+        $row['total_price'] = $row['total_price'] ?? ($row['total_amount'] ?? 0);
         $row['require_tax_invoice'] = $row['require_tax_invoice'] ?? ($row['needs_tax_invoice'] ?? 0);
         $row['paid_amount'] = $row['paid_amount'] ?? 0;
         $row['payment_status'] = $row['payment_status'] ?? 'รอชำระเงิน';
@@ -225,11 +244,11 @@ if ($method === 'GET') {
     // Summary stats (all orders without limit for cards)
     // ใช้ COALESCE รองรับทั้งคอลัมน์เดิมและใหม่
     $stats_sql = "SELECT
-        COALESCE(order_status, status, 'สร้างคำสั่งซื้อใหม่') AS order_status,
-        COALESCE(payment_status, 'รอชำระเงิน') AS payment_status,
-        COALESCE(total_amount, total_price, 0) AS total_amount,
-        COALESCE(paid_amount, 0) AS paid_amount
-    FROM orders $where_sql";
+        COALESCE(orders.order_status, orders.status, 'สร้างคำสั่งซื้อใหม่') AS order_status,
+        COALESCE(orders.payment_status, 'รอชำระเงิน') AS payment_status,
+        COALESCE(orders.total_price, orders.total_amount, 0) AS total_price,
+        COALESCE(orders.paid_amount, 0) AS paid_amount
+    $from_sql $where_sql";
     if (!empty($params)) {
         $stats_stmt = $conn->prepare($stats_sql);
         $stats_stmt->bind_param($types, ...$params);
@@ -245,7 +264,7 @@ if ($method === 'GET') {
     $total_paid = 0;
 
     while ($row = $stats_result->fetch_assoc()) {
-        $total_revenue += floatval($row['total_amount']);
+        $total_revenue += floatval($row['total_price']);
         $total_paid += floatval($row['paid_amount']);
         switch ($row['order_status']) {
             case 'ส่งคำขอสั่งซื้อ':
@@ -369,7 +388,7 @@ if ($method === 'POST') {
     $v_subtotal = floatval($data['subtotal'] ?? 0);
     $v_delivery_cost = floatval($data['delivery_cost'] ?? 0);
     $v_vat_amount = floatval($data['vat_amount'] ?? 0);
-    $v_total_amount = floatval($data['total_amount'] ?? 0);
+    $v_total_price = floatval($data['total_price'] ?? ($data['total_amount'] ?? 0));
     $v_payment_method = $data['payment_method'] ?? '';
     $v_payment_status = $data['payment_status'] ?? 'รอชำระเงิน';
     $v_paid_amount = floatval($data['paid_amount'] ?? 0);
@@ -410,8 +429,8 @@ if ($method === 'POST') {
         $v_subtotal,
         $v_delivery_cost,
         $v_vat_amount,
-        $v_total_amount,
-        $v_total_amount, // For total_price
+        $v_total_price,
+        $v_total_price, // For total_amount compatibility if needed
         $v_payment_method,
         $v_payment_status,
         $v_paid_amount,
@@ -540,8 +559,8 @@ if ($method === 'PUT') {
         'subtotal',
         'delivery_cost',
         'vat_amount',
-        'total_amount',
-        'total_price', // For compatibility
+        'total_amount', // For compatibility
+        'total_price',
         'payment_status',
         'paid_amount',
         'status',
@@ -589,7 +608,7 @@ if ($method === 'PUT') {
             }
             $fields[] = "$field = ?";
             $params[] = $value;
-            $types .= (in_array($field, ['paid_amount', 'total_amount', 'subtotal', 'vat_amount', 'delivery_cost', 'budget'])) ? 'd' : ((in_array($field, ['job_created', 'needs_tax_invoice', 'customer_id'])) ? 'i' : 's');
+            $types .= (in_array($field, ['paid_amount', 'total_amount', 'total_price', 'subtotal', 'vat_amount', 'delivery_cost', 'budget'])) ? 'd' : ((in_array($field, ['job_created', 'needs_tax_invoice', 'customer_id'])) ? 'i' : 's');
         }
     }
 
@@ -602,7 +621,7 @@ if ($method === 'PUT') {
     $params[] = $id;
     $types .= 'i';
 
-    $sql = "UPDATE orders SET " . implode(", ", $fields) . " WHERE id = ?";
+    $sql = "UPDATE orders SET " . implode(", ", $fields) . " WHERE order_id = ?";
     $stmt = $conn->prepare($sql);
     $stmt->bind_param($types, ...$params);
 
@@ -670,8 +689,7 @@ if ($method === 'PATCH') {
 
     $params[] = $id;
     $types .= 'i';
-
-    $sql = "UPDATE orders SET " . implode(", ", $fields) . " WHERE id = ?";
+    $sql = "UPDATE orders SET " . implode(", ", $fields) . " WHERE order_id = ?";
     $stmt = $conn->prepare($sql);
     $stmt->bind_param($types, ...$params);
 
@@ -693,7 +711,7 @@ if ($method === 'DELETE') {
     }
 
     // cascade delete handles order_items and order_payments automatically
-    $stmt = $conn->prepare("DELETE FROM orders WHERE id = ?");
+    $stmt = $conn->prepare("DELETE FROM orders WHERE order_id = ?");
     $stmt->bind_param("i", $id);
 
     if ($stmt->execute()) {

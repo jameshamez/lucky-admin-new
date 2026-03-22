@@ -18,10 +18,23 @@ import {
   X,
   Palette,
   ShoppingBag,
-  Factory
+  Factory,
+  Plus,
+  Edit,
+  Loader2
 } from "lucide-react";
-import { toast } from "sonner";
+import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Copy, Check } from "lucide-react";
 
 // Status list for "เหรียญสั่งผลิต + ลูกค้ามีแบบแล้ว"
 const productStatusList = [
@@ -63,7 +76,8 @@ interface OrderItem {
 }
 
 interface Order {
-  id: string;
+  id: string; // Display ID (JOB-...)
+  numericId: number; // Database ID
   customer: string;
   items: string;
   orderDate: string;
@@ -86,6 +100,7 @@ interface Order {
 const mockOrders: Order[] = [
   {
     id: "JOB-2024-001",
+    numericId: 1,
     customer: "บริษัท เอบีซี จำกัด",
     items: "เหรียญสั่งผลิต, ถ้วยรางวัล",
     orderDate: "2024-12-20",
@@ -148,6 +163,7 @@ const mockOrders: Order[] = [
   },
   {
     id: "JOB-2024-003",
+    numericId: 3,
     customer: "สมาคมกีฬาแห่งประเทศไทย",
     items: "เหรียญรางวัล",
     orderDate: "2024-12-28",
@@ -188,6 +204,7 @@ const mockOrders: Order[] = [
   },
   {
     id: "JOB-2024-004",
+    numericId: 4,
     customer: "มหาวิทยาลัยศิลปากร",
     items: "ถ้วยรางวัลโลหะอิตาลี",
     orderDate: "2024-12-10",
@@ -235,6 +252,7 @@ const mockOrders: Order[] = [
   },
   {
     id: "JOB-2024-005",
+    numericId: 5,
     customer: "โรงเรียนอัสสัมชัญ",
     items: "เหรียญสำเร็จรูป",
     orderDate: "2025-01-02",
@@ -266,6 +284,7 @@ const mockOrders: Order[] = [
   },
   {
     id: "JOB-2024-006",
+    numericId: 6,
     customer: "บริษัท สปอร์ตเดย์ จำกัด",
     items: "เสื้อ",
     orderDate: "2025-01-03",
@@ -298,6 +317,7 @@ const mockOrders: Order[] = [
   },
   {
     id: "JOB-2024-007",
+    numericId: 7,
     customer: "สมาคมศิษย์เก่าจุฬาลงกรณ์",
     items: "โล่สั่งผลิต",
     orderDate: "2025-01-05",
@@ -358,77 +378,95 @@ const getProgressCategory = (status: string): string => {
 
 export default function OrderTracking() {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [shareUrl, setShareUrl] = useState("");
+  const [isCopied, setIsCopied] = useState(false);
+
+  // Department Assignment states
+  const [showDeptModal, setShowDeptModal] = useState(false);
+  const [pendingOrder, setPendingOrder] = useState<Order | null>(null);
+  const [selectedDepts, setSelectedDepts] = useState<string[]>([]);
+  const [isUpdatingDepts, setIsUpdatingDepts] = useState(false);
+
+  const availableDepartments = ["ฝ่ายกราฟฟิก", "ฝ่ายจัดซื้อ", "ฝ่ายผลิตและจัดส่ง"];
+
+  const fetchOrders = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const res = await fetch("https://finfinphone.com/api-lucky/admin/orders.php");
+      const json = await res.json();
+      if (json.status === "success" && json.data) {
+        const mappedOrders = json.data.map((o: any) => {
+          const departments = (() => {
+            if (!o.departments) return [];
+            if (Array.isArray(o.departments)) return o.departments;
+            if (typeof o.departments === 'string') {
+              try { return JSON.parse(o.departments); } catch (e) { return []; }
+            }
+            return [];
+          })();
+
+          // Map standard order status for KPI
+          let broadStatus = "pending_approval";
+          if (["กำลังผลิต", "ตรวจสอบ Artwork จากโรงงาน", "ตรวจสอบ CNC", "อัปเดทปั้มชิ้นงาน", "อัปเดตสาย", "สร้างงานแล้ว"].includes(o.order_status)) {
+            broadStatus = "in_production";
+          } else if (["อัปเดตชิ้นงานก่อนจัดส่ง", "งานเสร็จสมบูรณ์"].includes(o.order_status)) {
+            broadStatus = "ready_to_ship";
+          } else if (["อยู่ระหว่างขนส่ง", "สินค้ามาส่งที่ร้าน", "จัดส่งเรียบร้อย", "จัดส่งสำเร็จ"].includes(o.order_status)) {
+            broadStatus = "shipped";
+          }
+
+          return {
+            id: o.job_id || String(o.order_id),
+            numericId: o.order_id,
+            customer: o.customer_name || "ไม่ระบุชื่อ",
+            items: o.job_name || "ไม่ระบุสินค้า",
+            orderDate: (o.order_date || "").split(" ")[0],
+            dueDate: o.delivery_date || "-",
+            status: broadStatus,
+            value: parseFloat(o.total_price ?? o.total_amount) || 0,
+            progress: 0,
+            type: o.product_category || "internal",
+            location: o.event_location || "domestic",
+            department: o.responsible_person || "-",
+            lineId: o.customer_line || "-",
+            phone: o.customer_phone || "-",
+            email: o.customer_email || "-",
+            address: o.customer_address || o.delivery_address || "-",
+            taxId: o.tax_id || "-",
+            sentDepartments: departments,
+            orderItems: [
+              {
+                id: o.order_id || Math.random(),
+                name: o.job_name || "คำสั่งซื้อ",
+                description: o.notes || "สร้างจาก Order",
+                quantity: 1,
+                currentStatus: o.order_status || "สร้างคำสั่งซื้อใหม่",
+                statusHistory: []
+              }
+            ]
+          } as Order;
+        });
+        setOrders(mappedOrders);
+      }
+    } catch (err) {
+      console.error(err);
+      toast({
+        title: "ข้อผิดพลาด",
+        description: "ดึงข้อมูลออเดอร์ล้มเหลว",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [toast]);
 
   useEffect(() => {
-    const fetchOrders = async () => {
-      setIsLoading(true);
-      try {
-        const res = await fetch("https://finfinphone.com/api-lucky/admin/orders.php");
-        const json = await res.json();
-        if (json.status === "success" && json.data) {
-          const mappedOrders = json.data.map((o: any) => {
-            const departments = (() => {
-              if (!o.departments) return [];
-              if (Array.isArray(o.departments)) return o.departments;
-              if (typeof o.departments === 'string') {
-                try { return JSON.parse(o.departments); } catch (e) { return []; }
-              }
-              return [];
-            })();
-
-            // Map standard order status for KPI
-            let broadStatus = "pending_approval";
-            if (["กำลังผลิต", "ตรวจสอบ Artwork จากโรงงาน", "ตรวจสอบ CNC", "อัปเดทปั้มชิ้นงาน", "อัปเดตสาย"].includes(o.order_status)) {
-              broadStatus = "in_production";
-            } else if (["อัปเดตชิ้นงานก่อนจัดส่ง", "งานเสร็จสมบูรณ์"].includes(o.order_status)) {
-              broadStatus = "ready_to_ship";
-            } else if (["อยู่ระหว่างขนส่ง", "สินค้ามาส่งที่ร้าน", "จัดส่งเรียบร้อย"].includes(o.order_status)) {
-              broadStatus = "shipped";
-            }
-
-            return {
-              id: o.job_id || String(o.order_id),
-              customer: o.customer_name || "ไม่ระบุชื่อ",
-              items: o.job_name || "ไม่ระบุสินค้า",
-              orderDate: (o.order_date || "").split(" ")[0],
-              dueDate: o.delivery_date || "-",
-              status: broadStatus,
-              value: parseFloat(o.total_amount) || 0,
-              progress: 0,
-              type: o.product_category || "internal",
-              location: o.event_location || "domestic",
-              department: o.responsible_person || "-",
-              lineId: o.customer_line || "-",
-              phone: o.customer_phone || "-",
-              email: o.customer_email || "-",
-              address: o.customer_address || o.delivery_address || "-",
-              taxId: o.tax_id || "-",
-              sentDepartments: departments,
-              orderItems: [
-                {
-                  id: o.order_id || Math.random(),
-                  name: o.job_name || "คำสั่งซื้อ",
-                  description: o.notes || "สร้างจาก Order",
-                  quantity: 1,
-                  currentStatus: o.order_status || "รอจัดซื้อส่งประเมิน",
-                  statusHistory: []
-                }
-              ]
-            } as Order;
-          });
-          setOrders(mappedOrders);
-        }
-      } catch (err) {
-        console.error(err);
-        toast.error("ดึงข้อมูลออเดอร์ล้มเหลว");
-      } finally {
-        setIsLoading(false);
-      }
-    };
     fetchOrders();
-  }, []);
+  }, [fetchOrders]);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all"); // KPI card filter
   const [progressBubble, setProgressBubble] = useState("all"); // bubble filter
@@ -560,7 +598,10 @@ export default function OrderTracking() {
     a.download = `order_tracking_${format(new Date(), "yyyyMMdd_HHmmss")}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    toast.success(`ส่งออก ${rows.length} รายการเป็นไฟล์ CSV แล้ว`);
+    toast({
+      title: "ส่งออกสำเร็จ",
+      description: `ส่งออก ${rows.length} รายการเป็นไฟล์ CSV แล้ว`,
+    });
   };
 
   // Highlight helper
@@ -575,6 +616,16 @@ export default function OrderTracking() {
     } catch { return text; }
   };
 
+  const deptConfig: Record<string, { bg: string; text: string; icon: any }> = {
+    "ฝ่ายกราฟฟิก": { bg: "bg-purple-100", text: "text-purple-700", icon: Palette },
+    "ฝ่ายจัดซื้อ": { bg: "bg-orange-100", text: "text-orange-700", icon: ShoppingBag },
+    "ฝ่ายผลิตและจัดส่ง": { bg: "bg-emerald-100", text: "text-emerald-700", icon: Factory },
+    "เซลล์": { bg: "bg-blue-100", text: "text-blue-700", icon: Package },
+    "QC": { bg: "bg-teal-100", text: "text-teal-700", icon: CheckCircle },
+    "ขนส่ง": { bg: "bg-cyan-100", text: "text-cyan-700", icon: Truck },
+    "คลัง": { bg: "bg-slate-100", text: "text-slate-700", icon: Package },
+  };
+
   const getItemStatusBadge = (status: string) => {
     const index = getStatusIndex(status);
     const total = productStatusList.length;
@@ -586,27 +637,100 @@ export default function OrderTracking() {
     return <Badge className={`${bgColor} font-medium`}>{status}</Badge>;
   };
 
-  const deptConfig: Record<string, { bg: string; text: string; icon: typeof Palette }> = {
-    "ฝ่ายกราฟฟิก": { bg: "bg-purple-100", text: "text-purple-700", icon: Palette },
-    "ฝ่ายจัดซื้อ": { bg: "bg-orange-100", text: "text-orange-700", icon: ShoppingBag },
-    "ฝ่ายผลิตและจัดส่ง": { bg: "bg-emerald-100", text: "text-emerald-700", icon: Factory },
+  const getCurrentDept = (status: string) => {
+    const item = productStatusList.find(s => s.status === status);
+    return item ? item.department : null;
   };
 
-  const getDeptBadges = (departments?: string[]) => {
-    if (!departments || departments.length === 0) return <span className="text-muted-foreground text-xs">-</span>;
+  const handleUpdateDepts = (order: Order) => {
+    setPendingOrder(order);
+    setSelectedDepts(order.sentDepartments || []);
+    setShowDeptModal(true);
+  };
+
+  const confirmUpdateDepts = async () => {
+    if (!pendingOrder) return;
+    setIsUpdatingDepts(true);
+    try {
+      const res = await fetch(`https://finfinphone.com/api-lucky/admin/orders.php?id=${pendingOrder.numericId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          departments: selectedDepts,
+          // หากยังไม่ได้เป็น "สร้างงานแล้ว" และมีการส่งฝ่าย ให้เปลี่ยนสถานะด้วย
+          ...(pendingOrder.orderItems[0].currentStatus === "สร้างคำสั่งซื้อใหม่" || pendingOrder.orderItems[0].currentStatus === "ยืนยันคำสั่งซื้อ"
+            ? { order_status: "สร้างงานแล้ว" } : {})
+        }),
+      });
+      const json = await res.json();
+      if (json.status === "success") {
+        toast({
+          title: "อัปเดตแผนที่ส่งงานสำเร็จ",
+          description: `ส่งงานออเดอร์ ${pendingOrder.id} เรียบร้อยแล้ว`,
+        });
+        fetchOrders();
+        setShowDeptModal(false);
+      } else {
+        throw new Error(json.message);
+      }
+    } catch (err) {
+      console.error(err);
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: "ไม่สามารถอัปเดตแผนกได้",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUpdatingDepts(false);
+    }
+  };
+
+  const getDeptBadges = (order: Order) => {
+    const departments = order.sentDepartments || [];
+    const currentHandlingDept = getCurrentDept(order.orderItems[0]?.currentStatus);
+
     return (
-      <div className="flex flex-wrap gap-1">
-        {departments.map(dept => {
-          const config = deptConfig[dept];
-          if (!config) return null;
-          const Icon = config.icon;
-          return (
-            <Badge key={dept} className={`${config.bg} ${config.text} gap-1 text-[10px] px-1.5 py-0.5`}>
-              <Icon className="w-3 h-3" />
-              {dept.replace("ฝ่าย", "")}
+      <div className="flex flex-col gap-2 items-center">
+        {departments.length > 0 ? (
+          <div className="flex flex-wrap justify-center gap-1 max-w-[150px]">
+            {departments.map(dept => {
+              const config = deptConfig[dept] || { bg: "bg-gray-100", text: "text-gray-600", icon: Package };
+              const Icon = config.icon;
+              return (
+                <Badge key={dept} className={`${config.bg} ${config.text} gap-1 text-[10px] px-1.5 py-0.5 border`}>
+                  <Icon className="w-3 h-3" />
+                  {dept.replace("ฝ่าย", "")}
+                </Badge>
+              );
+            })}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="w-5 h-5 rounded-full hover:bg-slate-200"
+              onClick={() => handleUpdateDepts(order)}
+            >
+              <Edit className="w-3 h-3 text-muted-foreground" />
+            </Button>
+          </div>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-[10px] gap-1 px-2 border-dashed"
+            onClick={() => handleUpdateDepts(order)}
+          >
+            <Plus className="w-3 h-3" /> ส่งแผนก
+          </Button>
+        )}
+
+        {currentHandlingDept && (
+          <div className="flex items-center gap-1.5 mt-1 border-t pt-1 w-full justify-center">
+            <span className="text-[9px] text-muted-foreground uppercase font-bold tracking-tighter">อยู่ระหว่าง:</span>
+            <Badge variant="secondary" className="text-[9px] px-1 py-0 h-4 font-bold bg-slate-100">
+              {currentHandlingDept}
             </Badge>
-          );
-        })}
+          </div>
+        )}
       </div>
     );
   };
@@ -830,7 +954,7 @@ export default function OrderTracking() {
                             </TableCell>
                             {itemIndex === 0 ? (
                               <TableCell className="align-middle py-3" rowSpan={itemCount}>
-                                {getDeptBadges(order.sentDepartments)}
+                                {getDeptBadges(order)}
                               </TableCell>
                             ) : null}
                             <TableCell className="text-center py-3">
@@ -852,10 +976,23 @@ export default function OrderTracking() {
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     const url = `${window.location.origin}/sales/track-orders/${order.id}?item=${item.id}`;
+                                    setShareUrl(url);
+                                    setShareDialogOpen(true);
+                                    setIsCopied(false);
+
                                     navigator.clipboard.writeText(url).then(() => {
-                                      toast.success("คัดลอกลิงก์แชร์สถานะเรียบร้อยแล้ว");
+                                      setIsCopied(true);
+                                      toast({
+                                        title: "คัดลอกลิงก์เรียบร้อยแล้ว",
+                                        description: "คุณสามารถส่งลิงก์นี้ให้ลูกค้าได้ทันที",
+                                      });
+                                      setTimeout(() => setIsCopied(false), 2000);
                                     }).catch(() => {
-                                      toast.error("ไม่สามารถคัดลอกลิงก์ได้");
+                                      toast({
+                                        title: "ข้อผิดพลาด",
+                                        description: "ไม่สามารถคัดลอกลิงก์ได้",
+                                        variant: "destructive",
+                                      });
                                     });
                                   }}
                                   className="hover:bg-green-600 hover:text-white transition-colors text-xs gap-1"
@@ -912,6 +1049,102 @@ export default function OrderTracking() {
           )}
         </div>
       </div>
+
+      {/* Share Dialog */}
+      {/* Share Dialog */}
+      <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>แชร์สถานะคำสั่งซื้อ</DialogTitle>
+            <DialogDescription>
+              คัดลอกลิงก์ด้านล่างเพื่อส่งผลการติดตามสถานะให้ลูกค้า
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center space-x-2 pt-4">
+            <div className="grid flex-1 gap-2">
+              <Label htmlFor="share-link" className="sr-only">
+                Link
+              </Label>
+              <Input
+                id="share-link"
+                value={shareUrl}
+                readOnly
+                className="h-9 font-mono text-[10px]"
+              />
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              className="px-3"
+              onClick={() => {
+                navigator.clipboard.writeText(shareUrl);
+                setIsCopied(true);
+                toast({
+                  title: "คัดลอกลิงก์แล้ว",
+                  description: "ลิงก์ถูกเก็บไว้ใน Clipboard ของคุณเรียบร้อย",
+                });
+                setTimeout(() => setIsCopied(false), 2000);
+              }}
+            >
+              <span className="sr-only">Copy</span>
+              {isCopied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+            </Button>
+          </div>
+          <div className="flex flex-col gap-2 pt-2">
+            <p className="text-xs text-muted-foreground italic">
+              * ลูกค้าสามารถดูสถานะการผลิตล่าสุดได้ตลอดเวลาผ่านลิงก์นี้
+            </p>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Department Assignment Modal */}
+      <Dialog open={showDeptModal} onOpenChange={setShowDeptModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>แผนกที่ต้องการส่งงาน</DialogTitle>
+            <DialogDescription>
+              ออเดอร์: <span className="font-bold text-primary">{pendingOrder?.id}</span> ({pendingOrder?.customer})
+              <br />เลือกแผนกที่ต้องการให้ดำเนินงานต่อ
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="grid gap-3">
+              {availableDepartments.map(dept => (
+                <div
+                  key={dept}
+                  className={`flex items-center justify-between p-3 rounded-lg border-2 cursor-pointer transition-all ${selectedDepts.includes(dept) ? "border-primary bg-primary/5" : "border-slate-100 hover:border-slate-200"}`}
+                  onClick={() => {
+                    setSelectedDepts(prev => prev.includes(dept) ? prev.filter(d => d !== dept) : [...prev, dept]);
+                  }}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-md ${selectedDepts.includes(dept) ? "bg-primary text-white" : "bg-slate-100 text-slate-400"}`}>
+                      {dept === "ฝ่ายกราฟฟิก" && <Palette className="w-4 h-4" />}
+                      {dept === "ฝ่ายจัดซื้อ" && <ShoppingBag className="w-4 h-4" />}
+                      {dept === "ฝ่ายผลิตและจัดส่ง" && <Factory className="w-4 h-4" />}
+                    </div>
+                    <span className={`font-medium ${selectedDepts.includes(dept) ? "text-primary" : "text-foreground"}`}>{dept}</span>
+                  </div>
+                  {selectedDepts.includes(dept) && <CheckCircle className="w-5 h-5 text-primary" />}
+                </div>
+              ))}
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setShowDeptModal(false)}>ยกเลิก</Button>
+            <Button
+              onClick={confirmUpdateDepts}
+              disabled={isUpdatingDepts || selectedDepts.length === 0}
+              className="gap-2"
+            >
+              {isUpdatingDepts && <Loader2 className="w-4 h-4 animate-spin" />}
+              ยืนยันการส่งงาน
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+

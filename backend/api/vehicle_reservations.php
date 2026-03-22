@@ -36,15 +36,15 @@ switch ($method) {
             while ($row = $result->fetch_assoc()) {
                 $reservations[] = [
                     "id" => $row['id'],
-                    "customerLineName" => $row['customer_name'],
-                    "product" => $row['product_detail'],
-                    "deliveryBy" => $row['requester'],
-                    "deliveryDate" => $row['start_datetime'],
-                    "deliveryLocation" => $row['delivery_location'],
-                    "address" => $row['address'],
-                    "notes" => $row['notes'],
+                    "vehicle_type" => $row['vehicle_type'],
+                    "purpose" => $row['purpose'],
+                    "start_datetime" => $row['start_datetime'],
+                    "end_datetime" => $row['end_datetime'],
+                    "requester" => $row['requester'],
                     "status" => $row['status'],
-                    "imageUrl" => $row['image_url']
+                    "notes" => $row['notes'],
+                    "customer_name" => $row['customer_name'],
+                    "product_detail" => $row['product_detail']
                 ];
             }
         }
@@ -58,34 +58,38 @@ switch ($method) {
     case 'POST':
         $data = json_decode(file_get_contents("php://input"));
 
-        if (empty($data->customerLineName) || empty($data->deliveryDate)) {
+        // ตรวจสอบฟิลด์ที่จำเป็น (ปรับตามที่ React ส่งมา)
+        if (empty($data->vehicle_type) || empty($data->start_datetime) || empty($data->requester)) {
             http_response_code(400);
-            echo json_encode(["status" => "error", "message" => "Required fields missing"]);
+            echo json_encode(["status" => "error", "message" => "Required fields missing (vehicle_type, start_datetime, requester)"]);
             exit();
         }
 
-        $sql = "INSERT INTO vehicle_reservations (customer_name, product_detail, vehicle_type, purpose, delivery_location, address, start_datetime, end_datetime, requester, notes, status, image_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        $sql = "INSERT INTO vehicle_reservations (customer_name, product_detail, vehicle_type, purpose, delivery_location, address, start_datetime, end_datetime, requester, notes, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         $stmt = $conn->prepare($sql);
 
         $status = 'รออนุมัติ';
-        $v_type = $data->vehicle_type ?? 'กระบะ';
-        $purpose = $data->purpose ?? 'ส่งสินค้า';
-        $end_date = $data->end_datetime ?? $data->deliveryDate;
+        $customer_name = $data->customerLineName ?? '-'; // สำหรับจองใช้ภายใน
+        $product = $data->product ?? 'จองใช้รถส่วนกลาง';
+        $purpose = $data->purpose ?? '-';
+        $delivery_location = $data->deliveryLocation ?? '-';
+        $address = $data->address ?? '-';
+        $notes = $data->notes ?? '-';
+        $end_date = $data->end_datetime ?? $data->start_datetime;
 
         $stmt->bind_param(
-            "ssssssssssss",
-            $data->customerLineName,
-            $data->product,
-            $v_type,
+            "sssssssssss",
+            $customer_name,
+            $product,
+            $data->vehicle_type,
             $purpose,
-            $data->deliveryLocation,
-            $data->address,
-            $data->deliveryDate,
+            $delivery_location,
+            $address,
+            $data->start_datetime,
             $end_date,
-            $data->deliveryBy,
-            $data->notes,
-            $status,
-            $data->imageUrl
+            $data->requester,
+            $notes,
+            $status
         );
 
         if ($stmt->execute()) {

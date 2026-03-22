@@ -16,76 +16,76 @@ const PRODUCT_COLORS = {
 
 // Mock data - stacked by products
 const monthlyStackedData = [
-  { 
-    name: "ม.ค.", 
-    "เหรียญรางวัล": 85000, 
-    "ถ้วยรางวัล": 95000, 
+  {
+    name: "ม.ค.",
+    "เหรียญรางวัล": 85000,
+    "ถ้วยรางวัล": 95000,
     "โล่รางวัล": 45000,
     "อื่นๆ": 20000,
   },
-  { 
-    name: "ก.พ.", 
-    "เหรียญรางวัล": 92000, 
-    "ถ้วยรางวัล": 120000, 
+  {
+    name: "ก.พ.",
+    "เหรียญรางวัล": 92000,
+    "ถ้วยรางวัล": 120000,
     "โล่รางวัล": 68000,
     "อื่นๆ": 32000,
   },
-  { 
-    name: "มี.ค.", 
-    "เหรียญรางวัล": 78000, 
-    "ถ้วยรางวัล": 105000, 
+  {
+    name: "มี.ค.",
+    "เหรียญรางวัล": 78000,
+    "ถ้วยรางวัล": 105000,
     "โล่รางวัล": 72000,
     "อื่นๆ": 34000,
   },
-  { 
-    name: "เม.ย.", 
-    "เหรียญรางวัล": 110000, 
-    "ถ้วยรางวัล": 135000, 
+  {
+    name: "เม.ย.",
+    "เหรียญรางวัล": 110000,
+    "ถ้วยรางวัล": 135000,
     "โล่รางวัล": 78000,
     "อื่นๆ": 35000,
   },
-  { 
-    name: "พ.ค.", 
-    "เหรียญรางวัล": 125000, 
-    "ถ้วยรางวัล": 158000, 
+  {
+    name: "พ.ค.",
+    "เหรียญรางวัล": 125000,
+    "ถ้วยรางวัล": 158000,
     "โล่รางวัล": 95000,
     "อื่นๆ": 45000,
   },
-  { 
-    name: "มิ.ย.", 
-    "เหรียญรางวัล": 98000, 
-    "ถ้วยรางวัล": 142000, 
+  {
+    name: "มิ.ย.",
+    "เหรียญรางวัล": 98000,
+    "ถ้วยรางวัล": 142000,
     "โล่รางวัล": 82000,
     "อื่นๆ": 45000,
   },
 ];
 
 const yearlyStackedData = [
-  { 
-    name: "2021", 
-    "เหรียญรางวัล": 850000, 
-    "ถ้วยรางวัล": 950000, 
+  {
+    name: "2021",
+    "เหรียญรางวัล": 850000,
+    "ถ้วยรางวัล": 950000,
     "โล่รางวัล": 450000,
     "อื่นๆ": 200000,
   },
-  { 
-    name: "2022", 
-    "เหรียญรางวัล": 920000, 
-    "ถ้วยรางวัล": 1200000, 
+  {
+    name: "2022",
+    "เหรียญรางวัล": 920000,
+    "ถ้วยรางวัล": 1200000,
     "โล่รางวัล": 680000,
     "อื่นๆ": 320000,
   },
-  { 
-    name: "2023", 
-    "เหรียญรางวัล": 780000, 
-    "ถ้วยรางวัล": 1050000, 
+  {
+    name: "2023",
+    "เหรียญรางวัล": 780000,
+    "ถ้วยรางวัล": 1050000,
     "โล่รางวัล": 720000,
     "อื่นๆ": 340000,
   },
-  { 
-    name: "2024", 
-    "เหรียญรางวัล": 1100000, 
-    "ถ้วยรางวัล": 1350000, 
+  {
+    name: "2024",
+    "เหรียญรางวัล": 1100000,
+    "ถ้วยรางวัล": 1350000,
     "โล่รางวัล": 780000,
     "อื่นๆ": 350000,
   },
@@ -104,7 +104,7 @@ const chartConfig = {
 const CustomTotalLabel = (props: any) => {
   const { x, y, width, value } = props;
   if (!value) return null;
-  
+
   return (
     <text
       x={x + width / 2}
@@ -114,8 +114,8 @@ const CustomTotalLabel = (props: any) => {
       fontSize={11}
       fontWeight="600"
     >
-      {value >= 1000000 
-        ? `${(value / 1000000).toFixed(1)}M` 
+      {value >= 1000000
+        ? `${(value / 1000000).toFixed(1)}M`
         : `${(value / 1000).toFixed(0)}K`}
     </text>
   );
@@ -134,8 +134,8 @@ const CustomTooltip = ({ active, payload, label }: any) => {
         {payload.map((entry: any, index: number) => (
           <div key={index} className="flex items-center justify-between gap-3 text-sm">
             <div className="flex items-center gap-2">
-              <div 
-                className="w-3 h-3 rounded-sm" 
+              <div
+                className="w-3 h-3 rounded-sm"
                 style={{ backgroundColor: entry.fill }}
               />
               <span className="text-muted-foreground">{entry.name}</span>
@@ -164,14 +164,13 @@ const CustomLegend = ({ payload, selectedProducts, onToggleProduct }: any) => {
           <button
             key={index}
             onClick={() => onToggleProduct(entry.value)}
-            className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded transition-all ${
-              isSelected 
-                ? "opacity-100" 
-                : "opacity-40 hover:opacity-60"
-            }`}
+            className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded transition-all ${isSelected
+              ? "opacity-100"
+              : "opacity-40 hover:opacity-60"
+              }`}
           >
-            <div 
-              className="w-3 h-3 rounded-sm" 
+            <div
+              className="w-3 h-3 rounded-sm"
               style={{ backgroundColor: entry.color }}
             />
             <span className="text-foreground">{entry.value}</span>
@@ -182,8 +181,12 @@ const CustomLegend = ({ payload, selectedProducts, onToggleProduct }: any) => {
   );
 };
 
-export default function StackedSalesChart() {
-  const [viewMode, setViewMode] = useState<"monthly" | "yearly">("monthly");
+interface StackedSalesChartProps {
+  data?: any[];
+  period?: "day" | "month" | "year";
+}
+
+export default function StackedSalesChart({ data = [], period = "month" }: StackedSalesChartProps) {
   const [selectedProducts, setSelectedProducts] = useState<string[]>(allProducts);
 
   const handleToggleProduct = (product: string) => {
@@ -196,10 +199,22 @@ export default function StackedSalesChart() {
     }
   };
 
-  const rawData = viewMode === "monthly" ? monthlyStackedData : yearlyStackedData;
+  const rawData = data && data.length > 0 ? data : [];
+
+  // Check if we have ANY revenue data - if not, we'll show order counts
+  const hasRevenueData = rawData.some(item =>
+    allProducts.some(p => (item[p as keyof typeof item] as number || 0) > 0)
+  );
+
+  // If no revenue, use order count as a bar height instead
+  const displayData = hasRevenueData ? rawData : rawData.map(item => {
+    const count = item.orderCount || 0;
+    // Distribute count across 'อื่นๆ' if no category breakdown
+    return { ...item, "อื่นๆ": count };
+  });
 
   // Add total to each data point for label
-  const chartData = rawData.map(item => {
+  const chartData = displayData.map(item => {
     const total = selectedProducts.reduce((sum, product) => {
       return sum + (item[product as keyof typeof item] as number || 0);
     }, 0);
@@ -221,26 +236,13 @@ export default function StackedSalesChart() {
             <BarChart3 className="w-4 h-4 text-primary" />
             กราฟยอดขายตามประเภทสินค้า
           </CardTitle>
-          <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5">
-            <Button
-              variant={viewMode === "monthly" ? "default" : "ghost"}
-              size="sm"
-              className="h-7 text-xs px-3"
-              onClick={() => setViewMode("monthly")}
-            >
-              รายเดือน
-            </Button>
-            <Button
-              variant={viewMode === "yearly" ? "default" : "ghost"}
-              size="sm"
-              className="h-7 text-xs px-3"
-              onClick={() => setViewMode("yearly")}
-            >
-              รายปี
-            </Button>
+          <div className="flex items-center gap-1">
+            <Badge variant="outline" className="h-7 px-2 font-normal text-xs">
+              {period === "day" ? "รายวัน" : period === "year" ? "รายปี" : "รายเดือน"}
+            </Badge>
           </div>
         </div>
-        
+
         {/* Selected products badges */}
         {selectedProducts.length < allProducts.length && (
           <div className="flex flex-wrap gap-1.5 mt-2">
@@ -251,7 +253,7 @@ export default function StackedSalesChart() {
                 className="text-xs gap-1 cursor-pointer hover:bg-secondary/80"
                 onClick={() => handleToggleProduct(product)}
               >
-                <div 
+                <div
                   className="w-2 h-2 rounded-sm"
                   style={{ backgroundColor: PRODUCT_COLORS[product as keyof typeof PRODUCT_COLORS] }}
                 />
@@ -272,72 +274,93 @@ export default function StackedSalesChart() {
       </CardHeader>
 
       <CardContent className="px-4 pb-4 pt-0">
-        <div className="h-[300px] w-full">
-          <ChartContainer config={chartConfig} className="w-full h-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={chartData}
-                margin={{ top: 25, right: 10, left: 0, bottom: 10 }}
-              >
-                <CartesianGrid 
-                  strokeDasharray="3 3" 
-                  vertical={false} 
-                  stroke="hsl(var(--border))"
-                  strokeOpacity={0.5}
-                />
-                <XAxis
-                  dataKey="name"
-                  tickLine={false}
-                  axisLine={false}
-                  className="text-xs"
-                  tick={{ fill: "hsl(var(--muted-foreground))" }}
-                />
-                <YAxis
-                  tickLine={false}
-                  axisLine={false}
-                  className="text-xs"
-                  tickFormatter={(value) => 
-                    viewMode === "yearly" 
-                      ? `${(value / 1000000).toFixed(0)}M`
-                      : `${(value / 1000).toFixed(0)}K`
-                  }
-                  width={40}
-                  tick={{ fill: "hsl(var(--muted-foreground))" }}
-                />
-                <ChartTooltip content={<CustomTooltip />} />
-                
-                {/* Stacked bars - render in reverse order so highest value is at bottom */}
-                {sortedProducts.slice().reverse().map((product, index) => (
-                  <Bar
-                    key={product}
-                    dataKey={product}
-                    stackId="a"
-                    fill={PRODUCT_COLORS[product as keyof typeof PRODUCT_COLORS]}
-                    radius={index === sortedProducts.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
+        {chartData.length === 0 ? (
+          <div className="h-[300px] w-full flex items-center justify-center text-muted-foreground">
+            <div className="text-center">
+              <BarChart3 className="w-12 h-12 mx-auto mb-2 opacity-30" />
+              <p className="text-sm">ยังไม่มีข้อมูลยอดขายในช่วงเวลานี้</p>
+              <p className="text-xs mt-1 opacity-70">ลองเปลี่ยนตัวกรองช่วงเวลา (รายวัน/รายเดือน/รายปี)</p>
+            </div>
+          </div>
+        ) : (
+          <>
+            {!hasRevenueData && rawData.length > 0 && (
+              <p className="text-xs text-amber-600 dark:text-amber-400 mb-2">
+                ⚠️ ยอดรายได้เป็น 0 - แสดงจำนวนออเดอร์แทน
+              </p>
+            )}
+            <div className="h-[300px] w-full">
+              <ChartContainer config={chartConfig} className="w-full h-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={chartData}
+                    margin={{ top: 25, right: 10, left: 0, bottom: 10 }}
                   >
-                    {/* Only show total label on the top-most bar */}
-                    {index === sortedProducts.length - 1 && (
-                      <LabelList 
-                        dataKey="total" 
-                        content={<CustomTotalLabel />}
-                      />
-                    )}
-                  </Bar>
-                ))}
-                
-                <Legend
-                  content={(props) => (
-                    <CustomLegend
-                      {...props}
-                      selectedProducts={selectedProducts}
-                      onToggleProduct={handleToggleProduct}
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      vertical={false}
+                      stroke="hsl(var(--border))"
+                      strokeOpacity={0.5}
                     />
-                  )}
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </ChartContainer>
-        </div>
+                    <XAxis
+                      dataKey="name"
+                      tickLine={false}
+                      axisLine={false}
+                      className="text-xs"
+                      tick={{ fill: "hsl(var(--muted-foreground))" }}
+                    />
+                    <YAxis
+                      tickLine={false}
+                      axisLine={false}
+                      className="text-xs"
+                      tickFormatter={(value) =>
+                        hasRevenueData
+                          ? value >= 1000000
+                            ? `${(value / 1000000).toFixed(1)}M`
+                            : value >= 1000
+                              ? `${(value / 1000).toFixed(0)}K`
+                              : `${value}`
+                          : `${value}`
+                      }
+                      width={40}
+                      tick={{ fill: "hsl(var(--muted-foreground))" }}
+                    />
+                    <ChartTooltip content={<CustomTooltip />} />
+
+                    {/* Stacked bars - render in reverse order so highest value is at bottom */}
+                    {sortedProducts.slice().reverse().map((product, index) => (
+                      <Bar
+                        key={product}
+                        dataKey={product}
+                        stackId="a"
+                        fill={PRODUCT_COLORS[product as keyof typeof PRODUCT_COLORS]}
+                        radius={index === sortedProducts.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
+                      >
+                        {/* Only show total label on the top-most bar */}
+                        {index === sortedProducts.length - 1 && (
+                          <LabelList
+                            dataKey="total"
+                            content={<CustomTotalLabel />}
+                          />
+                        )}
+                      </Bar>
+                    ))}
+
+                    <Legend
+                      content={(props) => (
+                        <CustomLegend
+                          {...props}
+                          selectedProducts={selectedProducts}
+                          onToggleProduct={handleToggleProduct}
+                        />
+                      )}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </ChartContainer>
+            </div>
+          </>
+        )}
       </CardContent>
     </Card>
   );

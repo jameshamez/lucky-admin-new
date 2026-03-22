@@ -27,6 +27,7 @@ export interface Order {
     order_status: string;
     responsible_person: string;
     total_amount: number | string;
+    total_price?: number | string;
     payment_status: string;
     created_at: string;
     urgency_level?: string;

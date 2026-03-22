@@ -518,19 +518,19 @@ export default function PriceEstimation() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold">ประเมินราคา</h1>
           <p className="text-muted-foreground">จัดการการประเมินราคาสินค้า</p>
         </div>
-        <Button onClick={() => navigate("/sales/price-estimation/add")} className="gap-2">
+        <Button onClick={() => navigate("/sales/price-estimation/add")} className="gap-2 shrink-0">
           <Plus className="h-4 w-4" />
           เพิ่มประเมินราคา
         </Button>
       </div>
 
       {/* Status Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
         <Card
           className={cn("cursor-pointer transition-all hover:shadow-md border-l-4 border-l-blue-500", statusFilter === "ยื่นคำขอประเมิน" && "ring-2 ring-blue-500")}
           onClick={() => setStatusFilter(statusFilter === "ยื่นคำขอประเมิน" ? "all" : "ยื่นคำขอประเมิน")}
@@ -715,94 +715,96 @@ export default function PriceEstimation() {
           </div>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>
-                  <div className="flex items-center">Estimate ID <TextColumnFilter columnKey="estimateId" label="ID" /></div>
-                </TableHead>
-                <TableHead>
-                  <div className="flex items-center">วันที่ประเมินราคา <DateColumnFilter /></div>
-                </TableHead>
-                <TableHead>
-                  <div className="flex items-center">ชื่อ LINE <TextColumnFilter columnKey="lineName" label="LINE" /></div>
-                </TableHead>
-                <TableHead>
-                  <div className="flex items-center">ประเภทสินค้า <SelectColumnFilter columnKey="productType" label="ประเภท" options={productTypesList} /></div>
-                </TableHead>
-                <TableHead>
-                  <div className="flex items-center">เซลล์ผู้รับผิดชอบ <TextColumnFilter columnKey="salesOwner" label="เซลล์" /></div>
-                </TableHead>
-                <TableHead className="text-right">
-                  <div className="flex items-center justify-end">จำนวน <TextColumnFilter columnKey="quantity" label="จำนวน" /></div>
-                </TableHead>
-                <TableHead>
-                  <div className="flex items-center">สถานะ <StatusMultiSelectFilter /></div>
-                </TableHead>
-                <TableHead className="text-center">คัดลอก</TableHead>
-                <TableHead className="text-center">จัดการ</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredEstimations.length === 0 ? (
+          <div className="overflow-x-auto pb-4">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
-                    ไม่พบรายการประเมินราคา
-                    {hasActiveFilters && (
-                      <div className="mt-2">
-                        <Button variant="link" onClick={clearFilters} className="text-sm">ล้างตัวกรองทั้งหมด</Button>
-                      </div>
-                    )}
-                  </TableCell>
+                  <TableHead>
+                    <div className="flex items-center">Estimate ID <TextColumnFilter columnKey="estimateId" label="ID" /></div>
+                  </TableHead>
+                  <TableHead>
+                    <div className="flex items-center">วันที่ประเมินราคา <DateColumnFilter /></div>
+                  </TableHead>
+                  <TableHead>
+                    <div className="flex items-center">ชื่อ LINE <TextColumnFilter columnKey="lineName" label="LINE" /></div>
+                  </TableHead>
+                  <TableHead>
+                    <div className="flex items-center">ประเภทสินค้า <SelectColumnFilter columnKey="productType" label="ประเภท" options={productTypesList} /></div>
+                  </TableHead>
+                  <TableHead>
+                    <div className="flex items-center">เซลล์ผู้รับผิดชอบ <TextColumnFilter columnKey="salesOwner" label="เซลล์" /></div>
+                  </TableHead>
+                  <TableHead className="text-right">
+                    <div className="flex items-center justify-end">จำนวน <TextColumnFilter columnKey="quantity" label="จำนวน" /></div>
+                  </TableHead>
+                  <TableHead>
+                    <div className="flex items-center">สถานะ <StatusMultiSelectFilter /></div>
+                  </TableHead>
+                  <TableHead className="text-center">คัดลอก</TableHead>
+                  <TableHead className="text-center">จัดการ</TableHead>
                 </TableRow>
-              ) : (
-                filteredEstimations.map((estimation) => (
-                  <TableRow key={estimation.id} className="hover:bg-muted/50">
-                    <TableCell>
-                      <a
-                        href={`/sales/price-estimation/${estimation.estimateId}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-600 hover:underline hover:text-blue-800 cursor-pointer"
-                      >
-                        <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 font-mono text-xs hover:bg-blue-100">
-                          {highlightText(estimation.estimateId, searchTerm)}
-                        </Badge>
-                      </a>
-                    </TableCell>
-                    <TableCell className="font-medium">
-                      {format(new Date(estimation.date), "d/M/yyyy", { locale: th })}
-                    </TableCell>
-                    <TableCell>{highlightText(estimation.lineName, searchTerm)}</TableCell>
-                    <TableCell>{highlightText(estimation.productType, searchTerm)}</TableCell>
-                    <TableCell>{highlightText(estimation.salesOwner, searchTerm)}</TableCell>
-                    <TableCell className="text-right">{estimation.quantity.toLocaleString()}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={cn("font-medium", getStatusColor(estimation.status))}>
-                        {estimation.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => { setCaptureEstimation(estimation); setCaptureDialogOpen(true); }}>
-                              <Copy className="h-3.5 w-3.5" />
-                              คัดลอก
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>คัดลอกข้อมูลเป็นรูปภาพเพื่อส่งลูกค้า</TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    </TableCell>
-                    <TableCell>
-                      {renderActionButtons(estimation)}
+              </TableHeader>
+              <TableBody>
+                {filteredEstimations.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                      ไม่พบรายการประเมินราคา
+                      {hasActiveFilters && (
+                        <div className="mt-2">
+                          <Button variant="link" onClick={clearFilters} className="text-sm">ล้างตัวกรองทั้งหมด</Button>
+                        </div>
+                      )}
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+                ) : (
+                  filteredEstimations.map((estimation) => (
+                    <TableRow key={estimation.id} className="hover:bg-muted/50">
+                      <TableCell>
+                        <a
+                          href={`/sales/price-estimation/${estimation.estimateId}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:underline hover:text-blue-800 cursor-pointer"
+                        >
+                          <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 font-mono text-xs hover:bg-blue-100">
+                            {highlightText(estimation.estimateId, searchTerm)}
+                          </Badge>
+                        </a>
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        {format(new Date(estimation.date), "d/M/yyyy", { locale: th })}
+                      </TableCell>
+                      <TableCell>{highlightText(estimation.lineName, searchTerm)}</TableCell>
+                      <TableCell>{highlightText(estimation.productType, searchTerm)}</TableCell>
+                      <TableCell>{highlightText(estimation.salesOwner, searchTerm)}</TableCell>
+                      <TableCell className="text-right">{estimation.quantity.toLocaleString()}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className={cn("font-medium", getStatusColor(estimation.status))}>
+                          {estimation.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => { setCaptureEstimation(estimation); setCaptureDialogOpen(true); }}>
+                                <Copy className="h-3.5 w-3.5" />
+                                คัดลอก
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>คัดลอกข้อมูลเป็นรูปภาพเพื่อส่งลูกค้า</TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </TableCell>
+                      <TableCell>
+                        {renderActionButtons(estimation)}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
 

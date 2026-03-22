@@ -1,8 +1,8 @@
-import { 
-  LayoutDashboard, 
-  ShoppingCart, 
-  Package, 
-  MessageSquare, 
+import {
+  LayoutDashboard,
+  ShoppingCart,
+  Package,
+  MessageSquare,
   FileBarChart,
   Palette,
   Truck,
@@ -86,17 +86,17 @@ const designItems = [
 
 const procurementItems = [
   { title: "แดชบอร์ด", url: "/procurement/dashboard", icon: LayoutDashboard },
-  { 
-    title: "ระบบประเมินราคา", 
-    url: "/procurement/estimation", 
+  {
+    title: "ระบบประเมินราคา",
+    url: "/procurement/estimation",
     icon: Calculator,
     children: [
       { title: "จัดการคำขอประเมินราคา", url: "/procurement/estimation/quotation", icon: FileText },
       { title: "ประวัติการประเมินราคา", url: "/procurement/estimation/history", icon: History }
     ]
   },
-  
-  
+
+
   { title: "สั่งซื้อวัสดุอุปกรณ์", url: "/procurement/purchase-requisition", icon: ShoppingCart },
   { title: "สต๊อกสินค้า", url: "/procurement/inventory-stock", icon: Boxes },
   { title: "เบิกการใช้งาน", url: "/procurement/requisition-center", icon: FileText },
@@ -127,9 +127,9 @@ const accountingItems = [
   { title: "เบิกเงินสดย่อย", url: "/accounting/petty-cash", icon: Wallet },
   { title: "เบิกใช้วัสดุสำนักงาน", url: "/accounting/office-requisitions", icon: ClipboardList },
   // { title: "คู่มือการทำงาน", url: "/accounting/user-manual", icon: BookOpen },
-  { 
-    title: "รายงาน", 
-    url: "/accounting/reports", 
+  {
+    title: "รายงาน",
+    url: "/accounting/reports",
     icon: FileBarChart,
     children: [
       { title: "รายงานทั้งหมด", url: "/accounting/reports", icon: BarChart3 },
@@ -146,9 +146,9 @@ const accountingItems = [
 const hrItems = [
   { title: "แดชบอร์ด", url: "/hr/dashboard", icon: LayoutDashboard },
   { title: "จัดการข้อมูลพนักงาน", url: "/hr/employee-management", icon: Users },
-  { 
-    title: "ค่าคอมมิชชั่น", 
-    url: "/hr/commission", 
+  {
+    title: "ค่าคอมมิชชั่น",
+    url: "/hr/commission",
     icon: DollarSign,
     children: [
       { title: "งานสั่งผลิต", url: "/hr/commission-made-to-order", icon: DollarSign },
@@ -170,56 +170,96 @@ const adminMainItems = [
 ];
 
 const adminDepartmentItems = [
-  { 
-    title: "ฝ่ายขาย", 
-    url: "/sales", 
+  {
+    title: "ฝ่ายขาย",
+    url: "/sales",
     icon: ShoppingCart,
     children: salesItems
   },
-  { 
-    title: "ฝ่ายกราฟิก", 
-    url: "/design", 
+  {
+    title: "ฝ่ายกราฟิก",
+    url: "/design",
     icon: Palette,
     children: designItems
   },
-  { 
-    title: "ฝ่ายจัดซื้อ", 
-    url: "/procurement", 
+  {
+    title: "ฝ่ายจัดซื้อ",
+    url: "/procurement",
     icon: Truck,
     children: procurementItems
   },
-  { 
-    title: "ฝ่ายผลิตและจัดส่ง", 
-    url: "/production", 
+  {
+    title: "ฝ่ายผลิตและจัดส่ง",
+    url: "/production",
     icon: Package,
     children: productionItems
   },
-  { 
-    title: "ฝ่ายบัญชี", 
-    url: "/accounting", 
+  {
+    title: "ฝ่ายบัญชี",
+    url: "/accounting",
     icon: Calculator,
     children: accountingItems
   },
-  { 
-    title: "ฝ่ายบุคคล", 
-    url: "/hr", 
+  {
+    title: "ฝ่ายบุคคล",
+    url: "/hr",
     icon: Users,
     children: hrItems
   }
 ];
 
-// Current user's department (this would be dynamic in a real app)
+// Map department path prefix to items
+const departmentMap: Record<string, typeof salesItems> = {
+  '/sales': salesItems,
+  '/design': designItems,
+  '/procurement': procurementItems,
+  '/production': productionItems,
+  '/accounting': accountingItems,
+  '/hr': hrItems,
+};
+
+// Map user department name (from API/localStorage) to a path prefix
+const userDepartmentToPath: Record<string, string> = {
+  'ฝ่ายขาย': '/sales',
+  'ฝ่ายกราฟิก': '/design',
+  'ฝ่ายจัดซื้อ': '/procurement',
+  'ฝ่ายผลิตและจัดส่ง': '/production',
+  'ฝ่ายบัญชี': '/accounting',
+  'ฝ่ายบุคคล': '/hr',
+};
+
+// Current user's department — remembers last visited department so that
+// navigating to main pages (status, communication, reports) still
+// displays the "ฟังก์ชันแผนก" section.
 const getCurrentDepartmentItems = () => {
   const path = window.location.pathname;
   if (path.startsWith('/manager')) return []; // Admin handles departments separately
   if (path.startsWith('/petty-cash')) return []; // Petty cash standalone - no department menu
-  if (path.startsWith('/sales')) return salesItems;
-  if (path.startsWith('/design')) return designItems;
-  if (path.startsWith('/procurement')) return procurementItems;
-  if (path.startsWith('/production')) return productionItems;
-  if (path.startsWith('/accounting')) return accountingItems;
-  if (path.startsWith('/hr')) return hrItems;
   if (path.startsWith('/user-manual')) return []; // Legacy user manual path
+
+  // 1) Check if current path belongs to a department
+  for (const prefix of Object.keys(departmentMap)) {
+    if (path.startsWith(prefix)) {
+      // Remember it for later
+      try { localStorage.setItem('lastDepartmentPath', prefix); } catch (_) { }
+      return departmentMap[prefix];
+    }
+  }
+
+  // 2) Fallback: use last visited department
+  try {
+    const last = localStorage.getItem('lastDepartmentPath');
+    if (last && departmentMap[last]) return departmentMap[last];
+  } catch (_) { }
+
+  // 3) Fallback: use user's own department from login data
+  try {
+    const userData = JSON.parse(localStorage.getItem('user') || '{}');
+    const userDept = userData.department ?? '';
+    const deptPath = userDepartmentToPath[userDept];
+    if (deptPath && departmentMap[deptPath]) return departmentMap[deptPath];
+  } catch (_) { }
+
   return [];
 };
 
@@ -246,11 +286,10 @@ const MenuItemComponent = ({ item, collapsed, level = 0 }: { item: any, collapse
         {hasChildren ? (
           <div
             onClick={handleClick}
-            className={`relative flex items-center gap-3 px-3 py-2 rounded-md transition-colors cursor-pointer ${
-              isActive 
-                ? "text-[#FF5A5F] font-medium bg-[#FF5A5F]/10" 
+            className={`relative flex items-center gap-3 px-3 py-2 rounded-md transition-colors cursor-pointer ${isActive
+                ? "text-[#FF5A5F] font-medium bg-[#FF5A5F]/10"
                 : "text-sidebar-foreground hover:text-[#FF5A5F] hover:bg-[#FF5A5F]/5"
-            }`}
+              }`}
             style={{ paddingLeft: `${12 + level * 16}px` }}
           >
             {isActive && (
@@ -265,13 +304,12 @@ const MenuItemComponent = ({ item, collapsed, level = 0 }: { item: any, collapse
             )}
           </div>
         ) : (
-          <NavLink 
-            to={item.url} 
+          <NavLink
+            to={item.url}
             className={({ isActive }) =>
-              `relative flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${
-                isActive 
-                  ? "text-[#FF5A5F] font-medium bg-[#FF5A5F]/10" 
-                  : "text-sidebar-foreground hover:text-[#FF5A5F] hover:bg-[#FF5A5F]/5"
+              `relative flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${isActive
+                ? "text-[#FF5A5F] font-medium bg-[#FF5A5F]/10"
+                : "text-sidebar-foreground hover:text-[#FF5A5F] hover:bg-[#FF5A5F]/5"
               }`
             }
             style={{ paddingLeft: `${12 + level * 16}px` }}
@@ -288,19 +326,18 @@ const MenuItemComponent = ({ item, collapsed, level = 0 }: { item: any, collapse
           </NavLink>
         )}
       </SidebarMenuButton>
-      
+
       {hasChildren && isOpen && !collapsed && (
         <SidebarMenuSub>
           {item.children.map((child: any) => (
             <SidebarMenuSubItem key={child.title}>
               <SidebarMenuSubButton asChild>
-                <NavLink 
+                <NavLink
                   to={child.url}
                   className={({ isActive }) =>
-                    `relative flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${
-                      isActive 
-                        ? "text-[#FF5A5F] font-medium bg-[#FF5A5F]/10" 
-                        : "text-sidebar-foreground hover:text-[#FF5A5F] hover:bg-[#FF5A5F]/5"
+                    `relative flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${isActive
+                      ? "text-[#FF5A5F] font-medium bg-[#FF5A5F]/10"
+                      : "text-sidebar-foreground hover:text-[#FF5A5F] hover:bg-[#FF5A5F]/5"
                     }`
                   }
                   style={{ paddingLeft: `${28 + level * 16}px` }}

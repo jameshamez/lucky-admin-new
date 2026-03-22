@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { cn } from "@/lib/utils";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -76,6 +77,8 @@ export default function CustomerProfile() {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [editForm, setEditForm] = useState<any>({});
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [editStep, setEditStep] = useState(0);
   // --- API-backed state ---
   const [notes, setNotes] = useState<any[]>([]);
   const [orderHistory, setOrderHistory] = useState<any[]>([]);
@@ -89,6 +92,10 @@ export default function CustomerProfile() {
   const [uploadVersion, setUploadVersion] = useState("V1");
   const [uploadDept, setUploadDept] = useState("sales");
   const [isUploading, setIsUploading] = useState(false);
+
+  // Refs for validation scrolling
+  const companyNameRef = useRef<HTMLDivElement>(null);
+  const contactNameRef = useRef<HTMLDivElement>(null);
 
   // Fetch activities from PHP API
   const fetchActivities = async () => {
@@ -247,6 +254,27 @@ export default function CustomerProfile() {
     fetchActivities();
   };
 
+  const handleDeleteCustomer = async () => {
+    if (!id) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/customers.php?id=${id}`, {
+        method: 'DELETE',
+      });
+      const json = await res.json();
+      if (!res.ok || json.status === 'error') throw new Error(json.message);
+
+      toast({ title: "สำเร็จ", description: "ลบข้อมูลลูกค้าเรียบร้อยแล้ว" });
+      navigate('/sales/customers');
+    } catch (error: any) {
+      console.error('Error deleting customer:', error);
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: error.message || "ไม่สามารถลบข้อมูลลูกค้าได้",
+        variant: "destructive"
+      });
+    }
+  };
+
   // Fetch customer data from PHP API
   useEffect(() => {
     async function fetchCustomer() {
@@ -304,6 +332,7 @@ export default function CustomerProfile() {
       line_id: customer.line_id || '',
       presentation_status: customer.presentation_status || '',
       sales_status: customer.sales_status || '',
+      sales_status_id: customer.sales_status_id || '',
       sales_owner: customer.sales_owner || '',
       customer_status: customer.customer_status || '',
       how_found_us: customer.how_found_us || '',
@@ -313,11 +342,37 @@ export default function CustomerProfile() {
         ? customer.interested_products.join(', ')
         : (customer.interested_products || ''),
     });
+    setFormErrors({});
+    setEditStep(0);
     setIsEditOpen(true);
   };
 
   const handleSaveEdit = async () => {
     if (!customer?.id) return;
+
+    // Validation
+    const errors: Record<string, string> = {};
+    if (!editForm.company_name?.trim()) errors.company_name = "กรุณากรอกชื่อบริษัท";
+    if (!editForm.contact_name?.trim()) errors.contact_name = "กรุณากรอกชื่อผู้ติดต่อ";
+
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      toast({
+        title: "ข้อมูลไม่ครบถ้วน",
+        description: "กรุณากรอกฟิลด์ที่จำเป็น (*) ให้ครบ",
+        variant: "destructive"
+      });
+
+      // Auto-scroll to first error
+      if (errors.company_name) {
+        companyNameRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else if (errors.contact_name) {
+        contactNameRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      return;
+    }
+
+    setFormErrors({});
     setIsSaving(true);
     try {
       const payload: any = {
@@ -423,8 +478,10 @@ export default function CustomerProfile() {
     return <Badge className="bg-blue-100 text-blue-800 border-blue-200">{version}</Badge>;
   };
 
+  const totalOrdersCount = orderHistory.length;
+  const totalPurchaseValue = orderHistory.reduce((total, order) => total + (order.amount || 0), 0);
   const outstandingBalance = orderHistory.reduce((total, order) => total + ((order.amount || 0) - (order.paid_amount || 0)), 0);
-  const importance = customerImportance(customer?.total_value || 0);
+  const importance = customerImportance(totalPurchaseValue);
 
   // Check if customer has complete data for actions
   const hasCompleteData = customer?.contact_name && customer?.phone_numbers?.length > 0;
@@ -512,10 +569,36 @@ export default function CustomerProfile() {
             <p className="text-muted-foreground">รายละเอียดและประวัติการติดต่อ</p>
           </div>
         </div>
-        <Button variant="outline" className="flex items-center gap-2" onClick={openEdit}>
-          <Edit className="w-4 h-4" />
-          แก้ไขข้อมูล
-        </Button>
+        <div className="flex items-center gap-2">
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="outline" className="flex items-center gap-2 text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/20">
+                <Trash2 className="w-4 h-4" />
+                ลบลูกค้า
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>ยืนยันการลบลูกค้า</AlertDialogTitle>
+                <AlertDialogDescription>
+                  คุณแน่ใจหรือไม่ที่จะลบข้อมูลของ "{customer.company_name}"?
+                  การลบจะทำให้ข้อมูลประวัติทั้งหมดของลูกค้ารายนี้ถูกลบออกจากระบบและไม่สามารถกู้คืนได้
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+                <AlertDialogAction onClick={handleDeleteCustomer} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                  ยืนยันการลบ
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          <Button variant="outline" className="flex items-center gap-2" onClick={openEdit}>
+            <Edit className="w-4 h-4" />
+            แก้ไขข้อมูล
+          </Button>
+        </div>
       </div>
 
       {/* Customer Header Card with CRM Info */}
@@ -603,7 +686,7 @@ export default function CustomerProfile() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <div className="text-2xl font-bold text-primary">
-                    ฿{customer.total_value?.toLocaleString() || '0'}
+                    ฿{totalPurchaseValue?.toLocaleString() || '0'}
                   </div>
                   <div className="text-sm text-muted-foreground">มูลค่ารวม</div>
                 </div>
@@ -791,12 +874,12 @@ export default function CustomerProfile() {
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-2 gap-4 text-center">
                     <div>
-                      <p className="text-2xl font-bold text-primary">{customer.total_orders}</p>
+                      <p className="text-2xl font-bold text-primary">{totalOrdersCount}</p>
                       <p className="text-sm text-muted-foreground">ออเดอร์ทั้งหมด</p>
                     </div>
                     <div>
                       <p className="text-2xl font-bold text-primary">
-                        ฿{(customer.total_value / 1000).toFixed(0)}K
+                        ฿{totalPurchaseValue >= 1000 ? `${(totalPurchaseValue / 1000).toFixed(1)}K` : totalPurchaseValue.toLocaleString()}
                       </p>
                       <p className="text-sm text-muted-foreground">มูลค่ารวม</p>
                     </div>
@@ -1086,120 +1169,409 @@ export default function CustomerProfile() {
         </TabsContent>
       </Tabs>
 
-      {/* Edit Customer Dialog */}
-      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Edit className="w-5 h-5" />
-              แก้ไขข้อมูลลูกค้า
-            </DialogTitle>
-            <DialogDescription>แก้ไขข้อมูลลูกค้า แล้วกด "บันทึก" เพื่ออัปเดต</DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-2">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <Label>ชื่อบริษัท *</Label>
-                <Input value={editForm.company_name || ''} onChange={e => setEditForm((f: any) => ({ ...f, company_name: e.target.value }))} placeholder="ชื่อบริษัท" />
+      {/* Edit Customer Dialog - Modern Multi-step Wizard */}
+      <Dialog open={isEditOpen} onOpenChange={(open) => { if (!open) { setEditStep(0); } setIsEditOpen(open); }}>
+        <DialogContent className="max-w-3xl h-[650px] flex flex-col p-0 overflow-hidden shadow-2xl border-none">
+          {/* Fixed Header with Step Progress */}
+          <div className="p-6 border-b bg-muted/10">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <DialogTitle className="flex items-center gap-2 text-xl">
+                  <div className="p-2 bg-primary/10 rounded-lg text-primary">
+                    <Edit className="w-5 h-5" />
+                  </div>
+                  แก้ไขข้อมูลลูกค้า
+                </DialogTitle>
+                <DialogDescription className="mt-1">
+                  กรุณากรอกข้อมูลในแต่ละส่วนให้ครบถ้วนเพื่อประสิทธิภาพของระบบ CRM
+                </DialogDescription>
               </div>
-              <div className="space-y-1">
-                <Label>ชื่อผู้ติดต่อ *</Label>
-                <Input value={editForm.contact_name || ''} onChange={e => setEditForm((f: any) => ({ ...f, contact_name: e.target.value }))} placeholder="ชื่อผู้ติดต่อ" />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <Label>เลขผู้เสียภาษี</Label>
-                <Input value={editForm.tax_id || ''} onChange={e => setEditForm((f: any) => ({ ...f, tax_id: e.target.value }))} placeholder="เลขผู้เสียภาษี" />
-              </div>
-              <div className="space-y-1">
-                <Label>ประเภทธุรกิจ</Label>
-                <Input value={editForm.business_type || ''} onChange={e => setEditForm((f: any) => ({ ...f, business_type: e.target.value }))} placeholder="ประเภทธุรกิจ" />
+              <div className="text-right">
+                <span className="text-2xl font-bold text-primary">{editStep + 1}</span>
+                <span className="text-muted-foreground ml-1">/ 4</span>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <Label>เบอร์โทรศัพท์ (คั่นด้วยคอมม่า)</Label>
-                <Input value={editForm.phone_numbers || ''} onChange={e => setEditForm((f: any) => ({ ...f, phone_numbers: e.target.value }))} placeholder="08x-xxx-xxxx, 08x-xxx-xxxx" />
-              </div>
-              <div className="space-y-1">
-                <Label>อีเมล (คั่นด้วยคอมม่า)</Label>
-                <Input value={editForm.emails || ''} onChange={e => setEditForm((f: any) => ({ ...f, emails: e.target.value }))} placeholder="email@example.com" />
-              </div>
-            </div>
+            {(() => {
+              const steps = [
+                { label: 'ข้อมูลบริษัท', icon: Building, fields: ['company_name', 'contact_name'] },
+                { label: 'ผู้ติดต่อ', icon: User, fields: ['phone_numbers', 'emails', 'line_id'] },
+                { label: 'ที่อยู่ใบกำกับ', icon: MapPin, fields: ['billing_address', 'billing_province'] },
+                { label: 'ข้อมูลการขาย', icon: DollarSign, fields: ['sales_status', 'sales_owner'] },
+              ];
+              const sectionCompleted = steps.map(s => s.fields.some(f => editForm[f]?.toString().trim() !== ''));
+              const completedCount = sectionCompleted.filter(Boolean).length;
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <Label>Line ID</Label>
-                <Input value={editForm.line_id || ''} onChange={e => setEditForm((f: any) => ({ ...f, line_id: e.target.value }))} placeholder="Line ID" />
-              </div>
-              <div className="space-y-1">
-                <Label>สินค้าที่สนใจ (คั่นด้วยคอมม่า)</Label>
-                <Input value={editForm.interested_products || ''} onChange={e => setEditForm((f: any) => ({ ...f, interested_products: e.target.value }))} placeholder="เหรียญ, โล่" />
-              </div>
-            </div>
+              return (
+                <>
+                  <div className="relative flex justify-between items-center px-2">
+                    <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-[2px] bg-muted -z-0" />
+                    <div
+                      className="absolute left-0 top-1/2 -translate-y-1/2 h-[2px] bg-primary transition-all duration-500 ease-in-out -z-0"
+                      style={{ width: `${(editStep / 3) * 100}%` }}
+                    />
 
-            <Separator />
-            <p className="text-sm font-medium text-muted-foreground">ที่อยู่ออกใบกำกับ</p>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="col-span-2 space-y-1">
-                <Label>ที่อยู่</Label>
-                <Input value={editForm.billing_address || ''} onChange={e => setEditForm((f: any) => ({ ...f, billing_address: e.target.value }))} placeholder="บ้านเลขที่ ถนน" />
-              </div>
-              <div className="space-y-1">
-                <Label>ตำบล/แขวง</Label>
-                <Input value={editForm.billing_subdistrict || ''} onChange={e => setEditForm((f: any) => ({ ...f, billing_subdistrict: e.target.value }))} />
-              </div>
-              <div className="space-y-1">
-                <Label>อำเภอ/เขต</Label>
-                <Input value={editForm.billing_district || ''} onChange={e => setEditForm((f: any) => ({ ...f, billing_district: e.target.value }))} />
-              </div>
-              <div className="space-y-1">
-                <Label>จังหวัด</Label>
-                <Input value={editForm.billing_province || ''} onChange={e => setEditForm((f: any) => ({ ...f, billing_province: e.target.value }))} />
-              </div>
-              <div className="space-y-1">
-                <Label>รหัสไปรษณีย์</Label>
-                <Input value={editForm.billing_postcode || ''} onChange={e => setEditForm((f: any) => ({ ...f, billing_postcode: e.target.value }))} />
-              </div>
-            </div>
-
-            <Separator />
-            <p className="text-sm font-medium text-muted-foreground">ข้อมูลการขาย</p>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <Label>สถานะการขาย</Label>
-                <Input value={editForm.sales_status || ''} onChange={e => setEditForm((f: any) => ({ ...f, sales_status: e.target.value }))} placeholder="ใหม่ / เสนอราคา / ผลิต / ปิดงาน" />
-              </div>
-              <div className="space-y-1">
-                <Label>สถานะลูกค้า</Label>
-                <Input value={editForm.customer_status || ''} onChange={e => setEditForm((f: any) => ({ ...f, customer_status: e.target.value }))} placeholder="ลูกค้าใหม่ / ลูกค้าเก่า" />
-              </div>
-              <div className="space-y-1">
-                <Label>เซลล์เจ้าของลูกค้า</Label>
-                <Input value={editForm.sales_owner || ''} onChange={e => setEditForm((f: any) => ({ ...f, sales_owner: e.target.value }))} />
-              </div>
-              <div className="space-y-1">
-                <Label>แหล่งที่มา</Label>
-                <Input value={editForm.how_found_us || ''} onChange={e => setEditForm((f: any) => ({ ...f, how_found_us: e.target.value }))} placeholder="Facebook / เพื่อน / ฯลฯ" />
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <Label>หมายเหตุ</Label>
-              <Textarea value={editForm.notes || ''} onChange={e => setEditForm((f: any) => ({ ...f, notes: e.target.value }))} placeholder="หมายเหตุเพิ่มเติม" rows={3} />
-            </div>
+                    {steps.map((step, idx) => {
+                      const StepIcon = step.icon;
+                      const isActive = idx === editStep;
+                      const isDone = sectionCompleted[idx];
+                      return (
+                        <div key={idx} className="relative z-10 flex flex-col items-center group cursor-pointer" onClick={() => setEditStep(idx)}>
+                          <div className={cn(
+                            "w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all duration-300",
+                            isActive
+                              ? "bg-primary border-primary text-white scale-110 shadow-lg"
+                              : isDone
+                                ? "bg-primary/20 border-primary text-primary"
+                                : "bg-background border-muted text-muted-foreground"
+                          )}>
+                            {isDone && !isActive ? <CheckCircle2 className="w-5 h-5" /> : <StepIcon className="w-5 h-5" />}
+                          </div>
+                          <span className={cn(
+                            "text-[10px] sm:text-xs font-medium mt-2 transition-colors",
+                            isActive ? "text-primary" : "text-muted-foreground"
+                          )}>
+                            {step.label}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {/* Section Counter */}
+                  <div className="flex justify-center mt-6">
+                    <Badge variant="outline" className="px-3 py-1 bg-primary/5 text-primary border-primary/20 font-medium">
+                      กรอกครบถ้วนแล้ว {completedCount} / 4 ส่วน
+                    </Badge>
+                  </div>
+                </>
+              );
+            })()}
           </div>
 
-          <div className="flex justify-end gap-2 pt-4 border-t">
-            <Button variant="outline" onClick={() => setIsEditOpen(false)} disabled={isSaving}>ยกเลิก</Button>
-            <Button onClick={handleSaveEdit} disabled={isSaving} className="flex items-center gap-2">
-              {isSaving ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Save className="w-4 h-4" />}
-              {isSaving ? 'กำลังบันทึก...' : 'บันทึก'}
-            </Button>
+          {/* Scrollable Middle Content */}
+          <div className="flex-1 overflow-y-auto px-6 py-8 bg-gradient-to-b from-transparent to-muted/5">
+            {/* Step 1: ข้อมูลบริษัท */}
+            {editStep === 0 && (
+              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="h-6 w-1 bg-primary rounded-full" />
+                  <h3 className="font-semibold text-lg text-primary">ส่วนที่ 1: ข้อมูลบริษัทและธุรกิจ</h3>
+                </div>
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-2" ref={companyNameRef}>
+                    <Label className={cn("text-sm transition-colors", formErrors.company_name ? "text-destructive" : "text-foreground")}>
+                      ชื่อบริษัท/ชื่อร้าน <span className="text-destructive">*</span>
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        value={editForm.company_name || ''}
+                        onChange={e => {
+                          setEditForm((f: any) => ({ ...f, company_name: e.target.value }));
+                          if (e.target.value.trim()) setFormErrors(prev => { const n = { ...prev }; delete n.company_name; return n; });
+                        }}
+                        className={cn(
+                          "transition-all h-10 px-3",
+                          formErrors.company_name ? "border-destructive focus-visible:ring-destructive" :
+                            (editForm.company_name?.trim() ? "border-green-500 focus-visible:ring-green-500" : "")
+                        )}
+                        placeholder="กรุณากรอกชื่อบริษัทเต็ม"
+                      />
+                      {editForm.company_name?.trim() && !formErrors.company_name && (
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2 bg-green-500 rounded-full p-0.5 animate-in zoom-in">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-white" />
+                        </div>
+                      )}
+                    </div>
+                    {formErrors.company_name && <p className="text-xs text-destructive animate-in slide-in-from-left-2">{formErrors.company_name}</p>}
+                  </div>
+
+                  <div className="space-y-2" ref={contactNameRef}>
+                    <Label className={cn("text-sm transition-colors", formErrors.contact_name ? "text-destructive" : "text-foreground")}>
+                      ชื่อผู้ติดต่อ <span className="text-destructive">*</span>
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        value={editForm.contact_name || ''}
+                        onChange={e => {
+                          setEditForm((f: any) => ({ ...f, contact_name: e.target.value }));
+                          if (e.target.value.trim()) setFormErrors(prev => { const n = { ...prev }; delete n.contact_name; return n; });
+                        }}
+                        className={cn(
+                          "transition-all h-10 px-3",
+                          formErrors.contact_name ? "border-destructive focus-visible:ring-destructive" :
+                            (editForm.contact_name?.trim() ? "border-green-500 focus-visible:ring-green-500" : "")
+                        )}
+                        placeholder="ระบุชื่อจริง-นามสกุล"
+                      />
+                      {editForm.contact_name?.trim() && !formErrors.contact_name && (
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2 bg-green-500 rounded-full p-0.5 animate-in zoom-in">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-white" />
+                        </div>
+                      )}
+                    </div>
+                    {formErrors.contact_name && <p className="text-xs text-destructive animate-in slide-in-from-left-2">{formErrors.contact_name}</p>}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-sm">เลขประจำตัวผู้เสียภาษี</Label>
+                    <Input
+                      value={editForm.tax_id || ''}
+                      onChange={e => setEditForm((f: any) => ({ ...f, tax_id: e.target.value }))}
+                      placeholder="เลข 13 หลัก"
+                      className="h-10"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-sm">ประเภทธุรกิจ/หมวดหมู่</Label>
+                    <Input
+                      value={editForm.business_type || ''}
+                      onChange={e => setEditForm((f: any) => ({ ...f, business_type: e.target.value }))}
+                      placeholder="เช่น หน่วยงานราชการ, บริษัทเอกชน"
+                      className="h-10"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Step 2: ข้อมูลผู้ติดต่อ */}
+            {editStep === 1 && (
+              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="h-6 w-1 bg-primary rounded-full" />
+                  <h3 className="font-semibold text-lg text-primary">ส่วนที่ 2: ช่องทางการติดต่อความสนใจ</h3>
+                </div>
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <Label className="text-sm">เบอร์โทรศัพท์ (ใส่ได้มากกว่าหนึ่ง)</Label>
+                    <Input
+                      value={editForm.phone_numbers || ''}
+                      onChange={e => setEditForm((f: any) => ({ ...f, phone_numbers: e.target.value }))}
+                      placeholder="081-234-5678, 02-123-4567"
+                      className="h-10"
+                    />
+                    <p className="text-[10px] text-muted-foreground italic">ใช้เครื่องหมายจุลภาค (,) ในการคั่นหลายหมายเลข</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm">อีเมลติดต่อ</Label>
+                    <Input
+                      value={editForm.emails || ''}
+                      onChange={e => setEditForm((f: any) => ({ ...f, emails: e.target.value }))}
+                      placeholder="customer@example.com"
+                      className="h-10 border-indigo-100"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium flex items-center gap-1.5 text-green-700">
+                      Line ID
+                    </Label>
+                    <Input
+                      value={editForm.line_id || ''}
+                      onChange={e => setEditForm((f: any) => ({ ...f, line_id: e.target.value }))}
+                      placeholder="@lineid"
+                      className="h-10 bg-green-50/20 border-green-200"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm flex items-center gap-1.5">
+                      สินค้าที่ลูกค้าสนใจ
+                    </Label>
+                    <Input
+                      value={editForm.interested_products || ''}
+                      onChange={e => setEditForm((f: any) => ({ ...f, interested_products: e.target.value }))}
+                      placeholder="เช่น เหรียญ, โล่ไม้, ยูนิฟอร์ม"
+                      className="h-10 border-amber-200 bg-amber-50/20"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Step 3: ที่อยู่ออกใบกำกับ */}
+            {editStep === 2 && (
+              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="h-6 w-1 bg-primary rounded-full" />
+                  <h3 className="font-semibold text-lg text-primary">ส่วนที่ 3: ที่อยู่สำหรับการออกเอกสารและจัดส่ง</h3>
+                </div>
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <Label className="text-sm">บ้านเลขที่ อาคาร ซอย ถนน</Label>
+                    <Input
+                      value={editForm.billing_address || ''}
+                      onChange={e => setEditForm((f: any) => ({ ...f, billing_address: e.target.value }))}
+                      placeholder="123/45 หมู่บ้าน..."
+                      className="h-10"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+                    <div className="space-y-2">
+                      <Label className="text-sm text-muted-foreground">แขวง / ตำบล</Label>
+                      <Input
+                        value={editForm.billing_subdistrict || ''}
+                        onChange={e => setEditForm((f: any) => ({ ...f, billing_subdistrict: e.target.value }))}
+                        className="h-10"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm text-muted-foreground">เขต / อำเภอ</Label>
+                      <Input
+                        value={editForm.billing_district || ''}
+                        onChange={e => setEditForm((f: any) => ({ ...f, billing_district: e.target.value }))}
+                        className="h-10"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm text-muted-foreground font-semibold">จังหวัด</Label>
+                      <Input
+                        value={editForm.billing_province || ''}
+                        onChange={e => setEditForm((f: any) => ({ ...f, billing_province: e.target.value }))}
+                        className="h-10 border-primary/30 shadow-inner"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm text-muted-foreground">รหัสไปรษณีย์</Label>
+                      <Input
+                        value={editForm.billing_postcode || ''}
+                        onChange={e => setEditForm((f: any) => ({ ...f, billing_postcode: e.target.value }))}
+                        className="h-10"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Step 4: ข้อมูลการขาย */}
+            {editStep === 3 && (
+              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="h-6 w-1 bg-primary rounded-full" />
+                  <h3 className="font-semibold text-lg text-primary">ส่วนที่ 4: ข้อมูลเชิงลึกและการติดตาม (CRM)</h3>
+                </div>
+                <div className="grid grid-cols-2 gap-6 pb-4">
+                  <div className="space-y-2">
+                    <Label className="text-sm">สถานะการขายปัจจุบัน</Label>
+                    <Select value={editForm.sales_status || ''} onValueChange={val => setEditForm((f: any) => ({ ...f, sales_status: val }))}>
+                      <SelectTrigger className="h-10">
+                        <SelectValue placeholder="เลือกสถานะ" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {['ใหม่', 'เสนอราคา', 'ผลิต', 'ปิดงาน'].map(s => (
+                          <SelectItem key={s} value={s}>{s}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm">ประเภทสถานะลูกค้า</Label>
+                    <Select value={editForm.customer_status || ''} onValueChange={val => setEditForm((f: any) => ({ ...f, customer_status: val }))}>
+                      <SelectTrigger className="h-10">
+                        <SelectValue placeholder="เลือกสถานะ" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {['ลูกค้าใหม่', 'ลูกค้าเก่า', 'ลูกค้าเป้าหมาย'].map(s => (
+                          <SelectItem key={s} value={s}>{s}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm">เซลล์ที่รับผิดชอบ</Label>
+                    <Input
+                      value={editForm.sales_owner || ''}
+                      onChange={e => setEditForm((f: any) => ({ ...f, sales_owner: e.target.value }))}
+                      className="h-10 border-blue-200"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm">ช่องทางรู้จักเรา</Label>
+                    <Input
+                      value={editForm.how_found_us || ''}
+                      onChange={e => setEditForm((f: any) => ({ ...f, how_found_us: e.target.value }))}
+                      className="h-10"
+                      placeholder="เช่น Facebook, ป้ายหน้าบริษัท"
+                    />
+                  </div>
+                  <div className="col-span-2 space-y-2 pt-2">
+                    <Label className="text-sm flex items-center gap-1.5 font-medium">
+                      <MessageCircle className="w-3.5 h-3.5 text-muted-foreground" />
+                      หมายเหตุเพิ่มเติมในโปรไฟล์
+                    </Label>
+                    <Textarea
+                      value={editForm.notes || ''}
+                      onChange={e => setEditForm((f: any) => ({ ...f, notes: e.target.value }))}
+                      placeholder="ระบุรายละเอียดสำคัญที่ต้องการให้เซล์ท่านอื่นเห็น..."
+                      className="min-h-[100px] resize-none"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Fixed Footer with Navigation Buttons */}
+          <div className="p-6 border-t flex justify-between items-center bg-muted/10 backdrop-blur-sm">
+            <div>
+              {editStep > 0 ? (
+                <Button
+                  variant="ghost"
+                  onClick={() => setEditStep(s => s - 1)}
+                  className="group flex items-center gap-2 hover:bg-transparent"
+                >
+                  <ArrowLeft className="w-4 h-4 transition-transform group-hover:-translate-x-1" />
+                  ย้อนกลับ
+                </Button>
+              ) : (
+                <Button
+                  variant="ghost"
+                  onClick={() => { setIsEditOpen(false); setEditStep(0); }}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  ยกเลิกการแก้ไข
+                </Button>
+              )}
+            </div>
+
+            <div className="flex gap-3">
+              {editStep < 3 ? (
+                <Button
+                  onClick={() => {
+                    // Pre-validation for Step 1
+                    if (editStep === 0) {
+                      const errors: Record<string, string> = {};
+                      if (!editForm.company_name?.trim()) errors.company_name = "กรุณากรอกชื่อบริษัท";
+                      if (!editForm.contact_name?.trim()) errors.contact_name = "กรุณากรอกชื่อผู้ติดต่อ";
+
+                      if (Object.keys(errors).length > 0) {
+                        setFormErrors(errors);
+                        toast({ title: "ข้อมูลไม่ครบถ้วน", description: "กรุณากรอกฟิลด์ที่มีเครื่องหมาย *", variant: "destructive" });
+                        if (errors.company_name) companyNameRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        else if (errors.contact_name) contactNameRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        return;
+                      }
+                      setFormErrors({});
+                    }
+                    setEditStep(s => s + 1);
+                  }}
+                  className="px-8 flex items-center gap-2 shadow-md hover:shadow-lg transition-all"
+                >
+                  ถัดไป
+                  <ArrowLeft className="w-4 h-4 ml-1 rotate-180" />
+                </Button>
+              ) : (
+                <Button
+                  onClick={handleSaveEdit}
+                  disabled={isSaving}
+                  className="px-10 flex items-center gap-2 bg-gradient-to-r from-primary to-primary/80 shadow-md hover:shadow-lg transition-all active:scale-95"
+                >
+                  {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  {isSaving ? 'กำลังบันทึก...' : 'บันทึกข้อมูล'}
+                </Button>
+              )}
+            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -1353,7 +1725,8 @@ export default function CustomerProfile() {
       <Dialog open={isUploadOpen} onOpenChange={(open) => {
         if (!open) { setUploadFile(null); setUploadPreview(null); setUploadName(''); setUploadVersion('V1'); setUploadDept('sales'); }
         setIsUploadOpen(open);
-      }}>
+      }
+      }>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">

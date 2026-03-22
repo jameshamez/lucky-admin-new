@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,18 +40,18 @@ interface DesignFileUpload {
 export default function PriceEstimationDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  
+
   // Mock artwork images - replace with actual data
   const artworkImages = [sampleArtwork];
   const [selectedArtwork, setSelectedArtwork] = useState(0);
   const [isFullscreenOpen, setIsFullscreenOpen] = useState(false);
   const [isUploadHistoryOpen, setIsUploadHistoryOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  
+
   // Modal states for approved status actions
   const [isRevisionModalOpen, setIsRevisionModalOpen] = useState(false);
   const [revisionNotes, setRevisionNotes] = useState("");
-  
+
   const handleDelete = () => {
     // Perform delete action
     toast.success("ลบรายการประเมินราคาเรียบร้อยแล้ว");
@@ -75,7 +75,7 @@ export default function PriceEstimationDetail() {
   // Handle confirm price and navigate to add price estimation with customer data pre-filled
   const handleConfirmPrice = () => {
     if (!estimation) return;
-    
+
     // Navigate to add price estimation page with pre-filled customer data
     navigate('/sales/price-estimation/add', {
       state: {
@@ -91,131 +91,92 @@ export default function PriceEstimationDetail() {
     });
   };
 
-  
+
   // Mock design files upload history - replace with actual data
   const designFileHistory: DesignFileUpload[] = [
     { fileName: "artwork_final_v3.ai", uploadDate: "2024-01-18", uploadTime: "14:32:15", uploadedBy: "สมชาย กราฟิก" },
     { fileName: "artwork_v2.ai", uploadDate: "2024-01-16", uploadTime: "10:15:42", uploadedBy: "สมหญิง ดีไซน์" },
     { fileName: "artwork_draft.ai", uploadDate: "2024-01-14", uploadTime: "09:20:30", uploadedBy: "สมชาย กราฟิก" },
   ];
-  
+
   // Get the latest uploaded file (first item in history)
   const latestDesignFile = designFileHistory.length > 0 ? designFileHistory[0] : null;
 
-  // Mock data - replace with actual data fetching
-  const estimations = [
-    {
-      id: 1,
-      status: "อยู่ระหว่างการประเมินราคา",
-      // ข้อมูลทั่วไปลูกค้า
-      customerName: "บริษัท ABC จำกัด",
-      customerPhone: "081-234-5678",
-      customerLineId: "customer_line_001",
-      customerEmail: "somchai@abc.com",
-      customerTags: "ลูกค้าประจำ, องค์กร",
-      // ข้อมูลการตีราคา
-      estimateDate: "2024-01-15",
-      salesOwner: "พนักงานขาย A",
-      jobName: "งานวิ่งมาราธอน 2024",
-      eventDate: "2024-03-01",
-      productCategory: "สินค้าสั่งผลิต",
-      productType: "เหรียญสั่งผลิต",
-      hasDesign: "มีแบบ",
-      material: "ซิงค์อัลลอย",
-      // New structure for medal
-      finishType: "Shiny (เงา)",
-      colorQuantities: [
-        { color: "Gold (ทอง)", quantity: 100 },
-        { color: "Silver (เงิน)", quantity: 100 },
-      ],
-      totalQuantity: 200,
-      budgetPerPiece: 250,
-      // รายละเอียดสำหรับประเมินราคา (เหรียญ)
-      medalSize: "5",
-      medalThickness: "3",
-      frontDetails: ["พิมพ์โลโก้", "แกะสลักข้อความ"],
-      backDetails: ["ลงน้ำยาป้องกันสนิม"],
-      lanyardSize: "2 × 90 ซม",
-      lanyardPatterns: "3",
-      // หมายเหตุ
-      notes: "ต้องการผลิตภายใน 2 สัปดาห์",
-      // ไฟล์แนบ
-      attachedFiles: ["design_v1.pdf", "logo.ai"]
-    },
-    {
-      id: 2,
-      status: "อนุมัติแล้ว",
-      // ข้อมูลทั่วไปลูกค้า
-      customerName: "โรงเรียน XYZ",
-      customerPhone: "089-876-5432",
-      customerLineId: "xyz_school",
-      customerEmail: "somying@xyz.ac.th",
-      customerTags: "สถานศึกษา",
-      // ข้อมูลการตีราคา
-      estimateDate: "2024-01-14",
-      salesOwner: "พนักงานขาย B",
-      jobName: "งานแข่งขันกีฬาสี",
-      eventDate: "2024-02-20",
-      productCategory: "สินค้าสั่งผลิต",
-      productType: "เหรียญสั่งผลิต",
-      hasDesign: "มีแบบ",
-      material: "ซิงค์อัลลอย",
-      // New structure for medal
-      finishType: "Shiny (เงา)",
-      colorQuantities: [
-        { color: "Gold (ทอง)", quantity: 100 },
-        { color: "Silver (เงิน)", quantity: 200 },
-        { color: "Copper (ทองแดง)", quantity: 150 },
-      ],
-      totalQuantity: 450,
-      budgetPerPiece: 63,
-      // รายละเอียดเหรียญ
-      medalSize: "6",
-      medalThickness: "3.5",
-      frontDetails: ["พิมพ์โลโก้", "ปั๊มนูน"],
-      backDetails: ["แกะสลักข้อความ", "ลงน้ำยาป้องกันสนิม"],
-      lanyardSize: "2 × 90 ซม",
-      lanyardPatterns: "2",
-      notes: "สำหรับงานแข่งขันกีฬาสี",
-      attachedFiles: ["award_design.pdf"],
-      // ข้อมูลโรงงานที่จัดซื้อเลือก (สำหรับสถานะอนุมัติแล้ว)
-      selectedFactory: {
-        name: "China B&C",
-        leadTime: "15-20 วัน",
-        procurementNotes: "โรงงานมีประสบการณ์ผลิตเหรียญกีฬา คุณภาพดี ราคาเหมาะสม"
-      },
-      approvedUnitPrice: 63,
-    },
-    {
-      id: 3,
-      status: "ยกเลิก",
-      // ข้อมูลทั่วไปลูกค้า
-      customerName: "องค์กร DEF",
-      customerPhone: "092-345-6789",
-      customerLineId: "def_org",
-      customerEmail: "somsri@def.org",
-      customerTags: "องค์กร",
-      // ข้อมูลการตีราคา
-      estimateDate: "2024-01-13",
-      salesOwner: "พนักงานขาย C",
-      jobName: "สายคล้องบัตรพนักงาน",
-      eventDate: "2024-04-01",
-      productCategory: "หมวดสายคล้อง",
-      productType: "สายคล้อง",
-      hasDesign: "มีแบบ",
-      material: "โพลีสกรีน",
-      totalQuantity: 1000,
-      budgetPerPiece: 8,
-      // รายละเอียดสายคล้อง
-      lanyardSize: "2 × 90 ซม",
-      lanyardPatterns: "2",
-      genericDesignDetails: "สายคล้องโพลีสกรีน พิมพ์โลโก้บริษัท 2 สี ติดตัวล็อคพลาสติก",
-      notes: "ลูกค้าเปลี่ยนใจใช้ผู้ผลิตรายอื่น",
-      attachedFiles: []
-    }
-  ];
+  const [estimation, setEstimation] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const estimation = estimations.find(e => e.id === Number(id));
+  useEffect(() => {
+    const fetchDetail = async () => {
+      try {
+        const res = await fetch(`https://finfinphone.com/api-lucky/admin/price_estimations.php/${id}`);
+        if (!res.ok) throw new Error("Failed to fetch");
+        const json = await res.json();
+
+        if (json.status === "success" && json.data) {
+          const item = json.data;
+          let detailObj: any = {};
+          try {
+            detailObj = typeof item.details === 'string' ? JSON.parse(item.details) : (item.details || {});
+          } catch (e) { }
+
+          const qtyRows = detailObj.colorQuantityRows || [];
+          const colorQuantities: any[] = [];
+          if (qtyRows.length > 0) {
+            qtyRows.forEach((r: any) => {
+              if (r.quantities && parseInt(r.quantities[0]) > 0) {
+                colorQuantities.push({ color: r.color || "-", quantity: parseInt(r.quantities[0]) });
+              }
+            });
+          }
+
+          setEstimation({
+            id: item.id,
+            estimateId: item.estimate_id,
+            status: String(item.status) === "0" ? "ยื่นคำขอประเมิน" : item.status,
+            customerName: item.customer_name || "-",
+            customerPhone: item.customer_phone || "-",
+            customerLineId: item.customer_line || "-",
+            customerEmail: item.customer_email || "-",
+            customerTags: "",
+            estimateDate: item.estimation_date,
+            salesOwner: item.sales_owner_id || "ระบบ",
+            jobName: item.job_name || "-",
+            eventDate: detailObj.usage_date || null,
+            productCategory: item.product_category || "-",
+            productType: detailObj.productCategoryText || item.product_type || "-",
+            hasDesign: "มีแบบ",
+            material: detailObj.material || "-",
+            finishType: detailObj.finish || "",
+            colorQuantities: colorQuantities,
+            totalQuantity: item.quantity ? parseInt(item.quantity) : (detailObj.totalQuantity || 0),
+            budgetPerPiece: item.budget ? parseFloat(item.budget) : 0,
+            medalSize: detailObj.selectedMedalSizes && detailObj.selectedMedalSizes.length > 0 ? detailObj.selectedMedalSizes[0] : "-",
+            medalThickness: detailObj.selectedMedalThicknesses && detailObj.selectedMedalThicknesses.length > 0 ? detailObj.selectedMedalThicknesses[0] : "-",
+            frontDetails: detailObj.frontDetails || [],
+            backDetails: detailObj.backDetails || [],
+            lanyardSize: detailObj.lanyardSize || "-",
+            lanyardPatterns: detailObj.lanyardPatterns || "",
+            notes: item.notes || "",
+            attachedFiles: [],
+            approvedUnitPrice: item.price ? parseFloat(item.price) : 0,
+            genericDesignDetails: detailObj.genericDesignDetails || "",
+            selectedFactory: detailObj.selectedFactory || null
+          });
+        }
+      } catch (err) {
+        console.error(err);
+        toast.error("ดึงข้อมูลล้มเหลว");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    if (id) fetchDetail();
+  }, [id]);
+
+  if (isLoading) {
+    return <div className="p-8 text-center text-muted-foreground">กำลังโหลดข้อมูล...</div>;
+  }
 
   if (!estimation) {
     return (
@@ -267,7 +228,7 @@ export default function PriceEstimationDetail() {
           <div>
             <h1 className="text-3xl font-bold">รายละเอียดการประเมินราคา</h1>
             <p className="text-muted-foreground">
-              รหัส: {estimation.customerLineId} | วันที่: {new Date(estimation.estimateDate).toLocaleDateString('th-TH')}
+              รหัส: {estimation.estimateId} | วันที่: {new Date(estimation.estimateDate).toLocaleDateString('th-TH')}
             </p>
           </div>
         </div>
@@ -276,16 +237,16 @@ export default function PriceEstimationDetail() {
             <Printer className="h-4 w-4 mr-2" />
             พิมพ์
           </Button>
-          <Button 
-            variant="outline" 
+          <Button
+            variant="outline"
             onClick={() => navigate(`/sales/price-estimation/edit/${id}`)}
             className="border-yellow-500 text-yellow-600 hover:bg-yellow-50 hover:text-yellow-700"
           >
             <Edit className="h-4 w-4 mr-2" />
             แก้ไข
           </Button>
-          <Button 
-            variant="outline" 
+          <Button
+            variant="outline"
             onClick={() => setIsDeleteDialogOpen(true)}
             className="border-red-500 text-red-600 hover:bg-red-50 hover:text-red-700"
           >
@@ -308,7 +269,7 @@ export default function PriceEstimationDetail() {
             <AlertDialogCancel className="border-red-500 text-red-600 hover:bg-red-50 hover:text-red-700">
               ยกเลิก
             </AlertDialogCancel>
-            <AlertDialogAction 
+            <AlertDialogAction
               onClick={handleDelete}
               className="bg-red-600 text-white hover:bg-red-700"
             >
@@ -381,7 +342,7 @@ export default function PriceEstimationDetail() {
                   />
                 </button>
                 <p className="text-xs text-muted-foreground text-center mt-2">คลิกที่รูปเพื่อขยายเต็มจอ</p>
-                
+
                 {/* Thumbnails */}
                 {artworkImages.length > 1 && (
                   <div className="flex gap-2 flex-wrap mt-3">
@@ -389,11 +350,10 @@ export default function PriceEstimationDetail() {
                       <button
                         key={index}
                         onClick={() => setSelectedArtwork(index)}
-                        className={`w-20 h-20 rounded-lg overflow-hidden border-2 transition-all bg-muted p-1 ${
-                          selectedArtwork === index
-                            ? "border-primary ring-2 ring-primary/20"
-                            : "border-border hover:border-primary/50"
-                        }`}
+                        className={`w-20 h-20 rounded-lg overflow-hidden border-2 transition-all bg-muted p-1 ${selectedArtwork === index
+                          ? "border-primary ring-2 ring-primary/20"
+                          : "border-border hover:border-primary/50"
+                          }`}
                       >
                         <img
                           src={img}
@@ -436,8 +396,8 @@ export default function PriceEstimationDetail() {
                       </div>
                     </div>
                   </div>
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     size="sm"
                     onClick={() => setIsUploadHistoryOpen(true)}
                     className="gap-1.5"
@@ -512,8 +472,8 @@ export default function PriceEstimationDetail() {
               <p className="text-sm font-medium text-muted-foreground mb-3">ไฟล์แนบจากลูกค้า</p>
               <div className="flex flex-wrap gap-3">
                 {estimation.attachedFiles.map((file, index) => (
-                  <div 
-                    key={index} 
+                  <div
+                    key={index}
                     className="flex items-center gap-2 bg-muted/50 hover:bg-muted rounded-lg px-4 py-2.5 border cursor-pointer transition-colors group"
                   >
                     <FileText className="h-4 w-4 text-primary" />
@@ -692,24 +652,24 @@ export default function PriceEstimationDetail() {
             </div>
             {/* Status Badge - Based on estimation status */}
             {estimation.status === "อนุมัติแล้ว" ? (
-              <Badge 
-                variant="outline" 
+              <Badge
+                variant="outline"
                 className="bg-green-500/10 text-green-600 border-green-500/30 px-3 py-1 gap-1.5"
               >
                 <CheckCircle2 className="h-3.5 w-3.5" />
                 อนุมัติราคาแล้ว
               </Badge>
             ) : estimation.status === "อยู่ระหว่างการประเมินราคา" ? (
-              <Badge 
-                variant="outline" 
+              <Badge
+                variant="outline"
                 className="bg-blue-500/10 text-blue-600 border-blue-500/30 px-3 py-1 gap-1.5"
               >
                 <Clock className="h-3.5 w-3.5" />
                 อยู่ระหว่างการประเมินราคา
               </Badge>
             ) : (
-              <Badge 
-                variant="outline" 
+              <Badge
+                variant="outline"
                 className="bg-orange-500/10 text-orange-600 border-orange-500/30 px-3 py-1 gap-1.5"
               >
                 <Clock className="h-3.5 w-3.5" />
@@ -757,15 +717,15 @@ export default function PriceEstimationDetail() {
                     {(estimation as any).approvedUnitPrice || 63} <span className="text-lg font-medium">บาท / {estimation.productType === "เหรียญสั่งผลิต" ? "เหรียญ" : "ชิ้น"}</span>
                   </p>
                 </div>
-                
+
                 <Separator className="my-4" />
-                
+
                 {/* บริบทของราคา */}
                 <div className="flex justify-between items-center text-sm mb-3">
                   <span className="text-muted-foreground">จำนวนรวมทั้งหมด</span>
                   <span className="font-medium">{estimation.totalQuantity?.toLocaleString() || 0} {estimation.productType === "เหรียญสั่งผลิต" ? "เหรียญ" : "ชิ้น"}</span>
                 </div>
-                
+
                 {/* ราคารวม - รองจากราคาต่อหน่วย */}
                 <div className="flex justify-between items-center bg-white/50 dark:bg-black/20 rounded-lg p-3">
                   <span className="font-medium">ราคารวม</span>
@@ -777,7 +737,7 @@ export default function PriceEstimationDetail() {
 
               {/* Action Buttons for Approved Status */}
               <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t">
-                <Button 
+                <Button
                   variant="outline"
                   onClick={() => setIsRevisionModalOpen(true)}
                   className="flex-1 border-orange-400 bg-orange-50 text-orange-600 hover:bg-orange-100 hover:text-orange-700 dark:bg-orange-950/20 dark:border-orange-600 dark:text-orange-400 dark:hover:bg-orange-950/40"
@@ -785,7 +745,7 @@ export default function PriceEstimationDetail() {
                   <Edit className="h-4 w-4 mr-2" />
                   ขอแก้ไขราคา
                 </Button>
-                <Button 
+                <Button
                   onClick={handleConfirmPrice}
                   className="flex-1 bg-green-600 text-white hover:bg-green-700"
                 >
@@ -840,7 +800,7 @@ export default function PriceEstimationDetail() {
             <Button variant="outline" onClick={() => setIsRevisionModalOpen(false)}>
               ยกเลิก
             </Button>
-            <Button 
+            <Button
               onClick={handleRevisionSubmit}
               className="bg-orange-500 text-white hover:bg-orange-600"
             >

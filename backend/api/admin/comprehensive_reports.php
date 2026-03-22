@@ -47,7 +47,7 @@ for ($i = 5; $i >= 0; $i--) {
     $month_name = $th_months[date('M', strtotime($d))];
 
     // Revenue
-    $resR = safe_query($conn, "SELECT SUM(total_amount) as rev FROM orders WHERE MONTH(created_at) = '$m' AND YEAR(created_at) = '$y' AND order_status != 'Cancel'");
+    $resR = safe_query($conn, "SELECT SUM(COALESCE(total_price, total_amount, 0)) as rev FROM orders WHERE MONTH(created_at) = '$m' AND YEAR(created_at) = '$y' AND order_status != 'Cancel'");
     $rev = $resR ? (float) ($resR->fetch_assoc()['rev'] ?? 0) : 0;
 
     // Costs (Accounting Expenses)
@@ -109,7 +109,7 @@ $response['data']['operationalData'] = $operationalData;
 
 // 3. Sales Data
 $salesData = [];
-$resS = safe_query($conn, "SELECT product_category as product, SUM(total_amount) as sales, COUNT(*) as quantity FROM orders WHERE order_status != 'Cancel' GROUP BY product_category ORDER BY sales DESC LIMIT 5");
+$resS = safe_query($conn, "SELECT product_category as product, SUM(COALESCE(total_price, total_amount, 0)) as sales, COUNT(*) as quantity FROM orders WHERE order_status != 'Cancel' GROUP BY product_category ORDER BY sales DESC LIMIT 5");
 if ($resS) {
     while ($row = $resS->fetch_assoc()) {
         $salesData[] = [

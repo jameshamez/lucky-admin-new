@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 
 // PHP Backend API URL
@@ -19,10 +19,12 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "@/components/ui/command";
 import { Skeleton } from "@/components/ui/skeleton";
-import { format } from "date-fns";
+import { format, isValid, parseISO, parse } from "date-fns";
+import { th } from "date-fns/locale";
 import { DateRange } from "react-day-picker";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
 import {
   Search,
   Plus,
@@ -37,14 +39,23 @@ import {
   Filter,
   CalendarIcon,
   Receipt,
+  Building2,
+  ArrowRight,
+  ArrowLeft,
+  CheckCircle2,
+  Save,
+  DollarSign,
+  Building,
   Check,
   ChevronsUpDown,
   User,
   X,
   Users,
   SlidersHorizontal,
-  ChevronDown
+  ChevronDown,
+  Trash2
 } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 
 // Thai provinces list
 const thaiProvinces = [
@@ -159,6 +170,28 @@ const formatTaxId = (value: string) => {
   return numbers.slice(0, 13);
 };
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const formatNextActionDate = (dateVal: any) => {
+  if (!dateVal || dateVal === "0000-00-00" || dateVal === "0000-00-00 00:00:00") return "ไม่ได้กำหนด";
+
+  let d: Date;
+  try {
+    if (typeof dateVal === "string") {
+      // Split to handle 'YYYY-MM-DD HH:mm:ss' easily and get only date part
+      const datePart = dateVal.includes(' ') ? dateVal.split(' ')[0] : dateVal;
+      d = parseISO(datePart);
+    } else {
+      d = new Date(dateVal);
+    }
+
+    if (!isValid(d)) return "ไม่ได้กำหนด";
+    return format(d, "dd/MM/yyyy", { locale: th });
+  } catch (e) {
+    return "ไม่ได้กำหนด";
+  }
+};
+
 export default function CustomerManagement() {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
@@ -169,6 +202,19 @@ export default function CustomerManagement() {
   const [productFilter, setProductFilter] = useState<string>("all");
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const [isAddCustomerOpen, setIsAddCustomerOpen] = useState(false);
+  const [addStep, setAddStep] = useState(0);
+  const [sortConfig, setSortConfig] = useState<{ key: keyof Customer | null, direction: 'asc' | 'desc' }>({
+    key: null,
+    direction: 'asc'
+  });
+
+  const handleSort = (key: keyof Customer) => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
   const [isQuotationOpen, setIsQuotationOpen] = useState(false);
   const [provinceOpen, setProvinceOpen] = useState(false);
   const [districtOpen, setDistrictOpen] = useState(false);
@@ -180,6 +226,11 @@ export default function CustomerManagement() {
   const [loading, setLoading] = useState(true);
   const [sameAddress, setSameAddress] = useState(false);
   const [cardFilter, setCardFilter] = useState<string | null>(null);
+  const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null);
+
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   // Thai Geo state
   const [billingDistricts, setBillingDistricts] = useState<GeoAmphure[]>([]);
@@ -207,6 +258,10 @@ export default function CustomerManagement() {
     notes: "",
   });
   const [selectedProductTags, setSelectedProductTags] = useState<string[]>([]);
+
+  // Form validation errors
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const formRef = useRef<HTMLDivElement>(null);
 
   const [newCustomer, setNewCustomer] = useState({
     // ส่วนที่ 1: ข้อมูลบริษัท/องค์กร
@@ -385,6 +440,14 @@ export default function CustomerManagement() {
       ...prev,
       emails: prev.emails.map((email, i) => i === index ? value : email)
     }));
+    // Clear error if valid or empty
+    if (!value || EMAIL_REGEX.test(value)) {
+      setFormErrors(prev => {
+        const next = { ...prev };
+        delete next[`email_${index}`];
+        return next;
+      });
+    }
   };
 
   const removePhoneNumber = (index: number) => {
@@ -407,12 +470,14 @@ export default function CustomerManagement() {
 
   // Product tag toggle
   const toggleProductTag = (tag: string) => {
-    setNewCustomer(prev => ({
-      ...prev,
-      interestedProducts: prev.interestedProducts.includes(tag)
+    setNewCustomer(prev => {
+      const next = prev.interestedProducts.includes(tag)
         ? prev.interestedProducts.filter(t => t !== tag)
-        : [...prev.interestedProducts, tag]
-    }));
+        : [...prev.interestedProducts, tag];
+      // Clear error if at least 1 product selected
+      if (next.length > 0) setFormErrors(prev => { const n = { ...prev }; delete n.interestedProducts; return n; });
+      return { ...prev, interestedProducts: next };
+    });
   };
 
   // Additional contacts functions
@@ -439,6 +504,14 @@ export default function CustomerManagement() {
         i === index ? { ...contact, [field]: formattedValue } : contact
       )
     }));
+    // Clear email error if valid or empty
+    if (field === 'email' && (!value || EMAIL_REGEX.test(value))) {
+      setFormErrors(prev => {
+        const next = { ...prev };
+        delete next[`additionalContact_${index}_email`];
+        return next;
+      });
+    }
   };
 
   const removeAdditionalContact = (index: number) => {
@@ -449,25 +522,48 @@ export default function CustomerManagement() {
   };
 
   const handleAddCustomer = async () => {
-    // Basic validation
-    if (!newCustomer.companyName || !newCustomer.contactName || !newCustomer.phoneNumbers[0] || newCustomer.interestedProducts.length === 0) {
+    const errors: Record<string, string> = {};
+    if (!newCustomer.companyName.trim()) errors.companyName = "กรุณากรอกชื่อบริษัท";
+    if (!newCustomer.contactName.trim()) errors.contactName = "กรุณากรอกชื่อ-นามสกุลผู้ติดต่อ";
+    if (!newCustomer.phoneNumbers[0]?.trim()) errors.phone = "กรุณากรอกเบอร์โทรศัพท์";
+    if (newCustomer.interestedProducts.length === 0) errors.interestedProducts = "กรุณาเลือกสินค้าที่สนใจอย่างน้อย 1 รายการ";
+    if (newCustomer.taxId && newCustomer.taxId.length !== 13) errors.taxId = "เลขประจำตัวผู้เสียภาษีต้องมี 13 หลักเท่านั้น";
+
+    // --- Duplicate Check ---
+    const lowerName = newCustomer.companyName.trim().toLowerCase();
+    const existing = customers.find(c => c.name.trim().toLowerCase() === lowerName);
+
+    if (existing) {
+      toast({
+        title: "⚠️ พบข้อมูลลูกค้าซ้ำ",
+        description: `ชื่อลูกค้า "${newCustomer.companyName}" มีอยู่ในระบบแล้ว (รหัส: ${existing.id})`,
+        variant: "destructive",
+        action: (
+          <ToastAction altText="ดูข้อมูลเดิม" onClick={() => navigate(`/sales/customers/${existing.id}`)}>
+            ดูข้อมูลเดิม
+          </ToastAction>
+        )
+      });
+      return;
+    }
+    // ----------------------
+
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      // Auto-scroll to the first errored field
+      const firstErrorKey = Object.keys(errors)[0];
+      const el = document.getElementById(`field-${firstErrorKey}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
       toast({
         title: "ข้อมูลไม่ครบถ้วน",
-        description: "กรุณากรอกข้อมูลในช่องที่จำเป็นทั้งหมด",
+        description: "กรุณากรอกข้อมูลในช่องที่จำเป็นและถูกต้องทั้งหมด",
         variant: "destructive"
       });
       return;
     }
-
-    // Tax ID validation (13 digits)
-    if (newCustomer.taxId && newCustomer.taxId.length !== 13) {
-      toast({
-        title: "เลขผู้เสียภาษีไม่ถูกต้อง",
-        description: "กรุณากรอกเลขประจำตัวผู้เสียภาษี 13 หลัก",
-        variant: "destructive"
-      });
-      return;
-    }
+    setFormErrors({});
 
     try {
       // Filter out empty phone numbers and emails
@@ -540,10 +636,21 @@ export default function CustomerManagement() {
         return;
       }
 
+      const newId = json.id || (json.data && json.data.id);
+
       toast({
-        title: "เพิ่มลูกค้าใหม่สำเร็จ!",
+        title: "✅ บันทึกลูกค้าใหม่สำเร็จ!",
         description: `เพิ่มข้อมูลลูกค้า ${newCustomer.companyName} เรียบร้อยแล้ว`,
+        action: newId ? (
+          <ToastAction altText="ดูข้อมูลลูกค้า" onClick={() => navigate(`/sales/customers/${newId}`)}>
+            ดูข้อมูลลูกค้า
+          </ToastAction>
+        ) : undefined,
       });
+
+      if (newId) {
+        setNewlyAddedId(newId.toString());
+      }
 
       setIsAddCustomerOpen(false);
 
@@ -581,6 +688,7 @@ export default function CustomerManagement() {
         notes: ""
       });
       setSameAddress(false);
+      setFormErrors({});
     } catch (error) {
       console.error('Error adding customer:', error);
       toast({
@@ -651,6 +759,15 @@ export default function CustomerManagement() {
     }
   }, [cardFilter]);
 
+  const duplicateNames = useMemo(() => {
+    const counts: Record<string, number> = {};
+    customers.forEach(c => {
+      const name = (c.name || "").trim().toLowerCase();
+      if (name) counts[name] = (counts[name] || 0) + 1;
+    });
+    return Object.entries(counts).filter(([_, count]) => count > 1).map(([name]) => name);
+  }, [customers]);
+
   const filteredCustomers = useMemo(() => {
     return customers.filter(customer => {
       const matchesSearch = deepSearch(customer, searchTerm);
@@ -689,8 +806,51 @@ export default function CustomerManagement() {
       const matchesAdvanced = matchesAdvancedSearch(customer);
 
       return matchesSearch && matchesBusinessType && matchesStatus && matchesSalesOwner && matchesProduct && matchesDate && matchesColumnFilters && matchesAdvanced && matchesCard;
+    }).sort((a, b) => {
+      if (!sortConfig.key) return 0;
+      const aVal = a[sortConfig.key];
+      const bVal = b[sortConfig.key];
+      if (typeof aVal === 'string' && typeof bVal === 'string') {
+        return sortConfig.direction === 'asc'
+          ? aVal.localeCompare(bVal, 'th')
+          : bVal.localeCompare(aVal, 'th');
+      }
+      if (typeof aVal === 'number' && typeof bVal === 'number') {
+        return sortConfig.direction === 'asc' ? aVal - bVal : bVal - aVal;
+      }
+      return 0;
     });
-  }, [customers, searchTerm, businessTypeFilter, statusFilter, salesOwnerFilter, productFilter, dateRange, columnFilters, advancedSearch, deepSearch, matchesAdvancedSearch, matchesCardFilter]);
+  }, [customers, searchTerm, businessTypeFilter, statusFilter, salesOwnerFilter, productFilter, dateRange, columnFilters, advancedSearch, deepSearch, matchesAdvancedSearch, matchesCardFilter, sortConfig]);
+
+  // Pagination Logic
+  const totalPages = Math.ceil(filteredCustomers.length / itemsPerPage);
+  const paginatedCustomers = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredCustomers.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredCustomers, currentPage, itemsPerPage]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, businessTypeFilter, statusFilter, salesOwnerFilter, productFilter, dateRange, columnFilters, advancedSearch, cardFilter]);
+
+  // Scroll and highlight newly added customer
+  useEffect(() => {
+    if (newlyAddedId) {
+      const timer = setTimeout(() => {
+        const element = document.getElementById(`customer-row-${newlyAddedId}`);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 300); // Wait a bit for the table to refresh and render
+
+      const clearTimer = setTimeout(() => setNewlyAddedId(null), 10000);
+      return () => {
+        clearTimeout(timer);
+        clearTimeout(clearTimer);
+      };
+    }
+  }, [newlyAddedId, filteredCustomers]);
 
   // Highlight matching text
   const highlightText = useCallback((text: string, term: string) => {
@@ -823,10 +983,12 @@ export default function CustomerManagement() {
       <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
         <Users className="w-8 h-8 text-muted-foreground" />
       </div>
-      <h3 className="text-lg font-semibold mb-2">ยังไม่มีข้อมูลลูกค้า</h3>
+      <h3 className="text-lg font-semibold mb-2">
+        {hasActiveFilters ? "ไม่พบลูกค้าที่ตรงกับคำค้นหา" : "ยังไม่มีข้อมูลลูกค้า"}
+      </h3>
       <p className="text-muted-foreground mb-6 max-w-sm">
         {hasActiveFilters
-          ? "ไม่พบข้อมูลลูกค้าที่ตรงกับเงื่อนไขการค้นหา ลองปรับตัวกรองใหม่"
+          ? "ไม่มีข้อมูลในระบบที่ตรงกับตัวกรองหรือคำค้นหานี้ กรุณาลองปรับเปลี่ยนคำค้นหาหรือล้างตัวกรองใหม่"
           : "เริ่มต้นด้วยการเพิ่มลูกค้าใหม่เพื่อจัดการข้อมูลและติดตามการขาย"}
       </p>
       {hasActiveFilters ? (
@@ -851,698 +1013,589 @@ export default function CustomerManagement() {
           <p className="text-muted-foreground">ค้นหาและจัดการข้อมูลลูกค้าทั้งหมด</p>
         </div>
         <div className="flex gap-3">
-          <Dialog open={isAddCustomerOpen} onOpenChange={setIsAddCustomerOpen}>
+          <Dialog open={isAddCustomerOpen} onOpenChange={(open) => { setIsAddCustomerOpen(open); setAddStep(0); if (!open) setFormErrors({}); }}>
             <DialogTrigger asChild>
               <Button className="bg-primary hover:bg-primary/90">
                 <Plus className="w-4 h-4 mr-2" />
                 เพิ่มลูกค้าใหม่
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>เพิ่มลูกค้าใหม่</DialogTitle>
-                <DialogDescription>
-                  กรอกข้อมูลครบถ้วนสำหรับลูกค้าใหม่ พร้อมข้อมูลที่อยู่และสินค้าที่สนใจ
-                </DialogDescription>
-              </DialogHeader>
-
-              <div className="space-y-6 py-4">
-                {/* ส่วนที่ 1: ข้อมูลบริษัท/องค์กร */}
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-sm font-semibold">1</div>
-                    <h3 className="text-lg font-semibold">ข้อมูลบริษัท / องค์กร</h3>
+            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto p-0 gap-0">
+              <div className="sticky top-0 z-50 bg-background border-b px-6 py-4 flex flex-col gap-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <DialogTitle className="text-xl">เพิ่มลูกค้าใหม่</DialogTitle>
+                    <DialogDescription>เพิ่มข้อมูลลูกค้าอย่างเป็นระบบ ({addStep + 1}/4)</DialogDescription>
                   </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 ml-8">
-                    <div className="space-y-2">
-                      <Label htmlFor="companyName">ชื่อบริษัท <span className="text-red-500">*</span></Label>
-                      <Input
-                        id="companyName"
-                        value={newCustomer.companyName}
-                        onChange={(e) => setNewCustomer({ ...newCustomer, companyName: e.target.value })}
-                        placeholder="กรอกชื่อบริษัทหรือองค์กร"
-                        className="bg-background"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="customerType">ประเภทลูกค้า</Label>
-                      <Select value={newCustomer.customerType} onValueChange={(value) => setNewCustomer({ ...newCustomer, customerType: value })}>
-                        <SelectTrigger className="bg-background">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent className="bg-background">
-                          <SelectItem value="เจ้าของงาน">เจ้าของงาน</SelectItem>
-                          <SelectItem value="ตัวแทน">ตัวแทน</SelectItem>
-                          <SelectItem value="ออแกนไนเซอร์">ออแกนไนเซอร์</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-2 md:col-span-2">
-                      <Label htmlFor="taxId">เลขประจำตัวผู้เสียภาษี (13 หลัก)</Label>
-                      <Input
-                        id="taxId"
-                        value={newCustomer.taxId}
-                        onChange={(e) => setNewCustomer({ ...newCustomer, taxId: formatTaxId(e.target.value) })}
-                        placeholder="X-XXXX-XXXXX-XX-X"
-                        maxLength={13}
-                        className="bg-background font-mono"
-                      />
-                      <p className="text-xs text-muted-foreground">กรอกเฉพาะตัวเลข 13 หลัก</p>
-                    </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20 gap-1 px-3 py-1">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      กรอกข้อมูลแล้ว {Math.round([
+                        newCustomer.companyName,
+                        newCustomer.billingProvince,
+                        newCustomer.contactName,
+                        newCustomer.interestedProducts.length > 0
+                      ].filter(Boolean).length / 4 * 100)}%
+                    </Badge>
                   </div>
                 </div>
 
-                <Separator />
-
-                {/* ที่อยู่ออกใบกำกับภาษี */}
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-sm font-semibold">2</div>
-                    <h3 className="text-lg font-semibold">ที่อยู่ออกใบกำกับภาษี</h3>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 ml-8">
-                    <div className="space-y-2">
-                      <Label>จังหวัด</Label>
-                      <Popover open={provinceOpen} onOpenChange={setProvinceOpen}>
-                        <PopoverTrigger asChild>
-                          <Button variant="outline" role="combobox" className="w-full justify-between bg-background">
-                            {newCustomer.billingProvince || "เลือกจังหวัด..."}
-                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-full p-0 bg-background">
-                          <Command className="bg-background">
-                            <CommandInput placeholder="ค้นหาจังหวัด..." />
-                            <CommandEmpty>ไม่พบจังหวัด</CommandEmpty>
-                            <CommandGroup className="max-h-64 overflow-auto">
-                              {thaiProvinces.map((province) => (
-                                <CommandItem
-                                  key={province}
-                                  value={province}
-                                  onSelect={() => {
-                                    setNewCustomer({ ...newCustomer, billingProvince: province, billingDistrict: "", billingSubdistrict: "" });
-                                    setProvinceOpen(false);
-                                  }}
-                                >
-                                  <Check className={cn("mr-2 h-4 w-4", newCustomer.billingProvince === province ? "opacity-100" : "opacity-0")} />
-                                  {province}
-                                </CommandItem>
-                              ))}
-                            </CommandGroup>
-                          </Command>
-                        </PopoverContent>
-                      </Popover>
+                {/* Progress Steps */}
+                <div className="flex items-center gap-4 py-2">
+                  {[
+                    { icon: Building2, label: "ข้อมูลบริษัท" },
+                    { icon: MapPin, label: "ที่อยู่" },
+                    { icon: UserPlus, label: "ผู้ติดต่อ" },
+                    { icon: FileText, label: "การนำเสนอ" }
+                  ].map((step, idx) => (
+                    <div key={idx} className="flex-1 flex flex-col gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className={cn(
+                          "w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all",
+                          addStep === idx ? "bg-primary text-primary-foreground ring-4 ring-primary/20" :
+                            addStep > idx ? "bg-green-500 text-white" : "bg-muted text-muted-foreground"
+                        )}>
+                          {addStep > idx ? <Check className="w-4 h-4" /> : idx + 1}
+                        </div>
+                        <div className={cn(
+                          "hidden md:block text-xs font-semibold",
+                          addStep === idx ? "text-primary" : "text-muted-foreground"
+                        )}>
+                          {step.label}
+                        </div>
+                      </div>
+                      <div className={cn(
+                        "h-1 rounded-full transition-all",
+                        addStep > idx ? "bg-green-500" : addStep === idx ? "bg-primary" : "bg-muted"
+                      )} />
                     </div>
-
-                    <div className="space-y-2">
-                      <Label>อำเภอ/เขต</Label>
-                      <Popover open={districtOpen} onOpenChange={setDistrictOpen}>
-                        <PopoverTrigger asChild>
-                          <Button variant="outline" role="combobox" className="w-full justify-between bg-background" disabled={!newCustomer.billingProvince}>
-                            {newCustomer.billingDistrict || "เลือกอำเภอ/เขต..."}
-                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-full p-0 bg-background">
-                          <Command className="bg-background">
-                            <CommandInput placeholder="ค้นหาอำเภอ/เขต..." />
-                            <CommandEmpty>{geoLoading ? 'กำลังโหลด...' : 'ไม่พบอำเภอ/เขต'}</CommandEmpty>
-                            <CommandGroup className="max-h-64 overflow-auto">
-                              {billingDistricts.map((amp) => (
-                                <CommandItem
-                                  key={amp.id}
-                                  value={amp.name_th}
-                                  onSelect={() => {
-                                    setNewCustomer({ ...newCustomer, billingDistrict: amp.name_th, billingSubdistrict: "", billingPostcode: "" });
-                                    setDistrictOpen(false);
-                                  }}
-                                >
-                                  <Check className={cn("mr-2 h-4 w-4", newCustomer.billingDistrict === amp.name_th ? "opacity-100" : "opacity-0")} />
-                                  {amp.name_th}
-                                </CommandItem>
-                              ))}
-                            </CommandGroup>
-                          </Command>
-                        </PopoverContent>
-                      </Popover>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>ตำบล/แขวง</Label>
-                      <Popover open={subdistrictOpen} onOpenChange={setSubdistrictOpen}>
-                        <PopoverTrigger asChild>
-                          <Button variant="outline" role="combobox" className="w-full justify-between bg-background" disabled={!newCustomer.billingDistrict}>
-                            {newCustomer.billingSubdistrict || "เลือกตำบล/แขวง..."}
-                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-full p-0 bg-background">
-                          <Command className="bg-background">
-                            <CommandInput placeholder="ค้นหาตำบล/แขวง..." />
-                            <CommandEmpty>ไม่พบตำบล/แขวง</CommandEmpty>
-                            <CommandGroup className="max-h-64 overflow-auto">
-                              {billingSubdistricts.map((tam) => (
-                                <CommandItem
-                                  key={tam.id}
-                                  value={tam.name_th}
-                                  onSelect={() => {
-                                    setNewCustomer({ ...newCustomer, billingSubdistrict: tam.name_th, billingPostcode: String(tam.zip_code || '') });
-                                    setSubdistrictOpen(false);
-                                  }}
-                                >
-                                  <Check className={cn("mr-2 h-4 w-4", newCustomer.billingSubdistrict === tam.name_th ? "opacity-100" : "opacity-0")} />
-                                  {tam.name_th}
-                                  {tam.zip_code && <span className="ml-auto text-xs text-muted-foreground">{tam.zip_code}</span>}
-                                </CommandItem>
-                              ))}
-                            </CommandGroup>
-                          </Command>
-                        </PopoverContent>
-                      </Popover>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>รหัสไปรษณีย์</Label>
-                      <Input
-                        value={newCustomer.billingPostcode}
-                        onChange={(e) => setNewCustomer({ ...newCustomer, billingPostcode: e.target.value.replace(/\D/g, '').slice(0, 5) })}
-                        placeholder="XXXXX"
-                        maxLength={5}
-                        className="bg-background"
-                      />
-                    </div>
-
-                    <div className="space-y-2 md:col-span-2">
-                      <Label>ที่อยู่ (บ้านเลขที่, ถนน, ซอย)</Label>
-                      <Textarea
-                        value={newCustomer.billingAddress}
-                        onChange={(e) => setNewCustomer({ ...newCustomer, billingAddress: e.target.value })}
-                        placeholder="กรอกรายละเอียดที่อยู่..."
-                        rows={2}
-                        className="bg-background"
-                      />
-                    </div>
-                  </div>
+                  ))}
                 </div>
+              </div>
 
-                <Separator />
+              <form onSubmit={(e) => { e.preventDefault(); if (addStep === 3) handleAddCustomer(); else setAddStep(s => s + 1); }} className="px-6 py-4">
+                <div className="min-h-[400px]">
+                  {addStep === 0 && (
+                    <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-2" id="field-companyName">
+                          <Label htmlFor="companyName" className="text-primary font-semibold flex items-center gap-2">
+                            <Building className="w-4 h-4" />
+                            ชื่อบริษัท/องค์กร <span className="text-red-500">*</span>
+                          </Label>
+                          <Input
+                            id="companyName"
+                            value={newCustomer.companyName}
+                            onChange={(e) => {
+                              setNewCustomer({ ...newCustomer, companyName: e.target.value });
+                              if (e.target.value.trim()) setFormErrors(prev => { const n = { ...prev }; delete n.companyName; return n; });
+                            }}
+                            placeholder="กรอกชื่อบริษัทหรือองค์กร"
+                            className={cn(formErrors.companyName && "border-red-500 ring-red-500")}
+                          />
+                          {formErrors.companyName && <p className="text-xs text-red-500 font-medium">{formErrors.companyName}</p>}
+                        </div>
 
-                {/* ที่อยู่จัดส่ง */}
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-sm font-semibold">3</div>
-                      <h3 className="text-lg font-semibold">ที่อยู่จัดส่ง</h3>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Switch checked={sameAddress} onCheckedChange={setSameAddress} />
-                      <Label className="text-sm">ใช้ที่อยู่เดียวกัน</Label>
-                    </div>
-                  </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="customerType" className="font-semibold flex items-center gap-2">
+                            <Users className="w-4 h-4 text-primary" />
+                            ประเภทลูกค้า
+                          </Label>
+                          <Select value={newCustomer.customerType} onValueChange={(value) => setNewCustomer({ ...newCustomer, customerType: value })}>
+                            <SelectTrigger className="bg-background">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="bg-background">
+                              <SelectItem value="เจ้าของงาน">เจ้าของงาน</SelectItem>
+                              <SelectItem value="ตัวแทน">ตัวแทน</SelectItem>
+                              <SelectItem value="ออแกนไนเซอร์">ออแกนไนเซอร์</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
 
-                  {!sameAddress && (
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 ml-8">
-                      <div className="space-y-2">
-                        <Label>จังหวัด</Label>
-                        <Popover open={shippingProvinceOpen} onOpenChange={setShippingProvinceOpen}>
-                          <PopoverTrigger asChild>
-                            <Button variant="outline" role="combobox" className="w-full justify-between bg-background">
-                              {newCustomer.shippingProvince || "เลือกจังหวัด..."}
-                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                            </Button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-full p-0 bg-background">
-                            <Command className="bg-background">
-                              <CommandInput placeholder="ค้นหาจังหวัด..." />
-                              <CommandEmpty>ไม่พบจังหวัด</CommandEmpty>
-                              <CommandGroup className="max-h-64 overflow-auto">
-                                {thaiProvinces.map((province) => (
-                                  <CommandItem
-                                    key={province}
-                                    value={province}
-                                    onSelect={() => {
-                                      setNewCustomer({ ...newCustomer, shippingProvince: province, shippingDistrict: "", shippingSubdistrict: "" });
-                                      setShippingProvinceOpen(false);
-                                    }}
-                                  >
-                                    <Check className={cn("mr-2 h-4 w-4", newCustomer.shippingProvince === province ? "opacity-100" : "opacity-0")} />
-                                    {province}
-                                  </CommandItem>
-                                ))}
-                              </CommandGroup>
-                            </Command>
-                          </PopoverContent>
-                        </Popover>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label>อำเภอ/เขต</Label>
-                        <Popover open={shippingDistrictOpen} onOpenChange={setShippingDistrictOpen}>
-                          <PopoverTrigger asChild>
-                            <Button variant="outline" role="combobox" className="w-full justify-between bg-background" disabled={!newCustomer.shippingProvince}>
-                              {newCustomer.shippingDistrict || "เลือกอำเภอ/เขต..."}
-                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                            </Button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-full p-0 bg-background">
-                            <Command className="bg-background">
-                              <CommandInput placeholder="ค้นหาอำเภอ/เขต..." />
-                              <CommandEmpty>ไม่พบอำเภอ/เขต</CommandEmpty>
-                              <CommandGroup className="max-h-64 overflow-auto">
-                                {shippingDistricts.map((amp) => (
-                                  <CommandItem
-                                    key={amp.id}
-                                    value={amp.name_th}
-                                    onSelect={() => {
-                                      setNewCustomer({ ...newCustomer, shippingDistrict: amp.name_th, shippingSubdistrict: "", shippingPostcode: "" });
-                                      setShippingDistrictOpen(false);
-                                    }}
-                                  >
-                                    <Check className={cn("mr-2 h-4 w-4", newCustomer.shippingDistrict === amp.name_th ? "opacity-100" : "opacity-0")} />
-                                    {amp.name_th}
-                                  </CommandItem>
-                                ))}
-                              </CommandGroup>
-                            </Command>
-                          </PopoverContent>
-                        </Popover>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label>ตำบล/แขวง</Label>
-                        <Popover open={shippingSubdistrictOpen} onOpenChange={setShippingSubdistrictOpen}>
-                          <PopoverTrigger asChild>
-                            <Button variant="outline" role="combobox" className="w-full justify-between bg-background" disabled={!newCustomer.shippingDistrict}>
-                              {newCustomer.shippingSubdistrict || "เลือกตำบล/แขวง..."}
-                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                            </Button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-full p-0 bg-background">
-                            <Command className="bg-background">
-                              <CommandInput placeholder="ค้นหาตำบล/แขวง..." />
-                              <CommandEmpty>ไม่พบตำบล/แขวง</CommandEmpty>
-                              <CommandGroup className="max-h-64 overflow-auto">
-                                {shippingSubdistricts.map((tam) => (
-                                  <CommandItem
-                                    key={tam.id}
-                                    value={tam.name_th}
-                                    onSelect={() => {
-                                      setNewCustomer({ ...newCustomer, shippingSubdistrict: tam.name_th, shippingPostcode: String(tam.zip_code || '') });
-                                      setShippingSubdistrictOpen(false);
-                                    }}
-                                  >
-                                    <Check className={cn("mr-2 h-4 w-4", newCustomer.shippingSubdistrict === tam.name_th ? "opacity-100" : "opacity-0")} />
-                                    {tam.name_th}
-                                    {tam.zip_code && <span className="ml-auto text-xs text-muted-foreground">{tam.zip_code}</span>}
-                                  </CommandItem>
-                                ))}
-                              </CommandGroup>
-                            </Command>
-                          </PopoverContent>
-                        </Popover>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label>รหัสไปรษณีย์</Label>
-                        <Input
-                          value={newCustomer.shippingPostcode}
-                          onChange={(e) => setNewCustomer({ ...newCustomer, shippingPostcode: e.target.value.replace(/\D/g, '').slice(0, 5) })}
-                          placeholder="XXXXX"
-                          maxLength={5}
-                          className="bg-background"
-                        />
-                      </div>
-
-                      <div className="space-y-2 md:col-span-2">
-                        <Label>ที่อยู่ (บ้านเลขที่, ถนน, ซอย)</Label>
-                        <Textarea
-                          value={newCustomer.shippingAddress}
-                          onChange={(e) => setNewCustomer({ ...newCustomer, shippingAddress: e.target.value })}
-                          placeholder="กรอกรายละเอียดที่อยู่..."
-                          rows={2}
-                          className="bg-background"
-                        />
+                        <div className="space-y-2 md:col-span-2" id="field-taxId">
+                          <div className="flex justify-between items-center">
+                            <Label htmlFor="taxId" className="font-semibold flex items-center gap-2">
+                              <Receipt className="w-4 h-4 text-primary" />
+                              เลขประจำตัวผู้เสียภาษี (13 หลัก)
+                            </Label>
+                            <span className="text-[10px] text-muted-foreground">{newCustomer.taxId.length}/13 หลัก</span>
+                          </div>
+                          <Input
+                            id="taxId"
+                            value={newCustomer.taxId}
+                            onChange={(e) => setNewCustomer({ ...newCustomer, taxId: formatTaxId(e.target.value) })}
+                            placeholder="X-XXXX-XXXXX-XX-X"
+                            maxLength={13}
+                            className="font-mono bg-background"
+                          />
+                        </div>
                       </div>
                     </div>
                   )}
 
-                  {sameAddress && (
-                    <p className="ml-8 text-sm text-muted-foreground">ใช้ที่อยู่ออกใบกำกับภาษีเป็นที่อยู่จัดส่ง</p>
+                  {addStep === 1 && (
+                    <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-300">
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-2 text-primary">
+                          <MapPin className="w-5 h-5 font-bold" />
+                          <h3 className="text-lg font-bold">ที่อยู่ออกใบกำกับภาษี</h3>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label>จังหวัด/อำเภอ/ตำบล</Label>
+                            <div className="grid grid-cols-3 gap-2">
+                              <Popover open={provinceOpen} onOpenChange={setProvinceOpen}>
+                                <PopoverTrigger asChild>
+                                  <Button variant="outline" className="w-full justify-between">
+                                    <span className="truncate">{newCustomer.billingProvince || "จังหวัด"}</span>
+                                    <ChevronDown className="h-3 w-3 opacity-50" />
+                                  </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-[200px] p-0 shadow-lg border-primary/20">
+                                  <Command>
+                                    <CommandInput placeholder="ค้นหา..." />
+                                    <CommandEmpty>ไม่พบข้อมูล</CommandEmpty>
+                                    <CommandGroup className="max-h-60 overflow-y-auto">
+                                      {thaiProvinces.map(p => (
+                                        <CommandItem key={p} onSelect={() => {
+                                          setNewCustomer({ ...newCustomer, billingProvince: p, billingDistrict: "", billingSubdistrict: "" });
+                                          setProvinceOpen(false);
+                                        }}>
+                                          <Check className={cn("mr-2 h-4 w-4", newCustomer.billingProvince === p ? "opacity-100" : "opacity-0")} />
+                                          {p}
+                                        </CommandItem>
+                                      ))}
+                                    </CommandGroup>
+                                  </Command>
+                                </PopoverContent>
+                              </Popover>
+                              <Popover open={districtOpen} onOpenChange={setDistrictOpen}>
+                                <PopoverTrigger asChild>
+                                  <Button variant="outline" className="w-full justify-between" disabled={!newCustomer.billingProvince}>
+                                    <span className="truncate">{newCustomer.billingDistrict || "อำเภอ"}</span>
+                                    <ChevronDown className="h-3 w-3 opacity-50" />
+                                  </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-[200px] p-0 shadow-lg border-primary/20">
+                                  <Command>
+                                    <CommandInput placeholder="ค้นหา..." />
+                                    <CommandEmpty>ไม่พบข้อมูล</CommandEmpty>
+                                    <CommandGroup className="max-h-60 overflow-y-auto">
+                                      {billingDistricts.map(d => (
+                                        <CommandItem key={d.id} onSelect={() => {
+                                          setNewCustomer({ ...newCustomer, billingDistrict: d.name_th, billingSubdistrict: "", billingPostcode: "" });
+                                          setDistrictOpen(false);
+                                        }}>
+                                          {d.name_th}
+                                        </CommandItem>
+                                      ))}
+                                    </CommandGroup>
+                                  </Command>
+                                </PopoverContent>
+                              </Popover>
+                              <Popover open={subdistrictOpen} onOpenChange={setSubdistrictOpen}>
+                                <PopoverTrigger asChild>
+                                  <Button variant="outline" className="w-full justify-between" disabled={!newCustomer.billingDistrict}>
+                                    <span className="truncate">{newCustomer.billingSubdistrict || "ตำบล"}</span>
+                                    <ChevronDown className="h-3 w-3 opacity-50" />
+                                  </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-[200px] p-0 shadow-lg border-primary/20">
+                                  <Command>
+                                    <CommandInput placeholder="ค้นหา..." />
+                                    <CommandEmpty>ไม่พบข้อมูล</CommandEmpty>
+                                    <CommandGroup className="max-h-60 overflow-y-auto">
+                                      {billingSubdistricts.map(s => (
+                                        <CommandItem key={s.id} onSelect={() => {
+                                          setNewCustomer({ ...newCustomer, billingSubdistrict: s.name_th, billingPostcode: String(s.zip_code || '') });
+                                          setSubdistrictOpen(false);
+                                        }}>
+                                          {s.name_th}
+                                        </CommandItem>
+                                      ))}
+                                    </CommandGroup>
+                                  </Command>
+                                </PopoverContent>
+                              </Popover>
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>รหัสไปรษณีย์</Label>
+                            <Input
+                              value={newCustomer.billingPostcode}
+                              onChange={(e) => setNewCustomer({ ...newCustomer, billingPostcode: e.target.value.replace(/\D/g, '').slice(0, 5) })}
+                              placeholder="XXXXX"
+                              maxLength={5}
+                            />
+                          </div>
+                          <div className="md:col-span-2 space-y-2">
+                            <Label>รายละเอียดที่อยู่ (บ้านเลขที่, ถนน)</Label>
+                            <Textarea
+                              value={newCustomer.billingAddress}
+                              onChange={(e) => setNewCustomer({ ...newCustomer, billingAddress: e.target.value })}
+                              placeholder="ที่อยู่สำหรับออกใบกำกับภาษี..."
+                              className="bg-background resize-none"
+                              rows={2}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4 pt-4 border-t">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 text-primary">
+                            <Package className="w-5 h-5 font-bold" />
+                            <h3 className="text-lg font-bold">ที่อยู่จัดส่ง</h3>
+                          </div>
+                          <div className="flex items-center gap-2 bg-muted/50 px-3 py-1 rounded-full border">
+                            <Switch checked={sameAddress} onCheckedChange={setSameAddress} />
+                            <Label className="text-xs font-semibold cursor-pointer">ใช้ที่อยู่เดียวกับใบกำกับภาษี</Label>
+                          </div>
+                        </div>
+
+                        {!sameAddress && (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label>จังหวัด/อำเภอ/ตำบล</Label>
+                              <div className="grid grid-cols-3 gap-2">
+                                <Popover open={shippingProvinceOpen} onOpenChange={setShippingProvinceOpen}>
+                                  <PopoverTrigger asChild>
+                                    <Button variant="outline" className="w-full justify-between">
+                                      <span className="truncate">{newCustomer.shippingProvince || "จังหวัด"}</span>
+                                      <ChevronDown className="h-3 w-3 opacity-50" />
+                                    </Button>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-[200px] p-0 shadow-lg border-primary/20">
+                                    <Command>
+                                      <CommandInput placeholder="ค้นหา..." />
+                                      <CommandEmpty>ไม่พบข้อมูล</CommandEmpty>
+                                      <CommandGroup className="max-h-60 overflow-y-auto">
+                                        {thaiProvinces.map(p => (
+                                          <CommandItem key={p} onSelect={() => {
+                                            setNewCustomer({ ...newCustomer, shippingProvince: p, shippingDistrict: "", shippingSubdistrict: "" });
+                                            setShippingProvinceOpen(false);
+                                          }}>
+                                            {p}
+                                          </CommandItem>
+                                        ))}
+                                      </CommandGroup>
+                                    </Command>
+                                  </PopoverContent>
+                                </Popover>
+                                <Popover open={shippingDistrictOpen} onOpenChange={setShippingDistrictOpen}>
+                                  <PopoverTrigger asChild>
+                                    <Button variant="outline" className="w-full justify-between" disabled={!newCustomer.shippingProvince}>
+                                      <span className="truncate">{newCustomer.shippingDistrict || "อำเภอ"}</span>
+                                      <ChevronDown className="h-3 w-3 opacity-50" />
+                                    </Button>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-[200px] p-0 shadow-lg border-primary/20">
+                                    <Command>
+                                      <CommandInput placeholder="ค้นหา..." />
+                                      <CommandEmpty>ไม่พบข้อมูล</CommandEmpty>
+                                      <CommandGroup className="max-h-60 overflow-y-auto">
+                                        {shippingDistricts.map(d => (
+                                          <CommandItem key={d.id} onSelect={() => {
+                                            setNewCustomer({ ...newCustomer, shippingDistrict: d.name_th, shippingSubdistrict: "", shippingPostcode: "" });
+                                            setShippingDistrictOpen(false);
+                                          }}>
+                                            {d.name_th}
+                                          </CommandItem>
+                                        ))}
+                                      </CommandGroup>
+                                    </Command>
+                                  </PopoverContent>
+                                </Popover>
+                                <Popover open={shippingSubdistrictOpen} onOpenChange={setShippingSubdistrictOpen}>
+                                  <PopoverTrigger asChild>
+                                    <Button variant="outline" className="w-full justify-between" disabled={!newCustomer.shippingDistrict}>
+                                      <span className="truncate">{newCustomer.shippingSubdistrict || "ตำบล"}</span>
+                                      <ChevronDown className="h-3 w-3 opacity-50" />
+                                    </Button>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-[200px] p-0 shadow-lg border-primary/20">
+                                    <Command>
+                                      <CommandInput placeholder="ค้นหา..." />
+                                      <CommandEmpty>ไม่พบข้อมูล</CommandEmpty>
+                                      <CommandGroup className="max-h-60 overflow-y-auto">
+                                        {shippingSubdistricts.map(s => (
+                                          <CommandItem key={s.id} onSelect={() => {
+                                            setNewCustomer({ ...newCustomer, shippingSubdistrict: s.name_th, shippingPostcode: String(s.zip_code || '') });
+                                            setShippingSubdistrictOpen(false);
+                                          }}>
+                                            {s.name_th}
+                                          </CommandItem>
+                                        ))}
+                                      </CommandGroup>
+                                    </Command>
+                                  </PopoverContent>
+                                </Popover>
+                              </div>
+                            </div>
+                            <div className="space-y-2">
+                              <Label>รหัสไปรษณีย์</Label>
+                              <Input
+                                value={newCustomer.shippingPostcode}
+                                onChange={(e) => setNewCustomer({ ...newCustomer, shippingPostcode: e.target.value.replace(/\D/g, '').slice(0, 5) })}
+                                placeholder="XXXXX"
+                                maxLength={5}
+                              />
+                            </div>
+                            <div className="md:col-span-2 space-y-2">
+                              <Label>รายละเอียดที่อยู่ (บ้านเลขที่, ถนน)</Label>
+                              <Textarea
+                                value={newCustomer.shippingAddress}
+                                onChange={(e) => setNewCustomer({ ...newCustomer, shippingAddress: e.target.value })}
+                                placeholder="ที่อยู่สำหรับจัดส่ง..."
+                                className="bg-background resize-none"
+                                rows={2}
+                              />
+                            </div>
+                          </div>
+                        )}
+                        {sameAddress && (
+                          <div className="bg-primary/5 border border-primary/20 rounded-lg p-6 flex flex-col items-center justify-center gap-3 animate-in zoom-in-95 duration-200">
+                            <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center text-primary">
+                              <CheckCircle2 className="w-8 h-8" />
+                            </div>
+                            <p className="text-sm font-medium text-primary">ใช้ที่อยู่เดียวกันกับใบกำกับภาษีเรียบร้อยแล้ว</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   )}
-                </div>
 
-                <Separator />
-
-                {/* ส่วนที่ 4: ข้อมูลผู้ติดต่อหลัก */}
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-sm font-semibold">4</div>
-                    <h3 className="text-lg font-semibold">ข้อมูลผู้ติดต่อหลัก</h3>
-                  </div>
-
-                  <div className="space-y-4 ml-8">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="contactName">ชื่อ-นามสกุล <span className="text-red-500">*</span></Label>
-                        <Input
-                          id="contactName"
-                          value={newCustomer.contactName}
-                          onChange={(e) => setNewCustomer({ ...newCustomer, contactName: e.target.value })}
-                          placeholder="กรอกชื่อ-นามสกุลผู้ติดต่อ"
-                          className="bg-background"
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="lineId">ID Line</Label>
-                        <Input
-                          id="lineId"
-                          value={newCustomer.lineId}
-                          onChange={(e) => setNewCustomer({ ...newCustomer, lineId: e.target.value })}
-                          placeholder="Line ID (ไม่บังคับ)"
-                          className="bg-background"
-                        />
-                      </div>
-                    </div>
-
-                    {/* เบอร์โทรศัพท์ (หลายเบอร์) */}
-                    <div className="space-y-2">
-                      <Label>เบอร์โทรศัพท์ <span className="text-red-500">*</span></Label>
-                      {newCustomer.phoneNumbers.map((phone, index) => (
-                        <div key={index} className="flex gap-2">
+                  {addStep === 2 && (
+                    <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-2" id="field-contactName">
+                          <Label htmlFor="contactName" className="font-semibold flex items-center gap-2">
+                            <User className="w-4 h-4 text-primary" />
+                            ชื่อผู้ติดต่อ <span className="text-red-500">*</span>
+                          </Label>
                           <Input
-                            value={phone}
-                            onChange={(e) => updatePhoneNumber(index, e.target.value)}
-                            placeholder="0XX-XXX-XXXX"
-                            maxLength={12}
-                            className="bg-background"
+                            id="contactName"
+                            value={newCustomer.contactName}
+                            onChange={(e) => {
+                              setNewCustomer({ ...newCustomer, contactName: e.target.value });
+                              if (e.target.value.trim()) setFormErrors(prev => { const n = { ...prev }; delete n.contactName; return n; });
+                            }}
+                            placeholder="ระบุชื่อจริง-นามสกุล"
+                            className={cn(formErrors.contactName && "border-red-500 ring-red-500")}
                           />
-                          {newCustomer.phoneNumbers.length > 1 && (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="icon"
-                              onClick={() => removePhoneNumber(index)}
-                            >
-                              <X className="h-4 w-4" />
-                            </Button>
-                          )}
                         </div>
-                      ))}
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={addPhoneNumber}
-                      >
-                        + เพิ่มเบอร์โทรศัพท์
-                      </Button>
-                    </div>
 
-                    {/* อีเมล (หลายอีเมล) */}
-                    <div className="space-y-2">
-                      <Label>อีเมล</Label>
-                      {newCustomer.emails.map((email, index) => (
-                        <div key={index} className="flex gap-2">
+                        <div className="space-y-2">
+                          <Label htmlFor="lineId" className="font-semibold flex items-center gap-2">
+                            <Mail className="w-4 h-4 text-primary" />
+                            LINE ID
+                          </Label>
                           <Input
-                            type="email"
-                            value={email}
-                            onChange={(e) => updateEmail(index, e.target.value)}
-                            placeholder="email@example.com"
-                            className="bg-background"
+                            id="lineId"
+                            value={newCustomer.lineId}
+                            onChange={(e) => setNewCustomer({ ...newCustomer, lineId: e.target.value })}
+                            placeholder="Line ID"
                           />
-                          {newCustomer.emails.length > 1 && (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="icon"
-                              onClick={() => removeEmail(index)}
-                            >
-                              <X className="h-4 w-4" />
-                            </Button>
-                          )}
                         </div>
-                      ))}
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={addEmail}
-                      >
-                        + เพิ่มอีเมล
-                      </Button>
-                    </div>
 
-                    {/* ข้อมูลผู้ติดต่อเพิ่มเติม */}
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <Label>ข้อมูลผู้ติดต่อเพิ่มเติม</Label>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={addAdditionalContact}
-                        >
-                          + เพิ่มผู้ติดต่อ
-                        </Button>
-                      </div>
-
-                      {newCustomer.additionalContacts.map((contact, index) => (
-                        <div key={index} className="border rounded-lg p-4 space-y-3">
+                        <div className="space-y-4 md:col-span-2 p-4 border rounded-lg bg-muted/30">
                           <div className="flex items-center justify-between">
-                            <span className="text-sm font-medium">ผู้ติดต่อที่ {index + 2}</span>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => removeAdditionalContact(index)}
-                            >
-                              ลบ
+                            <Label className="font-bold flex items-center gap-2">
+                              <Phone className="w-4 h-4 text-primary" />
+                              เบอร์โทรศัพท์ <span className="text-red-500">*</span>
+                            </Label>
+                            <Button type="button" variant="outline" size="sm" onClick={addPhoneNumber} className="h-7 text-[10px] gap-1 px-2">
+                              + เพิ่มเบอร์
                             </Button>
                           </div>
+                          <div className="space-y-2">
+                            {newCustomer.phoneNumbers.map((phone, idx) => (
+                              <div key={idx} className="flex gap-2">
+                                <Input
+                                  value={phone}
+                                  onChange={(e) => updatePhoneNumber(idx, e.target.value)}
+                                  placeholder="0XX-XXX-XXXX"
+                                  maxLength={12}
+                                  className={cn("bg-background", idx === 0 && formErrors.phone && "border-red-500 ring-red-500")}
+                                />
+                                {newCustomer.phoneNumbers.length > 1 && (
+                                  <Button type="button" variant="ghost" size="icon" onClick={() => removePhoneNumber(idx)} className="text-red-500 hover:bg-red-50">
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                          {formErrors.phone && <p className="text-xs text-red-500 font-medium">{formErrors.phone}</p>}
+                        </div>
 
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            <div className="space-y-2">
-                              <Label>ชื่อ-นามสกุล <span className="text-red-500">*</span></Label>
-                              <Input
-                                value={contact.contactName}
-                                onChange={(e) => updateAdditionalContact(index, 'contactName', e.target.value)}
-                                placeholder="กรอกชื่อ-นามสกุล"
-                                className="bg-background"
-                              />
-                            </div>
-
-                            <div className="space-y-2">
-                              <Label>ID Line</Label>
-                              <Input
-                                value={contact.lineId}
-                                onChange={(e) => updateAdditionalContact(index, 'lineId', e.target.value)}
-                                placeholder="Line ID (ไม่บังคับ)"
-                                className="bg-background"
-                              />
-                            </div>
-
-                            <div className="space-y-2">
-                              <Label>เบอร์โทรศัพท์ <span className="text-red-500">*</span></Label>
-                              <Input
-                                value={contact.phoneNumber}
-                                onChange={(e) => updateAdditionalContact(index, 'phoneNumber', e.target.value)}
-                                placeholder="0XX-XXX-XXXX"
-                                maxLength={12}
-                                className="bg-background"
-                              />
-                            </div>
-
-                            <div className="space-y-2">
-                              <Label>อีเมล</Label>
-                              <Input
-                                type="email"
-                                value={contact.email}
-                                onChange={(e) => updateAdditionalContact(index, 'email', e.target.value)}
-                                placeholder="email@example.com"
-                                className="bg-background"
-                              />
-                            </div>
+                        <div className="space-y-4 md:col-span-2 p-4 border rounded-lg bg-muted/30">
+                          <div className="flex items-center justify-between">
+                            <Label className="font-bold flex items-center gap-2">
+                              <Mail className="w-4 h-4 text-primary" />
+                              อีเมล
+                            </Label>
+                            <Button type="button" variant="outline" size="sm" onClick={addEmail} className="h-7 text-[10px] gap-1 px-2">
+                              + เพิ่มอีเมล
+                            </Button>
+                          </div>
+                          <div className="space-y-2">
+                            {newCustomer.emails.map((email, idx) => (
+                              <div key={idx} className="flex gap-2">
+                                <Input
+                                  value={email}
+                                  onChange={(e) => updateEmail(idx, e.target.value)}
+                                  placeholder="example@mail.com"
+                                  className="bg-background"
+                                />
+                                {newCustomer.emails.length > 1 && (
+                                  <Button type="button" variant="ghost" size="icon" onClick={() => removeEmail(idx)} className="text-red-500 hover:bg-red-50">
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                )}
+                              </div>
+                            ))}
                           </div>
                         </div>
-                      ))}
+                      </div>
                     </div>
-                  </div>
-                </div>
+                  )}
 
-                <Separator />
+                  {addStep === 3 && (
+                    <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-2">
+                          <Label className="font-semibold">สถานะการนำเสนอ</Label>
+                          <Select value={newCustomer.presentationStatus} onValueChange={(value) => setNewCustomer({ ...newCustomer, presentationStatus: value })}>
+                            <SelectTrigger className="bg-background">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="bg-background">
+                              <SelectItem value="เสนอขาย">เสนอขาย</SelectItem>
+                              <SelectItem value="นำเสนอแล้ว">นำเสนอแล้ว</SelectItem>
+                              <SelectItem value="รอตัดสินใจ">รอตัดสินใจ</SelectItem>
+                              <SelectItem value="ปิดการขาย">ปิดการขาย</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
 
-                {/* ส่วนที่ 5: การนำเสนอ */}
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-sm font-semibold">5</div>
-                    <h3 className="text-lg font-semibold">การนำเสนอ</h3>
-                  </div>
+                        <div className="space-y-2">
+                          <Label className="font-semibold">ผู้รับผิดชอบ (Sales)</Label>
+                          <Select value={newCustomer.responsiblePerson} onValueChange={(value) => setNewCustomer({ ...newCustomer, responsiblePerson: value })}>
+                            <SelectTrigger className="bg-background">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="bg-background">
+                              {salesOwners.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 ml-8">
-                    <div className="space-y-2">
-                      <Label htmlFor="presentationStatus">สถานะการนำเสนอ</Label>
-                      <Select value={newCustomer.presentationStatus} onValueChange={(value) => setNewCustomer({ ...newCustomer, presentationStatus: value })}>
-                        <SelectTrigger className="bg-background">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent className="bg-background">
-                          <SelectItem value="เสนอขาย">เสนอขาย</SelectItem>
-                          <SelectItem value="นำเสนอแล้ว">นำเสนอแล้ว</SelectItem>
-                          <SelectItem value="รอตัดสินใจ">รอตัดสินใจ</SelectItem>
-                          <SelectItem value="ปิดการขาย">ปิดการขาย</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
+                        <div className="md:col-span-2 space-y-3" id="field-interestedProducts">
+                          <Label className="font-semibold flex items-center gap-2">
+                            <Package className="w-4 h-4 text-primary" />
+                            สินค้าที่สนใจ <span className="text-red-500">*</span>
+                          </Label>
+                          <div className={cn(
+                            "flex flex-wrap gap-2 p-3 border rounded-lg bg-background",
+                            formErrors.interestedProducts && "border-red-500 ring-red-500"
+                          )}>
+                            {productTags.map(tag => (
+                              <Badge key={tag}
+                                variant={newCustomer.interestedProducts.includes(tag) ? "default" : "outline"}
+                                className={cn("cursor-pointer select-none", newCustomer.interestedProducts.includes(tag) ? "bg-primary" : "hover:border-primary")}
+                                onClick={() => toggleProductTag(tag)}>
+                                {tag}
+                              </Badge>
+                            ))}
+                          </div>
+                          {formErrors.interestedProducts && <p className="text-xs text-red-500 font-medium">{formErrors.interestedProducts}</p>}
+                        </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="lastContactDate">วันที่ติดต่อล่าสุด</Label>
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <Button
-                            variant="outline"
-                            className={cn(
-                              "w-full justify-start text-left font-normal bg-background",
-                              !newCustomer.lastContactDate && "text-muted-foreground"
-                            )}
-                          >
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {newCustomer.lastContactDate ? format(newCustomer.lastContactDate, "dd/MM/yyyy") : "เลือกวันที่"}
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
-                          <CalendarComponent
-                            mode="single"
-                            selected={newCustomer.lastContactDate}
-                            onSelect={(date) => date && setNewCustomer({ ...newCustomer, lastContactDate: date })}
-                            initialFocus
-                            className={cn("p-3 pointer-events-auto")}
+                        <div className="space-y-2">
+                          <Label className="font-semibold">สถานะลูกค้า</Label>
+                          <Select value={newCustomer.customerStatus} onValueChange={(value) => setNewCustomer({ ...newCustomer, customerStatus: value })}>
+                            <SelectTrigger className="bg-background">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="bg-background">
+                              <SelectItem value="ลูกค้าใหม่">ลูกค้าใหม่</SelectItem>
+                              <SelectItem value="ลูกค้าเก่า">ลูกค้าเก่า</SelectItem>
+                              <SelectItem value="ลูกค้า VIP">ลูกค้า VIP</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label className="font-semibold">ช่องทางที่รู้จักเรา</Label>
+                          <Select value={newCustomer.howFoundUs} onValueChange={(value) => setNewCustomer({ ...newCustomer, howFoundUs: value })}>
+                            <SelectTrigger className="bg-background">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="bg-background">
+                              <SelectItem value="Facebook">Facebook</SelectItem>
+                              <SelectItem value="Google">Google</SelectItem>
+                              <SelectItem value="ลูกค้าแนะนำ">ลูกค้าแนะนำ</SelectItem>
+                              <SelectItem value="อื่นๆ">อื่นๆ</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {newCustomer.howFoundUs === "อื่นๆ" && (
+                          <div className="space-y-2 animate-in zoom-in-95">
+                            <Label>โปรดระบุอื่นๆ</Label>
+                            <Input value={newCustomer.otherChannel} onChange={(e) => setNewCustomer({ ...newCustomer, otherChannel: e.target.value })} placeholder="..." />
+                          </div>
+                        )}
+
+                        <div className="md:col-span-2 space-y-2">
+                          <Label className="font-semibold flex items-center gap-2">
+                            <FileText className="w-4 h-4 text-primary" />
+                            หมายเหตุ / ข้อมูลเพิ่มเติม
+                          </Label>
+                          <Textarea
+                            value={newCustomer.notes}
+                            onChange={(e) => setNewCustomer({ ...newCustomer, notes: e.target.value })}
+                            placeholder="บันทึกรายละเอียดเพิ่มเติม..."
+                            className="bg-background resize-none"
+                            rows={3}
                           />
-                        </PopoverContent>
-                      </Popover>
-                    </div>
-
-                    <div className="space-y-2 md:col-span-2">
-                      <Label>สินค้าที่สนใจ <span className="text-red-500">*</span></Label>
-                      <div className="flex flex-wrap gap-2 p-3 border rounded-lg bg-background min-h-[60px]">
-                        {productTags.map((tag) => (
-                          <Badge
-                            key={tag}
-                            variant={newCustomer.interestedProducts.includes(tag) ? "default" : "outline"}
-                            className={cn(
-                              "cursor-pointer transition-colors",
-                              newCustomer.interestedProducts.includes(tag)
-                                ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                                : "hover:bg-accent"
-                            )}
-                            onClick={() => toggleProductTag(tag)}
-                          >
-                            {tag}
-                            {newCustomer.interestedProducts.includes(tag) && (
-                              <X className="w-3 h-3 ml-1" />
-                            )}
-                          </Badge>
-                        ))}
+                        </div>
                       </div>
-                      <p className="text-xs text-muted-foreground">คลิกเพื่อเลือกหลายรายการ (เลือกแล้ว: {newCustomer.interestedProducts.length} รายการ)</p>
                     </div>
-                  </div>
+                  )}
                 </div>
 
-                <Separator />
+                {/* Wizard Footer */}
+                <div className="flex items-center justify-between pt-8 mt-6 border-t font-semibold">
+                  <Button type="button" variant="ghost" onClick={() => {
+                    if (addStep > 0) setAddStep(s => s - 1);
+                    else setIsAddCustomerOpen(false);
+                  }} className="gap-2">
+                    {addStep === 0 ? "ยกเลิก" : <><ArrowLeft className="w-4 h-4" /> ย้อนกลับ</>}
+                  </Button>
 
-                {/* ส่วนที่ 6: ข้อมูลภายใน */}
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-sm font-semibold">6</div>
-                    <h3 className="text-lg font-semibold">ข้อมูลภายใน</h3>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 ml-8">
-                    <div className="space-y-2">
-                      <Label htmlFor="responsiblePerson">ผู้รับผิดชอบ</Label>
-                      <Select value={newCustomer.responsiblePerson} onValueChange={(value) => setNewCustomer({ ...newCustomer, responsiblePerson: value })}>
-                        <SelectTrigger className="bg-background">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent className="bg-background">
-                          <SelectItem value="พนักงานขายปัจจุบัน">พนักงานขายปัจจุบัน</SelectItem>
-                          <SelectItem value="สมชาย">สมชาย</SelectItem>
-                          <SelectItem value="สมหญิง">สมหญิง</SelectItem>
-                          <SelectItem value="วิภา">วิภา</SelectItem>
-                          <SelectItem value="ธนา">ธนา</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="customerStatus">สถานะลูกค้า</Label>
-                      <Select value={newCustomer.customerStatus} onValueChange={(value) => setNewCustomer({ ...newCustomer, customerStatus: value })}>
-                        <SelectTrigger className="bg-background">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent className="bg-background">
-                          <SelectItem value="ลูกค้าใหม่">ลูกค้าใหม่</SelectItem>
-                          <SelectItem value="ลูกค้าเก่า">ลูกค้าเก่า</SelectItem>
-                          <SelectItem value="ลูกค้า VIP">ลูกค้า VIP</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="howFoundUs">ช่องทางที่รู้จักเรา</Label>
-                      <Select value={newCustomer.howFoundUs} onValueChange={(value) => setNewCustomer({ ...newCustomer, howFoundUs: value })}>
-                        <SelectTrigger className="bg-background">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent className="bg-background">
-                          <SelectItem value="Facebook">Facebook</SelectItem>
-                          <SelectItem value="Google">Google</SelectItem>
-                          <SelectItem value="ลูกค้าแนะนำ">ลูกค้าแนะนำ</SelectItem>
-                          <SelectItem value="อื่นๆ">อื่นๆ</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    {newCustomer.howFoundUs === "อื่นๆ" && (
-                      <div className="space-y-2">
-                        <Label htmlFor="otherChannel">โปรดระบุ</Label>
-                        <Input
-                          id="otherChannel"
-                          value={newCustomer.otherChannel}
-                          onChange={(e) => setNewCustomer({ ...newCustomer, otherChannel: e.target.value })}
-                          placeholder="ระบุช่องทางอื่นๆ"
-                          className="bg-background"
-                        />
-                      </div>
+                  <div className="flex items-center gap-3">
+                    {addStep < 3 ? (
+                      <Button type="button" onClick={() => {
+                        // Basic step validation
+                        if (addStep === 0 && !newCustomer.companyName.trim()) {
+                          setFormErrors({ companyName: "กรุณากรอกชื่อบริษัท" });
+                          return;
+                        }
+                        setAddStep(s => s + 1);
+                      }} className="bg-primary hover:bg-primary/90 gap-2 px-8">
+                        ถัดไป <ArrowRight className="w-4 h-4" />
+                      </Button>
+                    ) : (
+                      <Button type="submit" className="bg-green-600 hover:bg-green-700 gap-2 px-8 shadow-md">
+                        <Save className="w-4 h-4" /> บันทึกลูกค้า
+                      </Button>
                     )}
-
-                    <div className="space-y-2 md:col-span-2">
-                      <Label htmlFor="notes">หมายเหตุ</Label>
-                      <Textarea
-                        id="notes"
-                        value={newCustomer.notes}
-                        onChange={(e) => setNewCustomer({ ...newCustomer, notes: e.target.value })}
-                        placeholder="บันทึกข้อมูลเพิ่มเติมที่สำคัญ..."
-                        rows={3}
-                        className="bg-background"
-                      />
-                    </div>
                   </div>
                 </div>
-              </div>
-              <div className="flex justify-end gap-3 pt-6 border-t">
-                <Button variant="outline" onClick={() => setIsAddCustomerOpen(false)}>
-                  ยกเลิก
-                </Button>
-                <Button onClick={handleAddCustomer} className="bg-primary hover:bg-primary/90">
-                  บันทึกลูกค้าใหม่
-                </Button>
-              </div>
+              </form>
             </DialogContent>
           </Dialog>
         </div>
@@ -1748,25 +1801,93 @@ export default function CustomerManagement() {
               <Table>
                 <TableHeader className="sticky top-0 bg-background z-10">
                   <TableRow>
-                    <TableHead className="w-[250px]">
-                      <div className="flex items-center">ชื่อลูกค้า/บริษัท <ColumnFilterDropdown columnKey="name" label="ชื่อ" /></div>
+                    <TableHead className="w-[250px] cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => handleSort('name')}>
+                      <div className="flex items-center gap-1 group">
+                        ชื่อลูกค้า/บริษัท
+                        {sortConfig.key === 'name' ? (
+                          <ChevronDown className={cn("h-4 w-4 text-primary transition-transform", sortConfig.direction === 'desc' && "rotate-180")} />
+                        ) : (
+                          <ChevronDown className="h-4 w-4 text-muted-foreground/30 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        )}
+                        <div onClick={(e) => e.stopPropagation()}><ColumnFilterDropdown columnKey="name" label="ชื่อ" /></div>
+                      </div>
                     </TableHead>
-                    <TableHead className="w-[120px]">
-                      <div className="flex items-center">สถานะการขาย <ColumnFilterDropdown columnKey="salesStatus" label="สถานะ" options={['ใหม่', 'เสนอราคา', 'ผลิต', 'ปิดงาน']} /></div>
+                    <TableHead className="w-[120px] cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => handleSort('salesStatus')}>
+                      <div className="flex items-center gap-1 group">
+                        สถานะการขาย
+                        {sortConfig.key === 'salesStatus' ? (
+                          <ChevronDown className={cn("h-4 w-4 text-primary transition-transform", sortConfig.direction === 'desc' && "rotate-180")} />
+                        ) : (
+                          <ChevronDown className="h-4 w-4 text-muted-foreground/30 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        )}
+                        <div onClick={(e) => e.stopPropagation()}><ColumnFilterDropdown columnKey="salesStatus" label="สถานะ" options={['ใหม่', 'เสนอราคา', 'ผลิต', 'ปิดงาน']} /></div>
+                      </div>
                     </TableHead>
                     <TableHead className="w-[200px]">Next Action</TableHead>
-                    <TableHead className="w-[120px]">
-                      <div className="flex items-center">เซลล์เจ้าของ <ColumnFilterDropdown columnKey="salesOwner" label="เซลล์" options={salesOwners} /></div>
+                    <TableHead className="w-[120px] cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => handleSort('salesOwner')}>
+                      <div className="flex items-center gap-1 group">
+                        เซลล์เจ้าของ
+                        {sortConfig.key === 'salesOwner' ? (
+                          <ChevronDown className={cn("h-4 w-4 text-primary transition-transform", sortConfig.direction === 'desc' && "rotate-180")} />
+                        ) : (
+                          <ChevronDown className="h-4 w-4 text-muted-foreground/30 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        )}
+                        <div onClick={(e) => e.stopPropagation()}><ColumnFilterDropdown columnKey="salesOwner" label="เซลล์" options={salesOwners} /></div>
+                      </div>
                     </TableHead>
-                    <TableHead className="w-[130px]">
-                      <div className="flex items-center">สถานะลูกค้า <ColumnFilterDropdown columnKey="status" label="สถานะ" options={['ลูกค้าใหม่', 'ลูกค้าประจำ', 'ลูกค้า VIP']} /></div>
+                    <TableHead className="w-[130px] cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => handleSort('status')}>
+                      <div className="flex items-center gap-1 group">
+                        สถานะลูกค้า
+                        {sortConfig.key === 'status' ? (
+                          <ChevronDown className={cn("h-4 w-4 text-primary transition-transform", sortConfig.direction === 'desc' && "rotate-180")} />
+                        ) : (
+                          <ChevronDown className="h-4 w-4 text-muted-foreground/30 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        )}
+                        <div onClick={(e) => e.stopPropagation()}><ColumnFilterDropdown columnKey="status" label="สถานะ" options={['ลูกค้าใหม่', 'ลูกค้าประจำ', 'ลูกค้า VIP']} /></div>
+                      </div>
                     </TableHead>
-                    <TableHead className="w-[130px]">
-                      <div className="flex items-center">ติดต่อล่าสุด <ColumnFilterDropdown columnKey="lastContact" label="วันที่" /></div>
+                    <TableHead className="w-[130px] cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => handleSort('lastContact')}>
+                      <div className="flex items-center gap-1 group">
+                        ติดต่อล่าสุด
+                        {sortConfig.key === 'lastContact' ? (
+                          <ChevronDown className={cn("h-4 w-4 text-primary transition-transform", sortConfig.direction === 'desc' && "rotate-180")} />
+                        ) : (
+                          <ChevronDown className="h-4 w-4 text-muted-foreground/30 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        )}
+                        <div onClick={(e) => e.stopPropagation()}><ColumnFilterDropdown columnKey="lastContact" label="วันที่" /></div>
+                      </div>
                     </TableHead>
-                    <TableHead className="w-[100px] text-center">จำนวนครั้งที่ติดต่อ</TableHead>
-                    <TableHead className="w-[100px] text-center">จำนวนสั่งซื้อ</TableHead>
-                    <TableHead className="w-[120px] text-right">ยอดสั่งซื้อรวม</TableHead>
+                    <TableHead className="w-[100px] text-center cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => handleSort('contactCount')}>
+                      <div className="flex items-center justify-center gap-1 group">
+                        จำนวนครั้งที่ติดต่อ
+                        {sortConfig.key === 'contactCount' ? (
+                          <ChevronDown className={cn("h-4 w-4 text-primary transition-transform", sortConfig.direction === 'desc' && "rotate-180")} />
+                        ) : (
+                          <ChevronDown className="h-4 w-4 text-muted-foreground/30 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        )}
+                      </div>
+                    </TableHead>
+                    <TableHead className="w-[100px] text-center cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => handleSort('totalOrders')}>
+                      <div className="flex items-center justify-center gap-1 group">
+                        จำนวนสั่งซื้อ
+                        {sortConfig.key === 'totalOrders' ? (
+                          <ChevronDown className={cn("h-4 w-4 text-primary transition-transform", sortConfig.direction === 'desc' && "rotate-180")} />
+                        ) : (
+                          <ChevronDown className="h-4 w-4 text-muted-foreground/30 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        )}
+                      </div>
+                    </TableHead>
+                    <TableHead className="w-[120px] text-right cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => handleSort('totalValue')}>
+                      <div className="flex items-center justify-end gap-1 group">
+                        ยอดสั่งซื้อรวม
+                        {sortConfig.key === 'totalValue' ? (
+                          <ChevronDown className={cn("h-4 w-4 text-primary transition-transform", sortConfig.direction === 'desc' && "rotate-180")} />
+                        ) : (
+                          <ChevronDown className="h-4 w-4 text-muted-foreground/30 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        )}
+                      </div>
+                    </TableHead>
+                    <TableHead className="w-[70px] text-center">จัดการ</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1774,21 +1895,32 @@ export default function CustomerManagement() {
                     <TableSkeleton />
                   ) : filteredCustomers.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={9}>
+                      <TableCell colSpan={10}>
                         <EmptyState />
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filteredCustomers.map((customer) => (
+                    paginatedCustomers.map((customer) => (
                       <TableRow
                         key={customer.id}
-                        className={`cursor-pointer transition-colors hover:bg-accent/50 ${selectedCustomer?.id === customer.id ? 'bg-accent' : ''
-                          }`}
+                        id={`customer-row-${customer.id}`}
+                        className={cn(
+                          "cursor-pointer transition-all duration-500 hover:bg-accent/50",
+                          selectedCustomer?.id === customer.id && "bg-accent",
+                          newlyAddedId === customer.id && "bg-primary/10 ring-2 ring-primary/20"
+                        )}
                         onClick={() => navigate(`/sales/customers/${customer.id}`)}
                       >
                         <TableCell className="font-medium">
                           <div>
-                            <div className="font-semibold">{highlightText(customer.name, activeSearchTerm)}</div>
+                            <div className="font-semibold flex items-center">
+                              {highlightText(customer.name, activeSearchTerm)}
+                              {duplicateNames.includes(customer.name.trim().toLowerCase()) && (
+                                <Badge variant="destructive" className="ml-2 text-[8px] h-3.5 px-1 py-0 font-normal opacity-80">
+                                  ชื่อซ้ำ
+                                </Badge>
+                              )}
+                            </div>
                             <div className="text-sm text-muted-foreground">{highlightText(customer.contact, activeSearchTerm)}</div>
                           </div>
                         </TableCell>
@@ -1801,7 +1933,9 @@ export default function CustomerManagement() {
                           <div>
                             <div className="text-sm font-medium">{highlightText(customer.nextAction, activeSearchTerm)}</div>
                             <div className="text-xs text-muted-foreground">
-                              กำหนด: {new Date(customer.nextActionDate).toLocaleDateString('th-TH')}
+                              {customer.nextActionDate && customer.nextActionDate !== "0000-00-00" && customer.nextActionDate !== "0000-00-00 00:00:00"
+                                ? `กำหนด: ${formatNextActionDate(customer.nextActionDate)}`
+                                : formatNextActionDate(customer.nextActionDate)}
                             </div>
                           </div>
                         </TableCell>
@@ -1834,6 +1968,49 @@ export default function CustomerManagement() {
                         <TableCell className="text-right font-medium">
                           {customer.totalValue.toLocaleString('th-TH')} ฿
                         </TableCell>
+                        <TableCell className="text-center">
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>ยืนยันการลบลูกค้า</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  คุณแน่ใจหรือไม่ที่จะลบข้อมูลของ "{customer.name}"?
+                                  การลบจะทำให้ข้อมูลทั้งหมดถูกลบออกจากระบบและไม่สามารถกู้คืนได้
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+                                <AlertDialogAction
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    try {
+                                      const res = await fetch(`${API_BASE_URL}/customers.php?id=${customer.id}`, { method: 'DELETE' });
+                                      const json = await res.json();
+                                      if (!res.ok || json.status === 'error') throw new Error(json.message);
+                                      toast({ title: "สำเร็จ", description: `ลบข้อมูล "${customer.name}" เรียบร้อยแล้ว` });
+                                      fetchCustomers();
+                                    } catch (err: any) {
+                                      toast({ title: "เกิดข้อผิดพลาด", description: err.message || "ไม่สามารถลบข้อมูลได้", variant: "destructive" });
+                                    }
+                                  }}
+                                >
+                                  ยืนยันการลบ
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </TableCell>
                       </TableRow>
                     ))
                   )}
@@ -1842,6 +2019,43 @@ export default function CustomerManagement() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Pagination UI */}
+        {filteredCustomers.length > 0 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-4 rounded-lg shadow-sm border mt-4">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <span>แสดง</span>
+              <Select value={String(itemsPerPage)} onValueChange={(v) => { setItemsPerPage(Number(v)); setCurrentPage(1); }}>
+                <SelectTrigger className="h-8 w-[70px] text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="10">10</SelectItem>
+                  <SelectItem value="20">20</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                  <SelectItem value="100">100</SelectItem>
+                </SelectContent>
+              </Select>
+              <span>จาก {filteredCustomers.length} รายการ</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <Button variant="outline" size="sm" disabled={currentPage === 1} onClick={() => setCurrentPage(1)} className="h-8 px-2 text-xs">«</Button>
+              <Button variant="outline" size="sm" disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} className="h-8 px-3 text-xs">ก่อนหน้า</Button>
+              {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                let page: number;
+                if (totalPages <= 5) { page = i + 1; }
+                else if (currentPage <= 3) { page = i + 1; }
+                else if (currentPage >= totalPages - 2) { page = totalPages - 4 + i; }
+                else { page = currentPage - 2 + i; }
+                return (
+                  <Button key={page} variant={currentPage === page ? "default" : "outline"} size="sm" onClick={() => setCurrentPage(page)} className="h-8 w-8 p-0 text-xs">
+                    {page}
+                  </Button>
+                );
+              })}
+              <Button variant="outline" size="sm" disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => p + 1)} className="h-8 px-3 text-xs">ถัดไป</Button>
+              <Button variant="outline" size="sm" disabled={currentPage === totalPages} onClick={() => setCurrentPage(totalPages)} className="h-8 px-2 text-xs">»</Button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Advanced Search Modal */}
@@ -1916,6 +2130,6 @@ export default function CustomerManagement() {
           </div>
         </DialogContent>
       </Dialog>
-    </div>
+    </div >
   );
 }

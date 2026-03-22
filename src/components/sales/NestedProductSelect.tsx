@@ -20,6 +20,8 @@ interface NestedProductSelectProps {
   onSelect: (category: string, product: string) => void;
   productsByCategory: Record<string, ProductOption[]>;
   categoryOptions: { value: string; label: string }[];
+  error?: boolean;
+  className?: string;
 }
 
 export function NestedProductSelect({
@@ -28,6 +30,8 @@ export function NestedProductSelect({
   onSelect,
   productsByCategory,
   categoryOptions,
+  error,
+  className,
 }: NestedProductSelectProps) {
   const [open, setOpen] = useState(false);
   const [searchValue, setSearchValue] = useState("");
@@ -64,7 +68,7 @@ export function NestedProductSelect({
       // No search - show products of active category
       return productsByCategory[activeCategory] || [];
     }
-    
+
     const search = searchValue.toLowerCase();
     const matched = allProducts.filter((p) =>
       p.label.toLowerCase().includes(search)
@@ -127,8 +131,10 @@ export function NestedProductSelect({
           role="combobox"
           aria-expanded={open}
           className={cn(
-            "w-full justify-between font-normal h-10",
-            !productCategory && "text-muted-foreground"
+            "w-full justify-between font-normal h-10 transition-all",
+            !productCategory && "text-muted-foreground",
+            error && "border-destructive focus:ring-destructive",
+            className
           )}
         >
           <span className="truncate">{getDisplayLabel()}</span>
@@ -156,7 +162,7 @@ export function NestedProductSelect({
             {categoryOptions.map((category) => {
               const isActive = activeCategory === category.value;
               const hasMatch = matchedCategories.has(category.value);
-              
+
               return (
                 <button
                   key={category.value}
@@ -191,7 +197,7 @@ export function NestedProductSelect({
                   const isSelected =
                     productCategory === product.category &&
                     selectedProduct === product.value;
-                  
+
                   return (
                     <button
                       key={`${product.category}-${product.value}`}

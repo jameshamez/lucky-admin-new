@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -22,7 +22,8 @@ import {
   LineChart,
   Line,
   AreaChart,
-  Area
+  Area,
+  Legend
 } from "recharts";
 import {
   FileBarChart,
@@ -36,7 +37,8 @@ import {
   Download,
   RefreshCw,
   BookOpen,
-  Loader2
+  Loader2,
+  Mail
 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
@@ -69,20 +71,87 @@ export default function SalesReports() {
     }
   };
 
+  const handleExport = () => {
+    if (!reportData) {
+      toast.error("ไม่พบข้อมูลสำหรับส่งออก");
+      return;
+    }
+
+    let csvContent = "\uFEFF"; // BOM for Excel Thai support
+
+    // Summary Section
+    csvContent += "สรุปรายงานการขาย\n";
+    csvContent += `รอบรายงาน,${selectedPeriod === 'day' ? 'รายวัน' : selectedPeriod === 'week' ? 'รายสัปดาห์' : selectedPeriod === 'month' ? 'รายเดือน' : selectedPeriod === 'year' ? 'รายปี' : 'ทั้งหมด'}\n`;
+    csvContent += `วันที่เลือก,${format(date, "dd/MM/yyyy")}\n\n`;
+
+    csvContent += "ตัวชี้วัดหลัก\n";
+    csvContent += `ยอดขายรวม,฿${data.summary.totalRevenue}\n`;
+    csvContent += `ออเดอร์ทั้งหมด,${data.summary.totalOrders}\n`;
+    csvContent += `มูลค่าเฉลี่ย/ออเดอร์,฿${data.summary.avgOrder}\n\n`;
+
+    // Employee Performance Section
+    if (data.employeePerformance && data.employeePerformance.length > 0) {
+      csvContent += "ผลงานพนักงานขาย\n";
+      csvContent += "ชื่อพนักงาน,จำนวนออเดอร์,ยอดขายรวม,เป้าหมาย,คอมมิชชัน,KPI(%)\n";
+      data.employeePerformance.forEach((emp: any) => {
+        csvContent += `"${emp.name || 'ไม่ระบุ'}",${emp.orders},${emp.revenue},${emp.target},${emp.commission},${emp.kpi}%\n`;
+      });
+      csvContent += "\n";
+    }
+
+    // Top Customers Section
+    const customersForExport = (data.topCustomers || []).reduce((acc: any[], curr: any) => {
+      const existing = acc.find(c => c.name.trim() === curr.name.trim());
+      if (existing) {
+        existing.orders = (existing.orders || 0) + (curr.orders || 0);
+        existing.revenue = (existing.revenue || 0) + (curr.revenue || 0);
+        if (curr.lastContact && (!existing.lastContact || curr.lastContact > existing.lastContact)) {
+          existing.lastContact = curr.lastContact;
+        }
+      } else {
+        acc.push({ ...curr });
+      }
+      return acc;
+    }, []).sort((a, b) => b.revenue - a.revenue);
+
+    if (customersForExport.length > 0) {
+      csvContent += "ลูกค้าอันดับต้น (Top Customers)\n";
+      csvContent += "ชื่อลูกค้า,จำนวนออเดอร์,มูลค่ารวมทั้งหมด,การสั่งซื้อล่าสุด\n";
+      customersForExport.forEach((cust: any) => {
+        csvContent += `"${cust.name}",${cust.orders},${cust.revenue},"${cust.lastContact}"\n`;
+      });
+      csvContent += "\n";
+    }
+
+    // Product Performance Section
+    if (data.productPerformance && data.productPerformance.length > 0) {
+      csvContent += "สินค้าขายดี\n";
+      csvContent += "ชื่อสินค้า,จำนวนที่ขายได้(ชิ้น),รายได้ทั้งหมด,จำนวนคงเหลือในคลัง\n";
+      data.productPerformance.forEach((prod: any) => {
+        csvContent += `"${prod.product}",${prod.sold},${prod.revenue},${prod.stock}\n`;
+      });
+      csvContent += "\n";
+    }
+
+    // File download trigger
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `sales-report-${selectedPeriod}-${format(new Date(), "yyyyMMdd_HHmm")}.csv`);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    toast.success("ส่งออกรายงาน CSV สำเร็จ");
+  };
+
   useEffect(() => {
     fetchReports();
   }, [selectedPeriod, date]);
 
-  if (loading && !reportData) {
-    return (
-      <div className="flex h-[80vh] items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-        <span className="ml-2 text-lg">กำลังโหลดข้อมูลรายงาน...</span>
-      </div>
-    );
-  }
-
-  const data = reportData || {
+  const defaultData = {
     salesData: [],
     salesByProductType: [],
     employeePerformance: [],
@@ -93,6 +162,32 @@ export default function SalesReports() {
     activityStats: { calls: 0, meetings: 0, emails: 0 },
     summary: { totalRevenue: 0, totalOrders: 0, avgOrder: 0, growth: 0 }
   };
+
+  const data = reportData ? { ...defaultData, ...reportData } : defaultData;
+
+  const CATEGORY_MAP: Record<string, string> = {
+    'readymade': 'สินค้าสำเร็จรูป',
+    'made-to-order': 'สินค้าสั่งทำ',
+    'service': 'งานบริการ',
+    'semi-finished': 'กึ่งสำเร็จรูป',
+    'other': 'อื่นๆ'
+  };
+
+  const salesByProductTypeThai = useMemo(() => {
+    return data.salesByProductType.map((item: any) => ({
+      ...item,
+      displayName: CATEGORY_MAP[item.name] || item.name
+    }));
+  }, [data.salesByProductType]);
+
+  if (loading && !reportData) {
+    return (
+      <div className="flex h-[80vh] items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        <span className="ml-2 text-lg">กำลังโหลดข้อมูลรายงาน...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -135,7 +230,7 @@ export default function SalesReports() {
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           </Button>
 
-          <Button className="gap-2">
+          <Button variant="destructive" className="gap-2" onClick={handleExport} disabled={loading}>
             <Download className="h-4 w-4" />
             ส่งออกรายงาน
           </Button>
@@ -150,7 +245,7 @@ export default function SalesReports() {
           <TabsTrigger value="contact" className="gap-1 text-xs"><Phone className="w-3 h-3" />การติดต่อ</TabsTrigger>
           <TabsTrigger value="product" className="gap-1 text-xs"><Package className="w-3 h-3" />สินค้า</TabsTrigger>
           <TabsTrigger value="kpi" className="gap-1 text-xs"><Target className="w-3 h-3" />KPI</TabsTrigger>
-          <TabsTrigger value="principles" className="gap-1 text-xs"><BookOpen className="w-3 h-3" />หลักการ</TabsTrigger>
+          {/* <TabsTrigger value="principles" className="gap-1 text-xs"><BookOpen className="w-3 h-3" />หลักการ</TabsTrigger> */}
         </TabsList>
 
         {/* 1. รายงานยอดขาย */}
@@ -205,7 +300,7 @@ export default function SalesReports() {
                 <ResponsiveContainer width="100%" height={300}>
                   <AreaChart data={data.salesData}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="month_name" />
+                    <XAxis dataKey="name" />
                     <YAxis />
                     <Tooltip />
                     <Area type="monotone" dataKey="revenue" stroke="hsl(var(--primary))" fill="hsl(var(--primary))" fillOpacity={0.3} name="รายได้" />
@@ -219,18 +314,25 @@ export default function SalesReports() {
                 <ResponsiveContainer width="100%" height={300}>
                   <PieChart>
                     <Pie
-                      data={data.salesByProductType}
+                      data={salesByProductTypeThai}
                       cx="50%"
                       cy="50%"
-                      outerRadius={100}
+                      outerRadius={80}
                       dataKey="value"
-                      label={({ name, value }) => `${name}: ${value}`}
+                      nameKey="displayName"
+                      label={({ displayName, value, count }) => `${displayName}: ${count || 0} ออเดอร์ (฿${value.toLocaleString()})`}
                     >
-                      {data.salesByProductType.map((entry: any, index: number) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      {salesByProductTypeThai.map((entry: any, index: number) => (
+                        <Cell key={`cell-${index}`} fill={entry.color || `hsl(var(--primary) / ${1 - index * 0.2})`} />
                       ))}
                     </Pie>
-                    <Tooltip />
+                    <Tooltip
+                      formatter={(value: number, name: any, props: any) => [
+                        `฿${value.toLocaleString()} (${props.payload.count || 0} ออเดอร์)`,
+                        "รายได้"
+                      ]}
+                    />
+                    <Legend verticalAlign="bottom" height={36} />
                   </PieChart>
                 </ResponsiveContainer>
               </CardContent>
@@ -308,14 +410,31 @@ export default function SalesReports() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {data.topCustomers.map((customer: any, index: number) => (
-                    <TableRow key={index}>
-                      <TableCell className="font-medium">{customer.name}</TableCell>
-                      <TableCell className="text-center">{customer.orders}</TableCell>
-                      <TableCell className="text-right">฿{customer.revenue.toLocaleString()}</TableCell>
-                      <TableCell>{customer.lastContact}</TableCell>
-                    </TableRow>
-                  ))}
+                  {(() => {
+                    const topCustomers = (data.topCustomers || []).reduce((acc: any[], curr: any) => {
+                      const existing = acc.find(c => c.name.trim() === curr.name.trim());
+                      if (existing) {
+                        existing.orders = (existing.orders || 0) + (curr.orders || 0);
+                        existing.revenue = (existing.revenue || 0) + (curr.revenue || 0);
+                        // keep the more recent date
+                        if (curr.lastContact && (!existing.lastContact || curr.lastContact > existing.lastContact)) {
+                          existing.lastContact = curr.lastContact;
+                        }
+                      } else {
+                        acc.push({ ...curr });
+                      }
+                      return acc;
+                    }, []).sort((a, b) => b.revenue - a.revenue);
+
+                    return topCustomers.map((customer: any, index: number) => (
+                      <TableRow key={index}>
+                        <TableCell className="font-medium">{customer.name}</TableCell>
+                        <TableCell className="text-center">{customer.orders}</TableCell>
+                        <TableCell className="text-right">฿{customer.revenue.toLocaleString()}</TableCell>
+                        <TableCell>{customer.lastContact}</TableCell>
+                      </TableRow>
+                    ));
+                  })()}
                 </TableBody>
               </Table>
             </CardContent>
@@ -342,7 +461,7 @@ export default function SalesReports() {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">อีเมล</CardTitle>
-                <DollarSign className="h-4 w-4 text-muted-foreground" />
+                <Mail className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent><div className="text-2xl font-bold">{data.activityStats.emails}</div></CardContent>
             </Card>
@@ -389,7 +508,12 @@ export default function SalesReports() {
                     <div className="flex justify-between items-center">
                       <span className="font-medium">{kpi.name}</span>
                       <div className="flex items-center gap-2">
-                        <span className="text-sm">฿{kpi.actual.toLocaleString()} / ฿{kpi.target.toLocaleString()}</span>
+                        <span className="text-sm">
+                          {kpi.name.includes("ยอดขาย") ? '฿' : ''}
+                          {kpi.actual.toLocaleString()} /
+                          {kpi.name.includes("ยอดขาย") ? " ฿" : " "}
+                          {kpi.target.toLocaleString()}
+                        </span>
                         <Badge variant={kpi.achievement >= 100 ? "default" : "destructive"}>{kpi.achievement}%</Badge>
                       </div>
                     </div>
@@ -402,12 +526,14 @@ export default function SalesReports() {
         </TabsContent>
       </Tabs>
 
-      {loading && (
-        <div className="fixed bottom-4 right-4 bg-primary text-white p-3 rounded-full shadow-lg flex items-center gap-2 animate-pulse">
-          <Loader2 className="w-4 h-4 animate-spin" />
-          <span className="text-sm">กำลังอัปเดตข้อมูล...</span>
-        </div>
-      )}
-    </div>
+      {
+        loading && (
+          <div className="fixed bottom-4 right-4 bg-primary text-white p-3 rounded-full shadow-lg flex items-center gap-2 animate-pulse">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span className="text-sm">กำลังอัปเดตข้อมูล...</span>
+          </div>
+        )
+      }
+    </div >
   );
 }

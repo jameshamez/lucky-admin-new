@@ -34,7 +34,8 @@ import {
   BadgeCheck,
   CircleDollarSign,
   RefreshCw,
-  Loader2
+  Loader2,
+  PlusCircle
 } from "lucide-react";
 import StackedSalesChart from "@/components/sales/StackedSalesChart";
 import { DateRange } from "react-day-picker";
@@ -87,6 +88,7 @@ export default function SalesDashboard() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [dashboardData, setDashboardData] = useState<any>(null);
+  const [period, setPeriod] = useState<"day" | "month" | "year">("month");
   const [selectedProductType, setSelectedProductType] = useState("ทั้งหมด");
   const [selectedEmployee, setSelectedEmployee] = useState("ทั้งหมด");
   const [productTypeFilter, setProductTypeFilter] = useState<"all" | "custom" | "readymade">("all");
@@ -102,7 +104,7 @@ export default function SalesDashboard() {
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}?period=month`);
+      const response = await fetch(`${API_BASE_URL}?period=${period}`);
       const result = await response.json();
       if (result.status === "success") {
         setDashboardData(result.data);
@@ -119,7 +121,7 @@ export default function SalesDashboard() {
 
   useEffect(() => {
     fetchDashboardData();
-  }, []);
+  }, [period]);
 
   const handleStatusClick = (statusKey: string, statusName: string) => {
     setSelectedStatus(selectedStatus === statusKey ? null : statusKey);
@@ -146,12 +148,13 @@ export default function SalesDashboard() {
   }
 
   const stats = dashboardData?.dashboardSummary || {
-    current: 0, target: 0, percentage: 0, realRevenue: 0, pendingRevenue: 0
+    current: 0, target: 0, percentage: 0, realRevenue: 0, pendingRevenue: 0, totalOrders: 0
   };
 
   const pipeline = dashboardData?.pipelineStats || {};
 
   const pipelineStatuses = [
+    { key: "newOrders", name: "คำสั่งซื้อใหม่", count: pipeline.newOrders || 0, type: "waiting", icon: PlusCircle },
     { key: "estimate", name: "ประเมินราคา", count: pipeline.estimate || 0, type: "waiting", icon: Calculator },
     { key: "quotation", name: "ใบเสนอราคา", count: pipeline.quotation || 0, type: "waiting", icon: FileText },
     { key: "pendingDeposit", name: "รอชำระมัดจำ", count: pipeline.pendingDeposit || 0, type: "waiting", icon: CreditCard },
@@ -189,7 +192,7 @@ export default function SalesDashboard() {
             <Calculator className="w-4 h-4 mr-2" />
             ประเมินราคา
           </Button>
-          <Button size="sm" className="bg-primary hover:bg-primary-hover">
+          <Button onClick={() => navigate("/sales/create-order")} size="sm" className="bg-primary hover:bg-primary-hover">
             <Package className="w-4 h-4 mr-2" />
             สร้างออเดอร์ใหม่
           </Button>
@@ -204,11 +207,17 @@ export default function SalesDashboard() {
               <TrendingUp className="w-5 h-5 text-primary" />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">ยอดขายเดือนนี้</p>
+              <p className="text-sm text-muted-foreground">
+                ยอดขาย{period === "day" ? "วันนี้" : period === "year" ? "ปีนี้" : "เดือนนี้"}
+              </p>
               <p className="text-xl font-bold text-primary">
                 ฿{stats.current.toLocaleString()}
               </p>
-              <div className="flex items-center gap-2 mt-1">
+              <div className="flex flex-wrap items-center gap-2 mt-1">
+                <Badge variant="secondary" className="text-xs gap-1 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                  <Package className="w-3 h-3" />
+                  {stats.totalOrders} ออเดอร์
+                </Badge>
                 <Badge variant="secondary" className="text-xs gap-1 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
                   <BadgeCheck className="w-3 h-3" />
                   เก็บแล้ว ฿{stats.realRevenue.toLocaleString()}
@@ -248,6 +257,27 @@ export default function SalesDashboard() {
         <CardContent className="p-4">
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5">
+              <Button
+                variant={period === "day" ? "default" : "ghost"}
+                size="sm"
+                className="h-8 text-xs px-3"
+                onClick={() => setPeriod("day")}
+              >รายวัน</Button>
+              <Button
+                variant={period === "month" ? "default" : "ghost"}
+                size="sm"
+                className="h-8 text-xs px-3"
+                onClick={() => setPeriod("month")}
+              >รายเดือน</Button>
+              <Button
+                variant={period === "year" ? "default" : "ghost"}
+                size="sm"
+                className="h-8 text-xs px-3"
+                onClick={() => setPeriod("year")}
+              >รายปี</Button>
+            </div>
+            <div className="h-6 w-px bg-border sm:block" />
+            <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5">
               <Button variant={productTypeFilter === "all" ? "default" : "ghost"} size="sm" className="h-8 text-xs px-3" onClick={() => setProductTypeFilter("all")}>ทั้งหมด</Button>
               <Button variant={productTypeFilter === "custom" ? "default" : "ghost"} size="sm" className="h-8 text-xs px-3" onClick={() => setProductTypeFilter("custom")}>สินค้าสั่งผลิต</Button>
               <Button variant={productTypeFilter === "readymade" ? "default" : "ghost"} size="sm" className="h-8 text-xs px-3" onClick={() => setProductTypeFilter("readymade")}>สินค้าสำเร็จรูป</Button>
@@ -277,12 +307,12 @@ export default function SalesDashboard() {
       </Card>
 
       {/* ===== Section 3: Sales Chart ===== */}
-      <StackedSalesChart />
+      <StackedSalesChart data={dashboardData?.salesTrend || []} period={period} />
 
       {/* ===== Section 4: Order Pipeline Overview ===== */}
       <div className="space-y-3">
         <h2 className="font-semibold text-foreground">สถานะออเดอร์แบบเรียลไทม์</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2">
           {pipelineStatuses.map((status) => {
             const IconComponent = status.icon;
             return (

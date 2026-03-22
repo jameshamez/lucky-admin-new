@@ -6,7 +6,7 @@ interface ProductionProgressBarProps {
 }
 
 const steps = [
-  { label: "ยืนยันออเดอร์", icon: ClipboardCheck },
+  { label: "สร้างคำสั่งซื้อใหม่", icon: ClipboardCheck },
   { label: "เตรียมการผลิต", icon: Factory },
   { label: "กำลังผลิต", icon: Package },
   { label: "ระหว่างขนส่ง", icon: Truck },

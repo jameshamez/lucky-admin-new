@@ -563,7 +563,7 @@ export default function OrderDetail() {
             orderDate: (apiData.order_date || "").split(" ")[0],
             dueDate: apiData.delivery_date || apiData.usage_date || "-",
             status: broadStatus,
-            value: parseFloat(apiData.total_amount) || 0,
+            value: parseFloat(apiData.total_price ?? apiData.total_amount) || 0,
             progress: 0,
             type: apiData.product_category || "internal",
             location: apiData.event_location || "domestic",

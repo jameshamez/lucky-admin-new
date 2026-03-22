@@ -1,4 +1,5 @@
 import { useState, useEffect, CSSProperties, Fragment, useMemo, useRef } from "react";
+import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -340,6 +341,10 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
   const [isLoading, setIsLoading] = useState(false);
   const [notificationMessage, setNotificationMessage] = useState("");
 
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(12);
+
   useEffect(() => {
     setApiLoading(true);
     fetch(API_PRODUCT_URL)
@@ -379,6 +384,17 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
   const [adjustType, setAdjustType] = useState<"รับเข้า" | "จ่ายออก">("รับเข้า");
   const [adjustQty, setAdjustQty] = useState("");
   const [adjustNote, setAdjustNote] = useState("");
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
+  const clearError = (key: string) => {
+    if (formErrors[key]) {
+      setFormErrors(prev => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    }
+  };
 
   // New Edit Modal state
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -443,10 +459,24 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
     setIsEditModalOpen(false);
     setEditProduct(null);
     setProductionTimes([]);
+    setFormErrors({});
   };
 
   const handleEditSave = async () => {
     if (!editProduct) return;
+
+    // ตรวจสอบราคาส่ง (wholesalePrice) ไม่ให้เป็น 0 ในโหมดแก้ไข
+    const hasZeroWholesale = editProduct.prices?.some((price: any) => {
+      // API may return wholesalePrice, wholesale_price, or moldCost
+      const val = price.wholesale_price ?? price.wholesalePrice ?? price.moldCost;
+      return !val || parseFloat(val.toString()) <= 0;
+    });
+
+    if (hasZeroWholesale) {
+      const label = editProduct.productType === "1" ? "ราคาส่ง" : "ราคาต้นทุน";
+      toast.error(`กรุณาระบุ${label}ให้ถูกต้อง (ต้องมากกว่า 0)`);
+      return;
+    }
 
     try {
       setIsLoading(true);
@@ -593,6 +623,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
 
   const handleCreateClose = () => {
     setIsCreateModalOpen(false);
+    setFormErrors({});
     setNewProduct({
       name: "",
       modelName: "",
@@ -736,6 +767,31 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
   };
 
   const handleCreateSave = async () => {
+    // Validation
+    const errors: Record<string, string> = {};
+    if (!newProduct.productType) errors.productType = "กรุณาเลือกประเภทสินค้า";
+    if (!newProduct.name?.trim()) errors.name = "กรุณากรอกชื่อสินค้า";
+    if (!newProduct.modelName?.trim()) errors.modelName = "กรุณากรอกรหัสสินค้า";
+    if (!newProduct.category || newProduct.category === "เลือกหมวดหมู่" || newProduct.category === "all") errors.category = "กรุณาเลือกหมวดหมู่";
+    if (!newProduct.subcategoryId) errors.subcategoryId = "กรุณาเลือกหมวดหมู่ย่อย";
+    if (!newProduct.image) errors.image = "กรุณาเพิ่มรูปภาพหลัก";
+
+    // ตรวจสอบราคาส่ง (wholesalePrice) ไม่ให้เป็น 0
+    if (newProduct.prices && newProduct.prices.some(price => !price.wholesalePrice || price.wholesalePrice <= 0)) {
+      const label = newProduct.productType === "1" ? "ราคาส่ง" : "ราคาต้นทุน";
+      errors.prices = `กรุณาระบุ${label}ให้ถูกต้อง (ต้องมากกว่า 0)`;
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      if (errors.prices) {
+        toast.error(errors.prices);
+      } else {
+        toast.error("กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน");
+      }
+      return;
+    }
+
     try {
       setIsLoading(true);
 
@@ -997,9 +1053,22 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
       else if (statusFilter === "low_stock") matchesStatus = item.status === "low_stock";
       else if (statusFilter === "out_of_stock") matchesStatus = item.status === "out_of_stock";
       else if (statusFilter === "defective") matchesStatus = item.status === "defective";
+      else if (statusFilter === "low_and_out") matchesStatus = item.status === "low_stock" || item.status === "out_of_stock";
       return matchesSearch && matchesCategory && matchesSubcategory && matchesStatus;
     });
   }, [searchTerm, selectedCategory, selectedSubcategoryId, statusFilter, products]);
+
+  // Pagination Logic
+  const totalPages = Math.ceil(filteredItems.length / itemsPerPage);
+  const paginatedItems = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredItems.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredItems, currentPage, itemsPerPage]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedCategory, selectedSubcategoryId, statusFilter]);
 
   const computeStatus = (stock: number, min: number): ProductItem["status"] => {
     if (stock <= 0) return "out_of_stock";
@@ -1101,7 +1170,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
   // --- Card View ---
   const renderCardView = () => (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-      {filteredItems.map((item) => (
+      {paginatedItems.map((item) => (
         <Card key={item.id} className="relative overflow-hidden flex flex-col">
           <Badge className="absolute top-3 right-3 z-10 bg-red-500 text-white text-xs">
             {item.subcategory || item.category}
@@ -1123,8 +1192,8 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
           <CardContent className="flex-1 p-4 space-y-2">
             <h3 className="font-bold text-red-600 text-base leading-tight line-clamp-2">{item.name}</h3>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-              {item.color.length > 0 && <span>สี: {item.color.join(", ")}</span>}
-              {item.size.length > 0 && <span>ขนาด: {item.size.join(", ")}</span>}
+              <span>สี: {item.color.join(", ") || "-"}</span>
+              <span>ขนาด: {item.size.join(", ") || "-"}</span>
               {item.tags && item.tags !== "[]" && <span className="text-primary">Tags: {item.tags}</span>}
             </div>
             <p className="text-xs text-muted-foreground">Model: {item.model} • หมวดหมู่: {item.category}</p>
@@ -1210,7 +1279,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredItems.map((item) => {
+              {paginatedItems.map((item) => {
                 const isEditing = inlineEditId === item.id;
                 const ed = inlineEditData;
                 const pc = isEditing ? ed.procurementCost : item.procurementCost;
@@ -1253,7 +1322,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                             </Badge>
                           ))}
                         </div>
-                      ) : item.color.join(", ")}
+                      ) : item.color.join(", ") || "-"}
                     </TableCell>
                     <TableCell className="text-xs">
                       {isEditing ? (
@@ -1266,7 +1335,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                             </Badge>
                           ))}
                         </div>
-                      ) : item.size.join(", ")}
+                      ) : item.size.join(", ") || "-"}
                     </TableCell>
                     {isProcurementMode && (
                       <>
@@ -1452,7 +1521,8 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
 
       {/* Summary Cards - 4 cards like InventoryManagement */}
       <div className="grid gap-4 md:grid-cols-4">
-        <Card className={`cursor-pointer transition-all hover:shadow-md ${activeTab === "products" ? "ring-2 ring-primary" : ""}`} onClick={() => setActiveTab("products")}>
+        <Card className={`cursor-pointer transition-all hover:shadow-md ${activeTab === "products" && statusFilter === "all" ? "ring-2 ring-primary" : ""}`}
+          onClick={() => { setActiveTab("products"); setStatusFilter("all"); setSelectedCategory("all"); }}>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">รายการสินค้าทั้งหมด</CardTitle>
             <Boxes className="h-4 w-4 text-muted-foreground" />
@@ -1463,7 +1533,8 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
           </CardContent>
         </Card>
 
-        <Card className="cursor-pointer transition-all hover:shadow-md" onClick={() => { setActiveTab("products"); setStatusFilter("low_stock"); }}>
+        <Card className={`cursor-pointer transition-all hover:shadow-md ${activeTab === "products" && statusFilter === "low_and_out" ? "ring-2 ring-primary" : ""}`}
+          onClick={() => { setActiveTab("products"); setStatusFilter("low_and_out"); }}>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">สินค้าใกล้หมด/ขาดแคลน</CardTitle>
             <TrendingDown className="h-4 w-4 text-muted-foreground" />
@@ -1474,7 +1545,8 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
           </CardContent>
         </Card>
 
-        <Card className={`cursor-pointer transition-all hover:shadow-md ${activeTab === "defective" ? "ring-2 ring-primary" : ""}`} onClick={() => setActiveTab("defective")}>
+        <Card className={`cursor-pointer transition-all hover:shadow-md ${activeTab === "defective" ? "ring-2 ring-primary" : ""}`}
+          onClick={() => setActiveTab("defective")}>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">สินค้ามีตำหนิ</CardTitle>
             <AlertTriangle className="h-4 w-4 text-muted-foreground" />
@@ -1485,7 +1557,8 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
           </CardContent>
         </Card>
 
-        <Card className={`cursor-pointer transition-all hover:shadow-md ${activeTab === "history" ? "ring-2 ring-primary" : ""}`} onClick={() => setActiveTab("history")}>
+        <Card className={`cursor-pointer transition-all hover:shadow-md ${activeTab === "history" ? "ring-2 ring-primary" : ""}`}
+          onClick={() => setActiveTab("history")}>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">เคลื่อนไหววันนี้</CardTitle>
             <History className="h-4 w-4 text-muted-foreground" />
@@ -1595,6 +1668,43 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
 
           {/* Content */}
           {viewMode === "card" ? renderCardView() : renderTableView()}
+
+          {/* Pagination UI */}
+          {filteredItems.length > itemsPerPage && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-muted/30 p-4 rounded-lg mt-6">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <span>แสดง</span>
+                <Select value={String(itemsPerPage)} onValueChange={(v) => { setItemsPerPage(Number(v)); setCurrentPage(1); }}>
+                  <SelectTrigger className="h-8 w-[70px] text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="12">12</SelectItem>
+                    <SelectItem value="24">24</SelectItem>
+                    <SelectItem value="48">48</SelectItem>
+                    <SelectItem value="100">100</SelectItem>
+                  </SelectContent>
+                </Select>
+                <span>จาก {filteredItems.length} รายการ</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <Button variant="outline" size="sm" disabled={currentPage === 1} onClick={() => setCurrentPage(1)} className="h-8 px-2 text-xs">«</Button>
+                <Button variant="outline" size="sm" disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} className="h-8 px-3 text-xs">ก่อนหน้า</Button>
+                {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                  let page: number;
+                  if (totalPages <= 5) { page = i + 1; }
+                  else if (currentPage <= 3) { page = i + 1; }
+                  else if (currentPage >= totalPages - 2) { page = totalPages - 4 + i; }
+                  else { page = currentPage - 2 + i; }
+                  return (
+                    <Button key={page} variant={currentPage === page ? "default" : "outline"} size="sm" onClick={() => setCurrentPage(page)} className="h-8 w-8 p-0 text-xs">
+                      {page}
+                    </Button>
+                  );
+                })}
+                <Button variant="outline" size="sm" disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => p + 1)} className="h-8 px-3 text-xs">ถัดไป</Button>
+                <Button variant="outline" size="sm" disabled={currentPage === totalPages} onClick={() => setCurrentPage(totalPages)} className="h-8 px-2 text-xs">»</Button>
+              </div>
+            </div>
+          )}
         </TabsContent>
 
         {/* Tab: Receive/Issue */}
@@ -1661,32 +1771,55 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {/* 
-                  {[
-                    { id: "MOV-001", date: "2025-02-10", type: "รับเข้า", item: "ถ้วยรางวัลสีทอง", qty: 100, unit: "ชิ้น", by: "สมชาย", note: "รับจากซัพพลายเออร์" },
-                    { id: "MOV-002", date: "2025-02-10", type: "จ่ายออก", item: "เหรียญพลาสติก", qty: 50, unit: "ชิ้น", by: "วิชัย", note: "เบิกใช้งาน ORD-003" },
-                    { id: "MOV-003", date: "2025-02-09", type: "รับเข้า", item: "โล่คริสตัลพรีเมียม", qty: 30, unit: "ชิ้น", by: "สมชาย", note: "รับจากซัพพลายเออร์" },
-                    { id: "MOV-004", date: "2025-02-09", type: "จ่ายออก", item: "ถ้วยรางวัลสีเงิน", qty: 15, unit: "ชิ้น", by: "มานะ", note: "เบิกใช้งาน ORD-010" },
-                    { id: "MOV-005", date: "2025-02-08", type: "ปรับยอด", item: "ฝาครอบพลาสติก", qty: -5, unit: "ชิ้น", by: "สุชาติ", note: "สินค้าชำรุด" },
-                  ].map((mov) => (
-                    <TableRow key={mov.id}>
-                      <TableCell className="font-medium">{mov.id}</TableCell>
-                      <TableCell>{mov.date}</TableCell>
-                      <TableCell>
-                        {mov.type === "รับเข้า" ? <Badge className="bg-green-100 text-green-700"><ArrowDownCircle className="w-3 h-3 mr-1" />{mov.type}</Badge> :
-                          mov.type === "จ่ายออก" ? <Badge className="bg-red-100 text-red-700"><ArrowUpCircle className="w-3 h-3 mr-1" />{mov.type}</Badge> :
-                            <Badge className="bg-blue-100 text-blue-700">{mov.type}</Badge>}
-                      </TableCell>
-                      <TableCell>{mov.item}</TableCell>
-                      <TableCell className={mov.qty > 0 ? "text-green-600" : "text-red-600"}>
-                        {mov.qty > 0 ? `+${mov.qty}` : mov.qty}
-                      </TableCell>
-                      <TableCell>{mov.unit}</TableCell>
-                      <TableCell>{mov.by}</TableCell>
-                      <TableCell className="text-muted-foreground text-sm">{mov.note}</TableCell>
-                    </TableRow>
-                  ))}
-                   */}
+                  {(() => {
+                    const movements = [
+                      // Uncomment to see data
+                      /*
+                      { id: "MOV-001", date: "2025-02-10", type: "รับเข้า", item: "ถ้วยรางวัลสีทอง", qty: 100, unit: "ชิ้น", by: "สมชาย", note: "รับจากซัพพลายเออร์" },
+                      { id: "MOV-002", date: "2025-02-10", type: "จ่ายออก", item: "เหรียญพลาสติก", qty: 50, unit: "ชิ้น", by: "วิชัย", note: "เบิกใช้งาน ORD-003" },
+                      { id: "MOV-003", date: "2025-02-09", type: "รับเข้า", item: "โล่คริสตัลพรีเมียม", qty: 30, unit: "ชิ้น", by: "สมชาย", note: "รับจากซัพพลายเออร์" },
+                      { id: "MOV-004", date: "2025-02-09", type: "จ่ายออก", item: "ถ้วยรางวัลสีเงิน", qty: 15, unit: "ชิ้น", by: "มานะ", note: "เบิกใช้งาน ORD-010" },
+                      { id: "MOV-005", date: "2025-02-08", type: "ปรับยอด", item: "ฝาครอบพลาสติก", qty: -5, unit: "ชิ้น", by: "สุชาติ", note: "สินค้าชำรุด" },
+                      */
+                    ];
+
+                    if (movements.length === 0) {
+                      return (
+                        <TableRow>
+                          <TableCell colSpan={8} className="text-center py-10 text-muted-foreground italic">
+                            ไม่พบประวัติการเคลื่อนไหวในช่วงเวลาที่เลือก
+                          </TableCell>
+                        </TableRow>
+                      );
+                    }
+
+                    return movements.map((mov) => (
+                      <TableRow key={mov.id}>
+                        <TableCell className="font-medium">{mov.id}</TableCell>
+                        <TableCell>{mov.date}</TableCell>
+                        <TableCell>
+                          {mov.type === "รับเข้า" ? (
+                            <Badge className="bg-green-100 text-green-700">
+                              <ArrowDownCircle className="w-3 h-3 mr-1" />{mov.type}
+                            </Badge>
+                          ) : mov.type === "จ่ายออก" ? (
+                            <Badge className="bg-red-100 text-red-700">
+                              <ArrowUpCircle className="w-3 h-3 mr-1" />{mov.type}
+                            </Badge>
+                          ) : (
+                            <Badge className="bg-blue-100 text-blue-700">{mov.type}</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>{mov.item}</TableCell>
+                        <TableCell className={mov.qty > 0 ? "text-green-600" : "text-red-600"}>
+                          {mov.qty > 0 ? `+${mov.qty}` : mov.qty}
+                        </TableCell>
+                        <TableCell>{mov.unit}</TableCell>
+                        <TableCell>{mov.by}</TableCell>
+                        <TableCell className="text-muted-foreground text-sm">{mov.note}</TableCell>
+                      </TableRow>
+                    ));
+                  })()}
                 </TableBody>
               </Table>
             </CardContent>
@@ -3057,7 +3190,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                                 {editProduct &&
                                   editProduct.productType === "1"
                                   ? "ราคาส่ง (100 ชิ้นขึ้นไป)"
-                                  : "ค่าโมล"}
+                                  : "ราคาต้นทุน"}
                               </label>
                               <input
                                 type="text"
@@ -3184,7 +3317,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                             </div>
                             <div>
                               <label className="block text-sm text-gray-700 mb-1">
-                                ค่าโมล
+                                ราคาต้นทุน
                               </label>
                               <input
                                 type="text"
@@ -3311,7 +3444,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                             </div>
                             <div>
                               <label className="block text-sm text-gray-700 mb-1">
-                                ค่าโมล
+                                ราคาต้นทุน
                               </label>
                               <input
                                 type="text"
@@ -3440,7 +3573,10 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
           <div className="flex flex-col lg:flex-row gap-6">
             {/* Left Column - Image Upload */}
             <div className="w-full lg:w-1/3 space-y-4">
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 flex flex-col items-center justify-center bg-gray-50 h-64">
+              <div className={cn(
+                "border-2 border-dashed rounded-lg p-4 flex flex-col items-center justify-center h-64 transition-all duration-200",
+                formErrors.image ? "border-red-500 bg-red-50 shadow-inner" : "border-gray-300 bg-gray-50 hover:bg-gray-100"
+              )}>
                 {newProduct.image ? (
                   <div className="relative w-full h-full">
                     <img
@@ -3485,10 +3621,13 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                       />
                     </svg>
                     <p
-                      className="mt-1 text-sm text-gray-500"
+                      className={cn(
+                        "mt-1 text-sm font-medium transition-colors mb-2",
+                        formErrors.image ? "text-red-500" : "text-gray-900"
+                      )}
                       style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
                     >
-                      รูปภาพหลัก
+                      รูปภาพหลัก * {newProduct.image && !formErrors.image && <CheckCircle2 className="inline-block w-4 h-4 text-green-500 ml-1" />}
                     </p>
                     <label className="mt-2 cursor-pointer inline-flex items-center px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
                       <span
@@ -3501,11 +3640,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                         className="hidden"
                         accept="image/*"
                         onChange={(e) => {
-                          if (
-                            e.target.files &&
-                            e.target.files[0] &&
-                            newProduct
-                          ) {
+                          if (e.target.files && e.target.files[0] && newProduct) {
                             const reader = new FileReader();
                             reader.onload = (event) => {
                               if (event.target?.result) {
@@ -3513,6 +3648,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                                   ...newProduct,
                                   image: event.target.result as string,
                                 });
+                                clearError('image');
                               }
                             };
                             reader.readAsDataURL(e.target.files[0]);
@@ -3520,6 +3656,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                         }}
                       />
                     </label>
+                    {formErrors.image && <p className="text-xs text-red-500 mt-2 font-medium">{formErrors.image}</p>}
                   </div>
                 )}
               </div>
@@ -3639,68 +3776,85 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
 
             {/* Right Column - Product Details */}
             <div className="w-full lg:w-2/3 grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="md:col-span-2">
+              <div className="md:col-span-2 space-y-2">
                 <label
-                  className="block text-sm font-medium text-gray-900 mb-2"
+                  className="flex items-center gap-1 text-sm font-medium text-gray-900"
                   style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
                 >
-                  ประเภทสินค้า
+                  ประเภทสินค้า * {newProduct.productType && !formErrors.productType && <CheckCircle2 className="w-4 h-4 text-green-500" />}
                 </label>
                 <select
                   value={newProduct.productType || ""}
-                  onChange={(e) =>
+                  onChange={(e) => {
                     setNewProduct({
                       ...newProduct,
-                      productType: e.target.value as
-                        | "ready"
-                        | "preorder"
-                        | "",
-                    })
-                  }
-                  className="w-full px-4 py-2.5 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                      productType: e.target.value as any,
+                    });
+                    clearError('productType');
+                  }}
+                  className={cn(
+                    "w-full px-4 py-2.5 bg-white text-black border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all",
+                    formErrors.productType ? "border-red-500 ring-1 ring-red-500" :
+                      newProduct.productType ? "border-green-500" : "border-gray-300"
+                  )}
                 >
                   <option value="">เลือกประเภทสินค้า</option>
                   <option value="1">สินค้าสำเร็จรูป</option>
                   <option value="2">สินค้าพรีออเดอร์</option>
                   <option value="3">opton</option>
                 </select>
+                {formErrors.productType && <p className="text-xs text-red-500 mt-1">{formErrors.productType}</p>}
               </div>
 
-              <div className="md:col-span-2">
+              <div className="md:col-span-2 space-y-2">
                 <label
-                  className="block text-sm font-medium text-gray-900 mb-2"
+                  className="flex items-center gap-1 text-sm font-medium text-gray-900"
                   style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
                 >
-                  ชื่อสินค้า (สำหรับแสดงลูกค้า)
+                  ชื่อสินค้า (สำหรับแสดงลูกค้า) * {newProduct.name?.trim() && !formErrors.name && <CheckCircle2 className="w-4 h-4 text-green-500" />}
                 </label>
                 <input
                   type="text"
                   value={newProduct.name}
-                  onChange={(e) =>
-                    setNewProduct({ ...newProduct, name: e.target.value })
-                  }
-                  className="w-full px-4 py-2.5 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  placeholder="กรอกชื่อสินค้า"
+                  onChange={(e) => {
+                    setNewProduct({ ...newProduct, name: e.target.value });
+                    clearError('name');
+                  }}
+                  className={cn(
+                    "w-full px-4 py-2.5 bg-white text-black border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all",
+                    formErrors.name ? "border-red-500 ring-1 ring-red-500" :
+                      newProduct.name?.trim() ? "border-green-500" : "border-gray-300"
+                  )}
                 />
+                {formErrors.name && <p className="text-xs text-red-500 mt-1">{formErrors.name}</p>}
               </div>
 
-              <div className="md:col-span-2">
+              <div className="md:col-span-2 space-y-2">
                 <label
-                  className="block text-sm font-medium text-gray-900 mb-2"
+                  className="flex items-center gap-1 text-sm font-medium text-gray-900"
                   style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
                 >
-                  รหัสสินค้า
+                  รหัสสินค้า * {newProduct.modelName?.trim() && !formErrors.modelName && <CheckCircle2 className="w-4 h-4 text-green-500" />}
                 </label>
                 <input
                   type="text"
                   value={newProduct.modelName}
-                  onChange={(e) =>
+                  placeholder="กรอกรหัสสินค้า"
+                  onChange={(e) => {
                     setNewProduct({
                       ...newProduct,
                       modelName: e.target.value,
-                    })
-                  }
-                  className="w-full px-4 py-2.5 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                    });
+                    clearError('modelName');
+                  }}
+                  className={cn(
+                    "w-full px-4 py-2.5 bg-white text-black border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all",
+                    formErrors.modelName ? "border-red-500 ring-1 ring-red-500" :
+                      newProduct.modelName?.trim() ? "border-green-500" : "border-gray-300"
+                  )}
                 />
+                {formErrors.modelName && <p className="text-xs text-red-500 mt-1">{formErrors.modelName}</p>}
               </div>
 
               <div className="md:col-span-2">
@@ -3735,23 +3889,28 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                     />
                   </div> */}
 
-              <div>
+              <div className="space-y-2">
                 <label
-                  className="block text-sm font-medium text-gray-900 mb-2"
+                  className="flex items-center gap-1 text-sm font-medium text-gray-900"
                   style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
                 >
-                  หมวดหมู่
+                  หมวดหมู่ * {newProduct.category && newProduct.category !== "all" && newProduct.category !== "เลือกหมวดหมู่" && !formErrors.category && <CheckCircle2 className="w-4 h-4 text-green-500" />}
                 </label>
                 <select
                   value={newProduct.category}
-                  onChange={(e) =>
+                  onChange={(e) => {
                     setNewProduct({
                       ...newProduct,
                       category: e.target.value,
                       subcategoryId: "",
-                    })
-                  }
-                  className="w-full px-4 py-2.5 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                    });
+                    clearError('category');
+                  }}
+                  className={cn(
+                    "w-full px-4 py-2.5 bg-white text-black border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all",
+                    formErrors.category ? "border-red-500 ring-1 ring-red-500" :
+                      (newProduct.category && newProduct.category !== "all" && newProduct.category !== "เลือกหมวดหมู่") ? "border-green-500" : "border-gray-300"
+                  )}
                 >
                   {categories.map((category) => (
                     <option key={category.key} value={category.key}>
@@ -3759,24 +3918,30 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                     </option>
                   ))}
                 </select>
+                {formErrors.category && <p className="text-xs text-red-500 mt-1">{formErrors.category}</p>}
               </div>
 
-              <div>
+              <div className="space-y-2">
                 <label
-                  className="block text-sm font-medium text-gray-900 mb-2"
+                  className="flex items-center gap-1 text-sm font-medium text-gray-900"
                   style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
                 >
-                  หมวดหมู่ย่อย
+                  หมวดหมู่ย่อย * {newProduct.subcategoryId && !formErrors.subcategoryId && <CheckCircle2 className="w-4 h-4 text-green-500" />}
                 </label>
                 <select
                   value={newProduct.subcategoryId}
-                  onChange={(e) =>
+                  onChange={(e) => {
                     setNewProduct({
                       ...newProduct,
                       subcategoryId: e.target.value,
-                    })
-                  }
-                  className="w-full px-4 py-2.5 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                    });
+                    clearError('subcategoryId');
+                  }}
+                  className={cn(
+                    "w-full px-4 py-2.5 bg-white text-black border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all",
+                    formErrors.subcategoryId ? "border-red-500 ring-1 ring-red-500" :
+                      newProduct.subcategoryId ? "border-green-500" : "border-gray-300"
+                  )}
                   disabled={
                     getSubcategoriesForCategory(newProduct.category)
                       .length === 0
@@ -3791,6 +3956,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                     )
                   )}
                 </select>
+                {formErrors.subcategoryId && <p className="text-xs text-red-500 mt-1">{formErrors.subcategoryId}</p>}
               </div>
 
               <div>
@@ -4680,28 +4846,35 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                             <label className="block text-sm text-gray-700 mb-1">
                               {newProduct.productType === "1"
                                 ? "ราคาส่ง (100 ชิ้นขึ้นไป)"
-                                : "ค่าโมล"}
+                                : "ราคาต้นทุน"}
                             </label>
                             <input
                               type="text"
                               min="0"
-                              value={price.wholesalePrice}
+                              value={price.wholesale_price ?? price.wholesalePrice ?? price.moldCost}
                               onChange={(e) => {
-                                const updatedPrices = [
-                                  ...(newProduct.prices || []),
-                                ];
+                                const val = parseFloat(e.target.value) || 0;
+                                const updatedPrices = [...(newProduct.prices || [])];
                                 updatedPrices[index] = {
                                   ...price,
-                                  wholesalePrice:
-                                    parseFloat(e.target.value) || 0,
+                                  wholesalePrice: val,
+                                  wholesale_price: val, // Keep both for safety
                                 };
                                 setNewProduct({
                                   ...newProduct,
                                   prices: updatedPrices,
                                 });
                               }}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500"
+                              className={cn(
+                                "w-full px-3 py-2 border rounded-md focus:ring-red-500 focus:border-red-500",
+                                (price.wholesale_price ?? price.wholesalePrice ?? price.moldCost) === 0 ? "border-red-500 bg-red-50" : "border-gray-300"
+                              )}
                             />
+                            {(price.wholesale_price ?? price.wholesalePrice ?? price.moldCost) === 0 && (
+                              <p className="text-[10px] text-red-500 mt-0.5">
+                                * กรุณาระบุ{newProduct.productType === "1" ? "ราคาส่ง" : "ราคาต้นทุน"}
+                              </p>
+                            )}
                           </div>
                           <div className="flex items-center gap-4">
                             <div className="flex-1">
@@ -4879,7 +5052,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                 <div className="space-y-2">
                   <p className="text-xs font-semibold">ราคา</p>
                   <Table>
-                    <TableHeader><TableRow className="bg-muted/50"><TableHead className="text-xs">Model</TableHead><TableHead className="text-xs text-right">ราคาปลีก</TableHead><TableHead className="text-xs text-right">{isSalesMode ? "ราคาส่ง" : "ค่าโมล"}</TableHead><TableHead className="text-xs text-right">ราคาพิเศษ</TableHead></TableRow></TableHeader>
+                    <TableHeader><TableRow className="bg-muted/50"><TableHead className="text-xs">Model</TableHead><TableHead className="text-xs text-right">ราคาปลีก</TableHead><TableHead className="text-xs text-right">{isSalesMode ? "ราคาส่ง" : "ราคาต้นทุน"}</TableHead><TableHead className="text-xs text-right">ราคาพิเศษ</TableHead></TableRow></TableHeader>
                     <TableBody>{detailItem.prices.map((p, i) => (
                       <TableRow key={i}><TableCell className="text-xs">{p.model}</TableCell><TableCell className="text-xs text-right">{p.retailPrice.toLocaleString()}</TableCell><TableCell className="text-xs text-right">{p.moldCost.toLocaleString()}</TableCell><TableCell className="text-xs text-right">{p.specialPrice.toLocaleString()}</TableCell></TableRow>
                     ))}</TableBody>

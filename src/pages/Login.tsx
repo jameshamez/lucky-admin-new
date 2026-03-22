@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +12,13 @@ const API_AUTH_URL = "https://finfinphone.com/api-lucky/admin/auth.php";
 export default function Login() {
     const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        const user = localStorage.getItem("user");
+        if (user) {
+            navigate("/select-department");
+        }
+    }, [navigate]);
     const [formData, setFormData] = useState({
         username: "",
         password: ""
@@ -83,7 +90,7 @@ export default function Login() {
                                     <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
                                     <Input
                                         id="username"
-                                        placeholder="Enter your username"
+                                        placeholder="กรอกชื่อผู้ใช้งาน"
                                         className="pl-10 h-12 bg-slate-50/50 border-slate-200 focus:border-primary focus:ring-primary/20 rounded-xl transition-all"
                                         value={formData.username}
                                         onChange={(e) => setFormData({ ...formData, username: e.target.value })}

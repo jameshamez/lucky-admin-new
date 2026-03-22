@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { useNavigate } from "react-router-dom";
+import { useEffect } from "react";
 
 const departments = [
   {
@@ -73,7 +74,15 @@ const departments = [
 
 export default function DepartmentSelection() {
   const navigate = useNavigate();
-  const userData = JSON.parse(localStorage.getItem("user") || "{}");
+  const userDataString = localStorage.getItem("user");
+
+  useEffect(() => {
+    if (!userDataString) {
+      navigate("/");
+    }
+  }, [userDataString, navigate]);
+
+  const userData = JSON.parse(userDataString || "{}");
 
   // role จาก API เป็น "Admin", "Manager", "User" → เช็คแบบ case-insensitive
   const userRole = (userData.role ?? "").toLowerCase();
@@ -217,7 +226,7 @@ export default function DepartmentSelection() {
 
       {/* Footer */}
       <footer className="text-center py-8 text-xs font-semibold text-slate-400 uppercase tracking-widest z-10">
-        © 2024 THE BRAVO GROUP - ENTERPRISE RESOURCE PLANNING SYSTEM
+        © 2025 THE BRAVO GROUP - ENTERPRISE RESOURCE PLANNING SYSTEM
       </footer>
     </div>
   );

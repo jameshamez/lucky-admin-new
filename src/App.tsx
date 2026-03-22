@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { DashboardLayout } from "@/components/dashboard/DashboardLayout";
 
 import Orders from "./pages/Orders";
@@ -102,6 +102,11 @@ import UserManual from "./pages/UserManual";
 
 const queryClient = new QueryClient();
 
+const RootRedirect = () => {
+  const user = localStorage.getItem("user");
+  return user ? <Navigate to="/select-department" replace /> : <Login />;
+};
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
@@ -109,7 +114,8 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<Login />} />
+          <Route path="/" element={<RootRedirect />} />
+          <Route path="/login" element={<Login />} />
           <Route path="/select-department" element={<DepartmentSelection />} />
           <Route path="/petty-cash" element={
             <DashboardLayout>
