@@ -430,7 +430,7 @@ export default function PriceEstimation() {
     try {
       const payload = { status: newStatus };
       const res = await fetch(`${API_BASE}/price_estimations.php/${id}`, {
-        method: "PUT",
+        method: "POST", // Changed from PUT to POST
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
@@ -491,7 +491,20 @@ export default function PriceEstimation() {
         return (
           <div className="flex items-center justify-start gap-3">
             <ViewButton />
-            <Button size="sm" onClick={() => handleCreateOrder(estimation)} className="gap-2 bg-green-600 text-white hover:bg-green-700">
+            <Button
+              size="sm"
+              onClick={async () => {
+                try {
+                  // Update status to "ยืนยันเรียบร้อย" first
+                  await updateStatus(id, "ยืนยันเรียบร้อย");
+                  // Then navigate to create order
+                  // handleCreateOrder(estimation);
+                } catch (err) {
+                  toast.error("ไม่สามารถปรับสถานะได้");
+                }
+              }}
+              className="gap-2 bg-green-600 text-white hover:bg-green-700"
+            >
               <CheckCircle className="h-4 w-4" />
               ลูกค้ายืนยัน
             </Button>
@@ -870,7 +883,7 @@ export default function PriceEstimation() {
                     notes: `${revisionEstimation.notes ? revisionEstimation.notes + "\n" : ""}การขอแก้ราคา: ${revisionReasons.join(", ")} ${revisionNote ? `- ${revisionNote}` : ""}`
                   };
                   const res = await fetch(`${API_BASE}/price_estimations.php/${revisionEstimation.id}`, {
-                    method: "PUT",
+                    method: "POST", // Changed from PUT to POST
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(payload)
                   });

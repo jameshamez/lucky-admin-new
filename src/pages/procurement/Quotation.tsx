@@ -32,10 +32,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import ProcurementStatusUpdate from "@/components/procurement/ProcurementStatusUpdate";
 
 // Status types for the workflow
-type QuotationStatus = 
-  | "ยื่นคำขอประเมิน" 
-  | "อยู่ระหว่างการประเมินราคา" 
-  | "เสนอราคา" 
+type QuotationStatus =
+  | "ยื่นคำขอประเมิน"
+  | "อยู่ระหว่างการประเมินราคา"
+  | "เสนอราคา"
   | "เสนอลูกค้า"
   | "ยืนยันเรียบร้อย"
   | "รายการสั่งผลิต"
@@ -185,8 +185,11 @@ interface FactoryEntry {
   uploadedFile: File | null; // ไฟล์แนบหลักฐานการตีราคา
 }
 
+const API_BASE = "https://finfinphone.com/api-lucky/admin";
+
 const Quotation = () => {
   const navigate = useNavigate();
+  const [isLoading, setIsLoading] = useState(true);
   const [factoriesList, setFactoriesList] = useState<FactoryQuotation[]>([]);
   const [currentFactoryId, setCurrentFactoryId] = useState<string | null>(null);
   const [showManagementModal, setShowManagementModal] = useState(false);
@@ -194,7 +197,7 @@ const Quotation = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState("pending");
   const [productTypeFilter, setProductTypeFilter] = useState<ProductType | "all">("all");
-  
+
   // Header column filters for Quotation table
   const [filterJobCode, setFilterJobCode] = useState("");
   const [filterJobName, setFilterJobName] = useState("");
@@ -215,49 +218,49 @@ const Quotation = () => {
     setFilterDateTo(undefined);
     setProductTypeFilter("all");
   };
-  
+
   // Rejection modal state
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
-  
+
   // Multi-supplier entries
   const [supplierEntries, setSupplierEntries] = useState<FactoryEntry[]>([]);
   const [selectedWinner, setSelectedWinner] = useState<string | null>(null);
-  
+
   // Estimation started state - controls visibility of Section 3
   const [estimationStarted, setEstimationStarted] = useState(false);
-  
+
   // Read-only mode for items in "รออนุมัติราคา" status
   const [isReadOnlyMode, setIsReadOnlyMode] = useState(false);
-  
+
   // Cancel dialog state
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
-  
+
   // Confirmation popup state for "ขออนุมัติราคา"
   const [showApprovalConfirmDialog, setShowApprovalConfirmDialog] = useState(false);
-  
+
   // Summary popup state for "รออนุมัติราคา" tab
   const [showSummaryDialog, setShowSummaryDialog] = useState(false);
   const [summaryQuotation, setSummaryQuotation] = useState<MockQuotation | null>(null);
   const [summarySupplierEntries, setSummarySupplierEntries] = useState<FactoryEntry[]>([]);
   const [summarySelectedFactory, setSummarySelectedFactory] = useState<string | null>(null);
   const summaryContentRef = useRef<HTMLDivElement>(null);
-  
+
   // Ref for capturing approval content as image
   const approvalContentRef = useRef<HTMLDivElement>(null);
   const estimationCaptureRef = useRef<HTMLDivElement>(null);
-  
+
   // Multi-select factories state
   const [selectedFactories, setSelectedFactories] = useState<string[]>([]);
   const [factorySelectOpen, setFactorySelectOpen] = useState(false);
   const [factorySearchQuery, setFactorySearchQuery] = useState("");
-  
+
   // Artwork modal states
   const [isArtworkFullscreenOpen, setIsArtworkFullscreenOpen] = useState(false);
   const [selectedArtworkIndex, setSelectedArtworkIndex] = useState(0);
   const [isUploadHistoryOpen, setIsUploadHistoryOpen] = useState(false);
-  
+
   // Production modal state
   const [showProductionModal, setShowProductionModal] = useState(false);
   const [selectedProductionItem, setSelectedProductionItem] = useState<MockQuotation | null>(null);
@@ -281,7 +284,7 @@ const Quotation = () => {
     { key: "store_qc", label: "ตรวจนับ & QC ที่ร้าน" },
     { key: "delivery_success", label: "จัดส่งสำเร็จ" },
   ];
-  
+
   // Mock design files upload history
   const designFileHistory = [
     { fileName: "artwork_final_v3.ai", uploadDate: "2024-01-18", uploadTime: "14:32:15", uploadedBy: "สมชาย กราฟิก" },
@@ -289,7 +292,7 @@ const Quotation = () => {
     { fileName: "artwork_draft.ai", uploadDate: "2024-01-14", uploadTime: "09:20:30", uploadedBy: "สมชาย กราฟิก" },
   ];
   const latestDesignFile = designFileHistory.length > 0 ? designFileHistory[0] : null;
-  
+
   // Global Header values (shared across all factories)
   const [globalHeader, setGlobalHeader] = useState({
     shippingCostRMB: 0, // ค่าขนส่งรวม (RMB)
@@ -301,511 +304,99 @@ const Quotation = () => {
     lanyardSellingPriceTHB: 0, // สายห้อย ราคาขาย/หน่วย (THB)
   });
 
-  // Mock data for existing quotations with extended details
-  const [mockQuotations, setMockQuotations] = useState<MockQuotation[]>([
-    {
-      id: 1,
-      jobCode: "JOB-2024-001",
-      jobName: "งานวิ่ง Bangkok Marathon 2024",
-      customerName: "สมาคมกีฬากรุงเทพมหานคร",
-      factory: "",
-      factoryLabel: "-",
-      createdDate: "2024-01-15",
-      eventDate: "2025-01-16",
-      quantity: 5000,
-      totalCost: 0,
-      totalSellingPrice: 0,
-      profit: 0,
-      status: "ยื่นคำขอประเมิน",
-      salesPerson: "พนักงานขาย A",
-      productType: "custom",
-      material: "ซิงค์อัลลอย",
-      size: "5 ซม.",
-      thickness: "4 มิล",
-      colors: ["shinny gold (สีทองเงา)", "shinny silver (สีเงินเงา)", "shinny copper (สีทองแดงเงา)"],
-      frontDetails: "พิมพ์โลโก้, ลงสีสเปรย์, ลงน้ำยาป้องกันสนิม, ขัดเงา",
-      backDetails: "แกะสลักข้อความ, ปั๊มลาย",
-      lanyardSize: "90x2.5 ซม.",
-      lanyardPatterns: 3,
-      customerBudget: 45,
-      designFiles: ["design_marathon_2024.ai"],
-      artworkImages: [sampleArtworkMedal],
-      notes: "ต้องการส่งมอบก่อนวันงาน 7 วัน",
-      rejectionLogs: []
-    },
-    {
-      id: 2,
-      jobCode: "JOB-2024-002",
-      jobName: "รางวัลพนักงานดีเด่น Quarter 1",
-      customerName: "บริษัท ไทยออยล์ จำกัด (มหาชน)",
-      factory: "china_linda",
-      factoryLabel: "China LINDA",
-      createdDate: "2024-01-16",
-      eventDate: "2025-01-18",
-      quantity: 150,
-      totalCost: 16000,
-      totalSellingPrice: 17500,
-      profit: 1500,
-      status: "เสนอราคา",
-      salesPerson: "พนักงานขาย B",
-      productType: "custom",
-      material: "ซิงค์อัลลอย",
-      size: "6 ซม.",
-      thickness: "5 มิล",
-      colors: ["shinny gold (สีทองเงา)"],
-      frontDetails: "พิมพ์โลโก้, แกะสลักข้อความ, ขัดเงา",
-      backDetails: "พิมพ์โลโก้, แกะสลักข้อความ",
-      lanyardSize: "90x3 ซม.",
-      lanyardPatterns: 1,
-      customerBudget: 120,
-      designFiles: ["thaioil_employee_award.pdf"],
-      artworkImages: [sampleArtworkMedal],
-      notes: "ต้องมีกล่องใส่เหรียญด้วย",
-      rejectionLogs: []
-    },
-    {
-      id: 3,
-      jobCode: "JOB-2024-003",
-      jobName: "เหรียญที่ระลึกครบรอบ 20 ปี บริษัท ABC",
-      customerName: "บริษัท ABC จำกัด",
-      factory: "china_pn",
-      factoryLabel: "China PN",
-      createdDate: "2024-01-17",
-      eventDate: "2025-01-28",
-      quantity: 500,
-      totalCost: 18750,
-      totalSellingPrice: 21000,
-      profit: 2250,
-      status: "เสนอลูกค้า",
-      customerConfirmed: true,
-      salesPerson: "พนักงานขาย A",
-      productType: "custom",
-      material: "ซิงค์อัลลอย",
-      size: "7 ซม.",
-      thickness: "4 มิล",
-      colors: ["shinny gold (สีทองเงา)", "shinny silver (สีเงินเงา)"],
-      frontDetails: "พิมพ์โลโก้, ลงน้ำยาป้องกันสนิม, พิมพ์ซิลค์สกรีน, ขัดเงา, แกะลึก",
-      backDetails: "แกะสลักข้อความ, ปั๊มลาย",
-      lanyardSize: "90x2.5 ซม.",
-      lanyardPatterns: 2,
-      customerBudget: 50,
-      designFiles: [],
-      artworkImages: [],
-      notes: "",
-      winnerFactoryValue: "china_pn",
-      rejectionLogs: []
-    },
-    {
-      id: 4,
-      jobCode: "JOB-2024-004",
-      jobName: "การแข่งขันฟุตบอลเยาวชนแห่งชาติ",
-      customerName: "การกีฬาแห่งประเทศไทย",
-      factory: "",
-      factoryLabel: "-",
-      createdDate: "2024-01-18",
-      eventDate: "2025-01-15",
-      quantity: 3000,
-      totalCost: 0,
-      totalSellingPrice: 0,
-      profit: 0,
-      status: "อยู่ระหว่างการประเมินราคา",
-      salesPerson: "พนักงานขาย C",
-      productType: "custom",
-      material: "ซิงค์อัลลอย",
-      size: "5 ซม.",
-      thickness: "4 มิล",
-      colors: ["shinny gold (สีทองเงา)", "shinny silver (สีเงินเงา)", "shinny copper (สีทองแดงเงา)"],
-      frontDetails: "พิมพ์โลโก้, ลงสีสเปรย์, ขัดเงา",
-      backDetails: "-",
-      lanyardSize: "90x2.5 ซม.",
-      lanyardPatterns: 1,
-      customerBudget: 35,
-      designFiles: [],
-      artworkImages: [],
-      notes: "รอไฟล์ออกแบบจากลูกค้า",
-      rejectionLogs: [
-        {
-          rejectedAt: "2024-01-19T10:30:00",
-          rejectedBy: "จัดซื้อ สมชาย",
-          reason: "ไม่มีไฟล์ออกแบบแนบมา และไม่ได้ระบุรายละเอียดด้านหลังเหรียญ"
-        }
-      ],
-      // Multi-option quote data
-      selectedSizes: ["5 ซม.", "6 ซม."],
-      selectedThicknesses: ["3 มิล", "4 มิล"],
-      quantitySets: [
-        {
-          setName: "A",
-          quantities: [
-            { color: "shinny gold (สีทองเงา)", quantity: 400 },
-            { color: "shinny silver (สีเงินเงา)", quantity: 400 },
-            { color: "shinny copper (สีทองแดงเงา)", quantity: 200 }
-          ],
-          total: 1000
-        },
-        {
-          setName: "B",
-          quantities: [
-            { color: "shinny gold (สีทองเงา)", quantity: 800 },
-            { color: "shinny silver (สีเงินเงา)", quantity: 800 },
-            { color: "shinny copper (สีทองแดงเงา)", quantity: 400 }
-          ],
-          total: 2000
-        },
-        {
-          setName: "C",
-          quantities: [
-            { color: "shinny gold (สีทองเงา)", quantity: 1200 },
-            { color: "shinny silver (สีเงินเงา)", quantity: 1200 },
-            { color: "shinny copper (สีทองแดงเงา)", quantity: 600 }
-          ],
-          total: 3000
-        }
-      ],
-      estimationOptions: [
-        "Option 1: ขนาด 5 ซม. หนา 3 มิล",
-        "Option 2: ขนาด 5 ซม. หนา 4 มิล",
-        "Option 3: ขนาด 6 ซม. หนา 3 มิล",
-        "Option 4: ขนาด 6 ซม. หนา 4 มิล"
-      ]
-    },
-    {
-      id: 5,
-      jobCode: "JOB-2024-005",
-      jobName: "เหรียญรางวัลการแข่งขันว่ายน้ำ SEA Games",
-      customerName: "คณะกรรมการโอลิมปิคแห่งประเทศไทย",
-      factory: "china_bc",
-      factoryLabel: "China B&C",
-      createdDate: "2024-01-10",
-      eventDate: "2025-01-20",
-      quantity: 800,
-      totalCost: 48000,
-      totalSellingPrice: 64000,
-      profit: 16000,
-      status: "ยื่นคำขอประเมิน",
-      salesPerson: "พนักงานขาย A",
-      productType: "custom",
-      material: "ซิงค์อัลลอย",
-      size: "8 ซม.",
-      thickness: "5 มิล",
-      colors: ["shinny gold (สีทองเงา)", "shinny silver (สีเงินเงา)", "shinny copper (สีทองแดงเงา)"],
-      frontDetails: "พิมพ์โลโก้, ลงสีสเปรย์, ลงน้ำยาป้องกันสนิม, พิมพ์ซิลค์สกรีน, ขัดเงา, แกะลึก, ปั๊มลาย",
-      backDetails: "พิมพ์โลโก้, แกะสลักข้อความ, ขัดเงา",
-      lanyardSize: "90x3 ซม.",
-      lanyardPatterns: 3,
-      customerBudget: 80,
-      designFiles: ["seagames_design.ai"],
-      artworkImages: [sampleArtworkMedal],
-      notes: "งานสำคัญระดับประเทศ",
-      rejectionLogs: []
-    },
-    {
-      id: 6,
-      jobCode: "JOB-2024-006",
-      jobName: "งานปั่นจักรยานการกุศล Tour de Thailand",
-      customerName: "สมาคมจักรยานแห่งประเทศไทย",
-      factory: "",
-      factoryLabel: "-",
-      createdDate: "2024-01-12",
-      eventDate: "2025-02-01",
-      quantity: 2000,
-      totalCost: 0,
-      totalSellingPrice: 0,
-      profit: 0,
-      status: "ยื่นคำขอประเมิน",
-      salesPerson: "พนักงานขาย B",
-      productType: "custom",
-      material: "ซิงค์อัลลอย",
-      size: "6 ซม.",
-      thickness: "4 มิล",
-      colors: ["shinny silver (สีเงินเงา)"],
-      frontDetails: "พิมพ์โลโก้, ลงน้ำยาป้องกันสนิม, ขัดเงา",
-      backDetails: "แกะสลักข้อความ",
-      lanyardSize: "90x2.5 ซม.",
-      lanyardPatterns: 2,
-      customerBudget: 40,
-      designFiles: ["tour_design.pdf"],
-      artworkImages: [],
-      notes: "",
-      rejectionLogs: []
-    },
-    {
-      id: 7,
-      jobCode: "JOB-2024-007",
-      jobName: "เหรียญเชิดชูเกียรติผู้เกษียณอายุ ปี 2567",
-      customerName: "กระทรวงมหาดไทย",
-      factory: "china_zj",
-      factoryLabel: "China ZJ",
-      createdDate: "2024-01-08",
-      eventDate: "2025-01-17",
-      quantity: 250,
-      totalCost: 22500,
-      totalSellingPrice: 30000,
-      profit: 7500,
-      status: "เสนอราคา",
-      salesPerson: "พนักงานขาย C",
-      productType: "custom",
-      material: "ซิงค์อัลลอย",
-      size: "7 ซม.",
-      thickness: "5 มิล",
-      colors: ["shinny gold (สีทองเงา)"],
-      frontDetails: "พิมพ์โลโก้, ลงสีสเปรย์, พิมพ์ซิลค์สกรีน, แกะลึก, ปั๊มลาย",
-      backDetails: "แกะสลักข้อความ, ขัดเงา, แกะลึก",
-      lanyardSize: "90x3 ซม.",
-      lanyardPatterns: 1,
-      customerBudget: 150,
-      designFiles: [],
-      artworkImages: [],
-      notes: "ต้องมีกล่องกำมะหยี่",
-      rejectionLogs: []
-    },
-    {
-      id: 8,
-      jobCode: "JOB-2024-008",
-      jobName: "เหรียญรางวัลนักเรียนเรียนดี ปีการศึกษา 2567",
-      customerName: "โรงเรียนเตรียมอุดมศึกษา",
-      factory: "china_xiaoli",
-      factoryLabel: "China Xiaoli",
-      createdDate: "2024-01-19",
-      eventDate: "2025-02-15",
-      quantity: 1200,
-      totalCost: 36000,
-      totalSellingPrice: 48000,
-      profit: 12000,
-      status: "ยืนยันเรียบร้อย",
-      salesPerson: "พนักงานขาย A",
-      productType: "custom",
-      material: "ซิงค์อัลลอย",
-      size: "5 ซม.",
-      thickness: "4 มิล",
-      colors: ["shinny gold (สีทองเงา)", "shinny silver (สีเงินเงา)", "shinny copper (สีทองแดงเงา)"],
-      frontDetails: "ตราโรงเรียน",
-      backDetails: "ปีการศึกษา 2567",
-      lanyardSize: "90x2.5 ซม.",
-      lanyardPatterns: 3,
-      customerBudget: 40,
-      designFiles: [],
-      artworkImages: [],
-      notes: "",
-      winnerFactoryValue: "china_xiaoli",
-      rejectionLogs: []
-    },
-    {
-      id: 9,
-      jobCode: "JOB-2024-009",
-      jobName: "งานวิ่งมินิมาราธอน อสมท.",
-      customerName: "บมจ. อสมท",
-      factory: "",
-      factoryLabel: "-",
-      createdDate: "2024-01-20",
-      eventDate: "2025-01-25",
-      quantity: 3500,
-      totalCost: 0,
-      totalSellingPrice: 0,
-      profit: 0,
-      status: "อยู่ระหว่างการประเมินราคา",
-      salesPerson: "พนักงานขาย B",
-      productType: "custom",
-      material: "ซิงค์อัลลอย",
-      size: "5 ซม.",
-      thickness: "4 มิล",
-      colors: ["shinny gold (สีทองเงา)", "shinny silver (สีเงินเงา)"],
-      frontDetails: "โลโก้ อสมท",
-      backDetails: "-",
-      lanyardSize: "90x2.5 ซม.",
-      lanyardPatterns: 2,
-      customerBudget: 35,
-      designFiles: [],
-      artworkImages: [],
-      notes: "รอยืนยันจำนวนสีจากลูกค้า",
-      rejectionLogs: [
-        {
-          rejectedAt: "2024-01-21T14:00:00",
-          rejectedBy: "จัดซื้อ สมหญิง",
-          reason: "จำนวนสีไม่ชัดเจน ต้องการ 2 หรือ 3 สี"
-        }
-      ],
-      // Multi-option quote data
-      selectedSizes: ["4 ซม.", "5 ซม.", "6 ซม."],
-      selectedThicknesses: ["3 มิล", "4 มิล"],
-      quantitySets: [
-        {
-          setName: "A",
-          quantities: [
-            { color: "shinny gold (สีทองเงา)", quantity: 500 },
-            { color: "shinny silver (สีเงินเงา)", quantity: 500 }
-          ],
-          total: 1000
-        },
-        {
-          setName: "B",
-          quantities: [
-            { color: "shinny gold (สีทองเงา)", quantity: 1500 },
-            { color: "shinny silver (สีเงินเงา)", quantity: 1000 }
-          ],
-          total: 2500
-        }
-      ],
-      estimationOptions: [
-        "Option 1: ขนาด 4 ซม. หนา 3 มิล",
-        "Option 2: ขนาด 4 ซม. หนา 4 มิล",
-        "Option 3: ขนาด 5 ซม. หนา 3 มิล",
-        "Option 4: ขนาด 5 ซม. หนา 4 มิล",
-        "Option 5: ขนาด 6 ซม. หนา 3 มิล",
-        "Option 6: ขนาด 6 ซม. หนา 4 มิล"
-      ]
-    },
-    {
-      id: 10,
-      jobCode: "JOB-2024-010",
-      jobName: "เหรียญที่ระลึกงานครบรอบ 50 ปี ธนาคารกรุงเทพ",
-      customerName: "ธนาคารกรุงเทพ จำกัด (มหาชน)",
-      factory: "china_benc",
-      factoryLabel: "China BENC",
-      createdDate: "2024-01-21",
-      eventDate: "2025-03-01",
-      quantity: 10000,
-      totalCost: 450000,
-      totalSellingPrice: 600000,
-      profit: 150000,
-      status: "เสนอลูกค้า",
-      customerConfirmed: false,
-      salesPerson: "พนักงานขาย C",
-      productType: "custom",
-      material: "ซิงค์อัลลอย",
-      size: "8 ซม.",
-      thickness: "6 มิล",
-      colors: ["shinny gold (สีทองเงา)"],
-      frontDetails: "ตราธนาคารครบรอบ 50 ปี",
-      backDetails: "ประวัติธนาคารโดยย่อ",
-      lanyardSize: "90x3 ซม.",
-      lanyardPatterns: 1,
-      customerBudget: 65,
-      designFiles: ["bbl_50years.ai"],
-      artworkImages: ["bbl_preview.jpg"],
-      notes: "งานพรีเมี่ยม ต้องการคุณภาพสูง",
-      winnerFactoryValue: "china_benc",
-      rejectionLogs: []
-    },
-    // Production Order Items (รายการสั่งผลิต) - ข้อมูลจาก ประเมินเสร็จสิ้น ที่เซลล์ยืนยันราคาแล้ว
-    // JOB-2024-003: เหรียญที่ระลึกครบรอบ 20 ปี บริษัท ABC - ย้ายมาจาก "ประเมินเสร็จสิ้น"
-    {
-      id: 11,
-      jobCode: "JOB-2024-003",
-      jobName: "เหรียญที่ระลึกครบรอบ 20 ปี บริษัท ABC",
-      customerName: "บริษัท ABC จำกัด",
-      factory: "china_pn",
-      factoryLabel: "China PN",
-      createdDate: "2024-01-17",
-      eventDate: "2025-01-28",
-      quantity: 500,
-      totalCost: 18750,
-      totalSellingPrice: 21000,
-      profit: 2250,
-      status: "รายการสั่งผลิต" as QuotationStatus,
-      salesPerson: "พนักงานขาย A",
-      productType: "custom" as ProductType,
-      material: "ซิงค์อัลลอย",
-      size: "7 ซม.",
-      thickness: "4 มิล",
-      colors: ["shinny gold (สีทองเงา)", "shinny silver (สีเงินเงา)"],
-      frontDetails: "พิมพ์โลโก้, ลงน้ำยาป้องกันสนิม, พิมพ์ซิลค์สกรีน, ขัดเงา, แกะลึก",
-      backDetails: "แกะสลักข้อความ, ปั๊มลาย",
-      lanyardSize: "90x2.5 ซม.",
-      lanyardPatterns: 2,
-      customerBudget: 50,
-      designFiles: ["abc_20years.ai"],
-      artworkImages: [sampleArtworkMedal],
-      notes: "งานครบรอบ 20 ปี",
-      winnerFactoryValue: "china_pn",
-      productionStep: "เริ่มผลิต" as ProductionStep,
-      productionStepHistory: [
-        { step: "ออกใบ PO" as ProductionStep, updatedAt: "2024-01-20T09:00:00", updatedBy: "จัดซื้อ สมชาย" },
-        { step: "จ่ายมัดจำแล้ว" as ProductionStep, updatedAt: "2024-01-21T14:30:00", updatedBy: "จัดซื้อ สมชาย" },
-        { step: "เริ่มผลิต" as ProductionStep, updatedAt: "2024-01-23T10:00:00", updatedBy: "จัดซื้อ สมหญิง" },
-      ],
-      estimatedTotalCost: 18750,
-      estimatedProfit: 2250,
-      rejectionLogs: []
-    },
-    // JOB-2024-008: เหรียญรางวัลนักเรียนเรียนดี - ย้ายมาจาก "ประเมินเสร็จสิ้น"
-    {
-      id: 12,
-      jobCode: "JOB-2024-008",
-      jobName: "เหรียญรางวัลนักเรียนเรียนดี ปีการศึกษา 2567",
-      customerName: "โรงเรียนเตรียมอุดมศึกษา",
-      factory: "china_xiaoli",
-      factoryLabel: "China Xiaoli",
-      createdDate: "2024-01-19",
-      eventDate: "2025-02-15",
-      quantity: 1200,
-      totalCost: 36000,
-      totalSellingPrice: 48000,
-      profit: 12000,
-      status: "รายการสั่งผลิต" as QuotationStatus,
-      salesPerson: "พนักงานขาย A",
-      productType: "custom" as ProductType,
-      material: "ซิงค์อัลลอย",
-      size: "5 ซม.",
-      thickness: "4 มิล",
-      colors: ["shinny gold (สีทองเงา)", "shinny silver (สีเงินเงา)", "shinny copper (สีทองแดงเงา)"],
-      frontDetails: "ตราโรงเรียน",
-      backDetails: "ปีการศึกษา 2567",
-      lanyardSize: "90x2.5 ซม.",
-      lanyardPatterns: 3,
-      customerBudget: 40,
-      designFiles: ["triamudom_award.ai"],
-      artworkImages: [sampleArtworkMedal],
-      notes: "เหรียญรางวัลนักเรียนดีเด่น",
-      winnerFactoryValue: "china_xiaoli",
-      productionStep: "จ่ายมัดจำแล้ว" as ProductionStep,
-      productionStepHistory: [
-        { step: "ออกใบ PO" as ProductionStep, updatedAt: "2024-01-22T11:00:00", updatedBy: "จัดซื้อ สมชาย" },
-        { step: "จ่ายมัดจำแล้ว" as ProductionStep, updatedAt: "2024-01-24T09:00:00", updatedBy: "จัดซื้อ สมหญิง" },
-      ],
-      estimatedTotalCost: 36000,
-      estimatedProfit: 12000,
-      rejectionLogs: []
-    },
-    // JOB-2024-010: เหรียญที่ระลึกงานครบรอบ 50 ปี ธนาคารกรุงเทพ - ย้ายมาจาก "ประเมินเสร็จสิ้น"
-    {
-      id: 13,
-      jobCode: "JOB-2024-010",
-      jobName: "เหรียญที่ระลึกงานครบรอบ 50 ปี ธนาคารกรุงเทพ",
-      customerName: "ธนาคารกรุงเทพ จำกัด (มหาชน)",
-      factory: "china_benc",
-      factoryLabel: "China BENC",
-      createdDate: "2024-01-21",
-      eventDate: "2025-03-01",
-      quantity: 10000,
-      totalCost: 450000,
-      totalSellingPrice: 600000,
-      profit: 150000,
-      status: "รายการสั่งผลิต" as QuotationStatus,
-      salesPerson: "พนักงานขาย C",
-      productType: "custom" as ProductType,
-      material: "ซิงค์อัลลอย",
-      size: "8 ซม.",
-      thickness: "6 มิล",
-      colors: ["shinny gold (สีทองเงา)"],
-      frontDetails: "ตราธนาคารครบรอบ 50 ปี",
-      backDetails: "ประวัติธนาคารโดยย่อ",
-      lanyardSize: "90x3 ซม.",
-      lanyardPatterns: 1,
-      customerBudget: 65,
-      designFiles: ["bbl_50years.ai"],
-      artworkImages: [sampleArtworkMedal],
-      notes: "งานพรีเมี่ยม ต้องการคุณภาพสูง",
-      winnerFactoryValue: "china_benc",
-      productionStep: "ออกใบ PO" as ProductionStep,
-      productionStepHistory: [
-        { step: "ออกใบ PO" as ProductionStep, updatedAt: "2024-01-25T10:00:00", updatedBy: "จัดซื้อ สมชาย" },
-      ],
-      estimatedTotalCost: 450000,
-      estimatedProfit: 150000,
-      rejectionLogs: []
-    },
-  ]);
+  // Mock data state for existing quotations - now fetched from API
+  const [mockQuotations, setMockQuotations] = useState<MockQuotation[]>([]);
+
+  // Fetch quotations from API
+  const fetchQuotations = async () => {
+    try {
+      setIsLoading(true);
+      const res = await fetch(`${API_BASE}/price_estimations.php`);
+      if (!res.ok) throw new Error("Failed to fetch");
+      const json = await res.json();
+
+      if (json.status === "success" && json.data) {
+        const mappedData = json.data.map((item: any) => {
+          let detailObj: any = {};
+          try {
+            detailObj = typeof item.details === 'string' ? JSON.parse(item.details) : (item.details || {});
+          } catch (e) { }
+
+          // Map API status to QuotationStatus if needed
+          let statusStr = String(item.status || "ยื่นคำขอประเมิน").trim();
+          const statusMap: Record<string, string> = {
+            "0": "ยื่นคำขอประเมิน",
+            "1": "อยู่ระหว่างการประเมินราคา",
+            "2": "เสนอราคา",
+            "3": "เสนอลูกค้า",
+            "4": "ยืนยันเรียบร้อย",
+            "5": "รายการสั่งผลิต",
+            "6": "ยกเลิก",
+            "ยื่นคำขอประเมิน": "ยื่นคำขอประเมิน",
+            "อยู่ระหว่างการประเมินราคา": "อยู่ระหว่างการประเมินราคา",
+            "เสนอราคา": "เสนอราคา",
+            "เสนอลูกค้า": "เสนอลูกค้า",
+            "ยืนยันเรียบร้อย": "ยืนยันเรียบร้อย",
+            "รายการสั่งผลิต": "รายการสั่งผลิต",
+            "ยกเลิก": "ยกเลิก"
+          };
+
+          const finalStatus = (statusMap[statusStr] || statusStr) as QuotationStatus;
+
+          return {
+            id: parseInt(item.id),
+            jobCode: item.estimate_id || `JOB-${item.id}`,
+            jobName: item.job_name || detailObj?.jobName || "-",
+            customerName: item.customer_name || "-",
+            createdDate: item.estimation_date || "-",
+            eventDate: detailObj?.eventDate || "-",
+            quantity: item.quantity || 0,
+            totalCost: detailObj?.totalCost || 0,
+            totalSellingPrice: item.price || 0,
+            profit: detailObj?.profit || 0,
+            status: finalStatus,
+            salesPerson: item.sales_owner_id || "ระบุไม่ได้",
+            factory: detailObj?.winnerFactoryValue || item.factory || "",
+            factoryLabel: detailObj?.factoryLabel || item.factory_label || "-",
+            productType: detailObj?.productType || "custom",
+            material: detailObj?.material || "-",
+            size: detailObj?.size || "-",
+            thickness: detailObj?.thickness || "-",
+            colors: Array.isArray(detailObj?.colors) ? detailObj.colors : (detailObj?.colors ? [detailObj.colors] : []),
+            frontDetails: Array.isArray(detailObj?.frontDetails) ? detailObj.frontDetails.join(", ") : (detailObj?.frontDetails || "-"),
+            backDetails: Array.isArray(detailObj?.backDetails) ? detailObj.backDetails.join(", ") : (detailObj?.backDetails || "-"),
+            lanyardSize: Array.isArray(detailObj?.lanyardSize) ? detailObj.lanyardSize.join(", ") : (detailObj?.lanyardSize || "-"),
+            lanyardPatterns: parseInt(detailObj?.lanyardPatterns || item.lanyard_patterns || 0),
+            customerBudget: item.budget || 0,
+            designFiles: detailObj?.designFiles || [],
+            artworkImages: detailObj?.artworkImages || [],
+            notes: item.notes || "-",
+            rejectionLogs: detailObj?.rejectionLogs || [],
+            winnerFactoryValue: detailObj?.winnerFactoryValue || item.factory,
+            productionStep: detailObj?.productionStep,
+            productionStepHistory: detailObj?.productionStepHistory || [],
+            selectedSizes: detailObj?.selectedSizes || [],
+            selectedThicknesses: detailObj?.selectedThicknesses || [],
+            quantitySets: detailObj?.quantitySets || [],
+            estimationOptions: detailObj?.estimationOptions || [],
+            // Store the whole details for later use
+            rawDetails: detailObj
+          };
+        });
+        setMockQuotations(mappedData);
+      }
+    } catch (err) {
+      console.error("Error fetching quotations:", err);
+      toast.error("ดึงข้อมูลการประเมินราคาล้มเหลว");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // call fetch on mount
+  useState(() => {
+    fetchQuotations();
+  });
 
   const form = useForm<FactoryFormValues>({
     resolver: zodResolver(factoryFormSchema),
@@ -827,7 +418,7 @@ const Quotation = () => {
     },
   });
 
-   // Deep search helper for quotation objects
+  // Deep search helper for quotation objects
   const deepSearchQuotation = (q: MockQuotation, term: string): boolean => {
     const lowerTerm = term.toLowerCase();
     const searchFields = [
@@ -859,7 +450,7 @@ const Quotation = () => {
   // Filter quotations by status and product type
   const getQuotationsByTab = (tab: string) => {
     let filtered = mockQuotations;
-    
+
     // Apply deep search filter
     if (searchTerm) {
       filtered = filtered.filter(q => deepSearchQuotation(q, searchTerm));
@@ -928,8 +519,8 @@ const Quotation = () => {
     const sellingPriceLanyard = parseFloat(data.sellingPriceLanyard || "0");
 
     if (quantity > 0) {
-      const totalCostPerUnit = 
-        ((unitCost + (moldCost / quantity) + (moldCostAdditional / quantity) + (shippingCost / quantity)) * exchangeRate) * 
+      const totalCostPerUnit =
+        ((unitCost + (moldCost / quantity) + (moldCostAdditional / quantity) + (shippingCost / quantity)) * exchangeRate) *
         (1 + (vat / 100));
       const totalSellingPricePerUnit = sellingPrice + sellingPriceLanyard;
       const totalProfit = (totalSellingPricePerUnit - totalCostPerUnit) * quantity;
@@ -959,13 +550,13 @@ const Quotation = () => {
     const unitCost = entry.unitCost || 0; // ชิ้นงาน ทุน/หน่วย (RMB) - per row
     const moldCost = entry.moldCost || 0; // ค่าโมล (RMB) - per row
     const moldCostAdditionalTHB = entry.moldCostAdditionalTHB || 0; // ค่าโมล(เพิ่มเติม) (THB) - per row, already in THB
-    
+
     // Global values
     const shippingCost = globalVals.shippingCostRMB || 0; // ค่าขนส่ง (RMB) from global
     const exchangeRate = globalVals.exchangeRate; // อัตราแลกเปลี่ยน from global
     const vat = globalVals.vat; // VAT % from global
     const qty = globalVals.quantity || quantity; // จำนวน (ชิ้น)
-    
+
     // Selling prices from global header
     const unitSellingPrice = globalVals.unitSellingPriceTHB || 0; // ชิ้นงาน ราคาขาย/หน่วย (THB)
     const lanyardSellingPrice = globalVals.lanyardSellingPriceTHB || 0; // สายห้อย ราคาขาย/หน่วย (THB)
@@ -973,15 +564,15 @@ const Quotation = () => {
     if (qty > 0) {
       // ทุนรวม/หน่วย (THB) = ((ชิ้นงาน + (โมล ÷ จำนวนชิ้น) + (ค่าขนส่ง ÷ จำนวนชิ้น)) × ECR) × (1 + (VAT ÷ 100)) + (ค่าโมลเพิ่มเติม(THB) ÷ จำนวน)
       // โมล (RMB) ต้องหารด้วยจำนวน, ค่าโมลเพิ่มเติม(THB) หารด้วยจำนวนโดยตรง
-      const baseCostPerUnit = 
-        ((unitCost + (moldCost / qty) + (shippingCost / qty)) * exchangeRate) * 
+      const baseCostPerUnit =
+        ((unitCost + (moldCost / qty) + (shippingCost / qty)) * exchangeRate) *
         (1 + (vat / 100));
       // Add additional mold cost (already in THB, just divide by quantity)
       const totalCostPerUnit = baseCostPerUnit + (moldCostAdditionalTHB / qty);
-      
+
       // ราคาขายรวม/หน่วย (THB) = ราคาขาย + ราคาขายสาย (ถ้ามี)
       const totalSellingPricePerUnit = unitSellingPrice + lanyardSellingPrice;
-      
+
       // กำไรรวม (THB) = (ราคาขายรวม – ทุนรวม) × จำนวนชิ้น
       const totalProfit = (totalSellingPricePerUnit - totalCostPerUnit) * qty;
 
@@ -1095,13 +686,13 @@ const Quotation = () => {
     setSupplierEntries(prev => prev.map(entry => {
       if (entry.id === id) {
         const updatedEntry = { ...entry, [field]: value };
-        
+
         // If factory changed, update label
         if (field === "factoryValue") {
           const factory = factoryOptions.find(f => f.value === value);
           updatedEntry.factoryLabel = factory?.label || "";
         }
-        
+
         // Recalculate costs with global header values
         if (selectedQuotation) {
           const calculated = calculateSupplierCosts(updatedEntry, selectedQuotation.quantity, globalHeader);
@@ -1117,7 +708,7 @@ const Quotation = () => {
   const updateGlobalHeader = (field: keyof typeof globalHeader, value: number) => {
     const newGlobalHeader = { ...globalHeader, [field]: value };
     setGlobalHeader(newGlobalHeader);
-    
+
     // Recalculate all supplier entries with new global values
     if (selectedQuotation) {
       setSupplierEntries(prev => prev.map(entry => {
@@ -1154,12 +745,12 @@ const Quotation = () => {
     setSelectedWinner(null);
     setSelectedFactories([]); // Reset factory selection
     setFactorySelectOpen(false);
-    
+
     // Check if status requires read-only with mock data
     const isReadOnly = quotation.status === "เสนอลูกค้า";
     const isInProgress = quotation.status === "อยู่ระหว่างการประเมินราคา" || quotation.status === "เสนอราคา";
     setIsReadOnlyMode(isReadOnly);
-    
+
     if (isReadOnly || isInProgress) {
       // Load mock saved estimation data for read-only or in-progress editing
       setEstimationStarted(true);
@@ -1171,10 +762,10 @@ const Quotation = () => {
         unitSellingPriceTHB: 85,
         lanyardSellingPriceTHB: 15,
       });
-      
+
       // Determine winner factory for completed status
       const winnerFactory = quotation.winnerFactoryValue;
-      
+
       // Mock supplier entries for read-only display
       const mockSupplierData: FactoryEntry[] = [
         {
@@ -1264,7 +855,7 @@ const Quotation = () => {
       });
       setSupplierEntries(calculatedEntries);
       setSelectedFactories(["china_zj", "china_xiaoli", "china_pn", "china_benc"]);
-      
+
       // Set selected winner if completed (เสนอลูกค้า)
       if (isReadOnly && winnerFactory) {
         const winnerEntry = calculatedEntries.find(e => e.factoryValue === winnerFactory);
@@ -1285,7 +876,7 @@ const Quotation = () => {
         lanyardSellingPriceTHB: 0,
       });
     }
-    
+
     setShowManagementModal(true);
   };
 
@@ -1320,138 +911,302 @@ const Quotation = () => {
   };
 
   // Handle reject/return to sales
-  const handleReject = () => {
+  // Handle reject with reasons
+  const handleReject = async () => {
     if (!rejectReason.trim()) {
       toast.error("กรุณาระบุเหตุผลในการตีกลับ");
       return;
     }
 
     if (selectedQuotation) {
-      const rejectionLog = {
-        rejectedAt: new Date().toISOString(),
-        rejectedBy: "จัดซื้อ ผู้ใช้งาน", // In real app, get from auth
-        reason: rejectReason
-      };
+      try {
+        const rejectionLog = {
+          rejectedAt: new Date().toISOString(),
+          rejectedBy: "จัดซื้อ ผู้ใช้งาน", // In real app, get from auth
+          reason: rejectReason
+        };
 
-      setMockQuotations(prev => prev.map(q => {
-        if (q.id === selectedQuotation.id) {
-          return {
-            ...q,
-            status: "ขอข้อมูลเพิ่มเติม" as QuotationStatus,
-            rejectionLogs: [...q.rejectionLogs, rejectionLog]
-          };
-        }
-        return q;
-      }));
+        const updatedDetails = {
+          ...(selectedQuotation as any).rawDetails,
+          rejectionLogs: [...(selectedQuotation.rejectionLogs || []), rejectionLog]
+        };
 
-      toast.success("ตีกลับงานสำเร็จ - สถานะเปลี่ยนเป็น 'ขอข้อมูลเพิ่มเติม'");
-      setShowRejectDialog(false);
-      setRejectReason("");
-      closeManagementModal();
+        const payload = {
+          status: "ขอข้อมูลเพิ่มเติม",
+          details: updatedDetails
+        };
+
+        const res = await fetch(`${API_BASE}/price_estimations.php/${selectedQuotation.id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) throw new Error("Failed to reject");
+
+        setMockQuotations(prev => prev.map(q => {
+          if (q.id === selectedQuotation.id) {
+            return {
+              ...q,
+              status: "ขอข้อมูลเพิ่มเติม" as QuotationStatus,
+              rejectionLogs: updatedDetails.rejectionLogs
+            };
+          }
+          return q;
+        }));
+
+        toast.success("ตีกลับงานสำเร็จ - สถานะเปลี่ยนเป็น 'ขอข้อมูลเพิ่มเติม'");
+        setShowRejectDialog(false);
+        setRejectReason("");
+        closeManagementModal();
+        fetchQuotations();
+      } catch (err) {
+        console.error("Error rejecting:", err);
+        toast.error("เกิดข้อผิดพลาดในการตีกลับงาน");
+      }
     }
   };
 
   // Handle cancel job
-  const handleCancel = () => {
+  const handleCancel = async () => {
     if (!cancelReason.trim()) {
       toast.error("กรุณาระบุเหตุผลในการยกเลิก");
       return;
     }
 
     if (selectedQuotation) {
-      setMockQuotations(prev => prev.map(q => {
-        if (q.id === selectedQuotation.id) {
-          return {
-            ...q,
-            status: "ยกเลิก" as QuotationStatus,
-          };
-        }
-        return q;
-      }));
+      try {
+        const payload = {
+          status: "ยกเลิก",
+          notes: `เหตุผลการยกเลิก: ${cancelReason}`
+        };
 
-      toast.success("ยกเลิกงานสำเร็จ");
-      setShowCancelDialog(false);
-      setCancelReason("");
-      closeManagementModal();
+        const res = await fetch(`${API_BASE}/price_estimations.php/${selectedQuotation.id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) throw new Error("Failed to cancel");
+
+        setMockQuotations(prev => prev.map(q => {
+          if (q.id === selectedQuotation.id) {
+            return {
+              ...q,
+              status: "ยกเลิก" as QuotationStatus,
+            };
+          }
+          return q;
+        }));
+
+        toast.success("ยกเลิกงานสำเร็จ");
+        setShowCancelDialog(false);
+        setCancelReason("");
+        closeManagementModal();
+        fetchQuotations();
+      } catch (err) {
+        console.error("Error cancelling:", err);
+        toast.error("เกิดข้อผิดพลาดในการยกเลิกงาน");
+      }
     }
   };
 
   // Handle accept job - change status to "อยู่ระหว่างการประเมินราคา" and show estimation section
-  const handleAcceptJob = (quotation?: MockQuotation) => {
+  const handleAcceptJob = async (quotation?: MockQuotation) => {
     const targetQuotation = quotation || selectedQuotation;
     if (targetQuotation) {
-      setMockQuotations(prev => prev.map(q => {
-        if (q.id === targetQuotation.id) {
-          return {
-            ...q,
-            status: "อยู่ระหว่างการประเมินราคา" as QuotationStatus,
-          };
+      try {
+        const payload = { status: "อยู่ระหว่างการประเมินราคา" };
+        const res = await fetch(`${API_BASE}/price_estimations.php/${targetQuotation?.id || selectedQuotation.id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) throw new Error("Failed update status");
+
+        // Update local state
+        setMockQuotations(prev => prev.map(q => {
+          if (q.id === targetQuotation.id) {
+            return {
+              ...q,
+              status: "อยู่ระหว่างการประเมินราคา" as QuotationStatus,
+            };
+          }
+          return q;
+        }));
+
+        // If in modal, update selected quotation and show estimation
+        if (selectedQuotation && selectedQuotation.id === targetQuotation.id) {
+          setSelectedQuotation({ ...targetQuotation, status: "อยู่ระหว่างการประเมินราคา" });
+          setEstimationStarted(true);
         }
-        return q;
-      }));
-      // If in modal, update selected quotation and show estimation
-      if (selectedQuotation && selectedQuotation.id === targetQuotation.id) {
-        setSelectedQuotation({ ...targetQuotation, status: "อยู่ระหว่างการประเมินราคา" });
-        setEstimationStarted(true);
+        toast.success("รับงานสำเร็จ - สถานะเปลี่ยนเป็น 'อยู่ระหว่างการประเมินราคา'");
+      } catch (err) {
+        console.error("Error accepting job:", err);
+        toast.error("เกิดข้อผิดพลาดในการรับงาน");
       }
-      toast.success("รับงานสำเร็จ - สถานะเปลี่ยนเป็น 'อยู่ระหว่างการประเมินราคา'");
     }
   };
 
   // Handle send price to sales - change status to "เสนอลูกค้า"
-  const handleSendPriceToSales = () => {
+  const handleSendPriceToSales = async () => {
     if (supplierEntries.length === 0) {
       toast.error("กรุณาเพิ่มข้อมูลโรงงานอย่างน้อย 1 โรงงาน");
       return;
     }
     if (selectedQuotation) {
-      setMockQuotations(prev => prev.map(q => {
-        if (q.id === selectedQuotation.id) {
-          return {
-            ...q,
-            status: "เสนอลูกค้า" as QuotationStatus,
-          };
-        }
-        return q;
-      }));
-      toast.success("ส่งราคาให้ฝ่ายขายสำเร็จ - สถานะเปลี่ยนเป็น 'เสนอลูกค้า'");
-      closeManagementModal();
+      try {
+        // Merge procurement data into details JSON
+        const updatedDetails = {
+          ...(selectedQuotation as any).rawDetails,
+          supplierEntries: supplierEntries.map(e => ({
+            ...e,
+            uploadedFile: null // Can't stringify File object
+          })),
+          globalHeader,
+          estimationStarted: true
+        };
+
+        const payload = {
+          status: "เสนอลูกค้า",
+          details: updatedDetails
+        };
+
+        const res = await fetch(`${API_BASE}/price_estimations.php/${selectedQuotation.id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) throw new Error("Failed to send price to sales");
+
+        setMockQuotations(prev => prev.map(q => {
+          if (q.id === selectedQuotation.id) {
+            return {
+              ...q,
+              status: "เสนอลูกค้า" as QuotationStatus,
+              // Update with new details locally too
+              ...(updatedDetails as any)
+            };
+          }
+          return q;
+        }));
+
+        toast.success("ส่งราคาให้ฝ่ายขายสำเร็จ - สถานะเปลี่ยนเป็น 'เสนอลูกค้า'");
+        closeManagementModal();
+        fetchQuotations(); // Refresh to get latest state
+      } catch (err) {
+        console.error("Error sending price to sales:", err);
+        toast.error("เกิดข้อผิดพลาดในการส่งราคา");
+      }
     }
   };
 
   // Handle send revised price to sales - change status to "เสนอลูกค้า"
-  const handleSendRevisedPrice = () => {
+  const handleSendRevisedPrice = async () => {
     if (supplierEntries.length === 0) {
       toast.error("กรุณาเพิ่มข้อมูลโรงงานอย่างน้อย 1 โรงงาน");
       return;
     }
     if (selectedQuotation) {
-      setMockQuotations(prev => prev.map(q => {
-        if (q.id === selectedQuotation.id) {
-          return {
-            ...q,
-            status: "เสนอลูกค้า" as QuotationStatus,
-          };
-        }
-        return q;
-      }));
-      toast.success("ส่งราคาแก้ไขสำเร็จ - สถานะเปลี่ยนเป็น 'เสนอลูกค้า'");
-      closeManagementModal();
+      try {
+        const updatedDetails = {
+          ...(selectedQuotation as any).rawDetails,
+          supplierEntries: supplierEntries.map(e => ({
+            ...e,
+            uploadedFile: null
+          })),
+          globalHeader,
+          estimationStarted: true
+        };
+
+        const payload = {
+          status: "เสนอลูกค้า",
+          details: updatedDetails
+        };
+
+        const res = await fetch(`${API_BASE}/price_estimations.php/${selectedQuotation.id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) throw new Error("Failed to send revised price");
+
+        setMockQuotations(prev => prev.map(q => {
+          if (q.id === selectedQuotation.id) {
+            return {
+              ...q,
+              status: "เสนอลูกค้า" as QuotationStatus,
+              ...(updatedDetails as any)
+            };
+          }
+          return q;
+        }));
+
+        toast.success("ส่งราคาแก้ไขสำเร็จ - สถานะเปลี่ยนเป็น 'เสนอลูกค้า'");
+        closeManagementModal();
+        fetchQuotations(); // Sync with DB
+      } catch (err) {
+        console.error("Error sending revised price:", err);
+        toast.error("เกิดข้อผิดพลาดในการส่งราคาแก้ไข");
+      }
     }
   };
 
-  // Handle save estimation
-  const handleSaveEstimation = () => {
+  // Handle save estimation (Draft)
+  const handleSaveEstimation = async () => {
     if (supplierEntries.length === 0) {
       toast.error("กรุณาเพิ่มข้อมูลโรงงานอย่างน้อย 1 โรงงาน");
       return;
     }
 
-    toast.success("บันทึกข้อมูลสำเร็จ");
+    if (selectedQuotation) {
+      try {
+        const updatedDetails = {
+          ...(selectedQuotation as any).rawDetails,
+          supplierEntries: supplierEntries.map(e => ({
+            ...e,
+            uploadedFile: null
+          })),
+          globalHeader,
+          estimationStarted: true
+        };
+
+        const payload = {
+          details: updatedDetails
+        };
+
+        const res = await fetch(`${API_BASE}/price_estimations.php/${selectedQuotation.id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) throw new Error("Failed to save draft");
+
+        setMockQuotations(prev => prev.map(q => {
+          if (q.id === selectedQuotation.id) {
+            return {
+              ...q,
+              ...(updatedDetails as any)
+            };
+          }
+          return q;
+        }));
+
+        toast.success("บันทึกข้อมูลร่างสำเร็จ");
+        fetchQuotations();
+      } catch (err) {
+        console.error("Error saving draft:", err);
+        toast.error("เกิดข้อผิดพลาดในการบันทึกข้อมูล");
+      }
+    }
   };
 
   // Handle approve with selected winner
-  const handleApproveWithWinner = () => {
+  const handleApproveWithWinner = async () => {
     if (!selectedWinner) {
       toast.error("กรุณาเลือกโรงงานผู้ชนะก่อนอนุมัติ");
       return;
@@ -1464,21 +1219,53 @@ const Quotation = () => {
     }
 
     if (selectedQuotation) {
-      setMockQuotations(prev => prev.map(q => {
-        if (q.id === selectedQuotation.id) {
-          return {
-            ...q,
-            status: "ประเมินเสร็จสิ้น" as QuotationStatus,
-            winnerFactoryValue: winnerEntry.factoryValue,
-            factory: winnerEntry.factoryValue,
-            factoryLabel: winnerEntry.factoryLabel,
-          };
-        }
-        return q;
-      }));
+      try {
+        const updatedDetails = {
+          ...(selectedQuotation as any).rawDetails,
+          supplierEntries: supplierEntries.map(e => ({
+            ...e,
+            uploadedFile: null
+          })),
+          globalHeader,
+          winnerFactoryValue: winnerEntry.factoryValue,
+          factoryLabel: winnerEntry.factoryLabel,
+          estimationStarted: true
+        };
 
-      toast.success(`อนุมัติราคาสำเร็จ - โรงงานผู้ชนะ: ${winnerEntry.factoryLabel}`);
-      closeManagementModal();
+        const payload = {
+          status: "เสนอราคา",
+          price: winnerEntry.totalSellingPricePerUnit * (globalHeader.quantity || selectedQuotation.quantity),
+          details: updatedDetails
+        };
+
+        const res = await fetch(`${API_BASE}/price_estimations.php/${selectedQuotation.id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) throw new Error("Failed to approve");
+
+        setMockQuotations(prev => prev.map(q => {
+          if (q.id === selectedQuotation.id) {
+            return {
+              ...q,
+              status: "เสนอราคา" as QuotationStatus,
+              winnerFactoryValue: winnerEntry.factoryValue,
+              factory: winnerEntry.factoryValue,
+              factoryLabel: winnerEntry.factoryLabel,
+            };
+          }
+          return q;
+        }));
+
+        toast.success(`อนุมัติราคาสำเร็จ - โรงงานผู้ชนะ: ${winnerEntry.factoryLabel}`);
+        closeManagementModal();
+        fetchQuotations(); // Sync with DB
+      } catch (err) {
+        console.error("Error approving:", err);
+        toast.error("เกิดข้อผิดพลาดในการอนุมัติ");
+      }
     }
   };
 
@@ -1585,9 +1372,9 @@ const Quotation = () => {
             <tbody>
               <tr style="background:#ffffff;">
                 <td style="padding:12px 16px;font-weight:600;color:#1f2937;">${entry.factoryLabel}</td>
-                <td style="padding:12px 16px;text-align:right;font-weight:600;color:#1f2937;">${(entry.totalCostPerUnit * quantity).toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0})}</td>
-                <td style="padding:12px 16px;text-align:right;font-weight:600;color:#059669;">${(entry.totalSellingPricePerUnit * quantity).toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0})}</td>
-                <td style="padding:12px 16px;text-align:right;font-weight:700;color:${(entry.totalProfit || 0) >= 0 ? '#059669' : '#dc2626'};">${entry.totalProfit?.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0}) || '0'}</td>
+                <td style="padding:12px 16px;text-align:right;font-weight:600;color:#1f2937;">${(entry.totalCostPerUnit * quantity).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+                <td style="padding:12px 16px;text-align:right;font-weight:600;color:#059669;">${(entry.totalSellingPricePerUnit * quantity).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+                <td style="padding:12px 16px;text-align:right;font-weight:700;color:${(entry.totalProfit || 0) >= 0 ? '#059669' : '#dc2626'};">${entry.totalProfit?.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 }) || '0'}</td>
               </tr>
             </tbody>
           </table>
@@ -1687,7 +1474,7 @@ const Quotation = () => {
       "รายการสั่งผลิต": { variant: "secondary", className: "bg-blue-100 text-blue-700 border-blue-300 text-xs px-2 py-0.5" },
       "ยกเลิก": { variant: "secondary", className: "bg-gray-100 text-gray-600 border-gray-300 text-xs px-2 py-0.5" },
     };
-    
+
     const config = statusConfig[status];
     return <Badge variant={config.variant} className={config.className}>{status}</Badge>;
   };
@@ -1705,9 +1492,9 @@ const Quotation = () => {
     deadline.setHours(0, 0, 0, 0);
     const diffTime = deadline.getTime() - today.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
+
     const formattedDate = deadline.toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    
+
     if (diffDays < 0) {
       return (
         <div className="flex flex-col items-start">
@@ -1740,42 +1527,42 @@ const Quotation = () => {
 
   // Tab configuration - Reordered per workflow: รอประเมิน > ขอข้อมูลเพิ่มเติม > รออนุมัติราคา > ประเมินเสร็จสิ้น > รายการสั่งผลิต
   const tabConfig = [
-    { 
-      value: "pending", 
-      label: "ยื่นคำขอประเมิน", 
-      icon: Clock, 
+    {
+      value: "pending",
+      label: "ยื่นคำขอประเมิน",
+      icon: Clock,
       color: "text-blue-600",
       bgColor: "bg-blue-500",
       count: getStatusCount(["ยื่นคำขอประเมิน"])
     },
-    { 
-      value: "in-progress", 
-      label: "อยู่ระหว่างประเมิน", 
-      icon: AlertCircle, 
+    {
+      value: "in-progress",
+      label: "อยู่ระหว่างประเมิน",
+      icon: AlertCircle,
       color: "text-orange-600",
       bgColor: "bg-orange-500",
       count: getStatusCount(["อยู่ระหว่างการประเมินราคา"])
     },
-    { 
-      value: "quoted", 
-      label: "เสนอราคา", 
-      icon: FileCheck, 
+    {
+      value: "quoted",
+      label: "ประเมินเสร็จสิ้น",
+      icon: FileCheck,
       color: "text-purple-600",
       bgColor: "bg-purple-500",
       count: getStatusCount(["เสนอราคา"])
     },
-    { 
-      value: "proposed", 
-      label: "เสนอลูกค้า", 
-      icon: CheckCircle2, 
+    {
+      value: "proposed",
+      label: "เสนอลูกค้า",
+      icon: CheckCircle2,
       color: "text-amber-600",
       bgColor: "bg-amber-500",
       count: getStatusCount(["เสนอลูกค้า"])
     },
-    { 
-      value: "production", 
-      label: "รายการสั่งผลิต", 
-      icon: Factory, 
+    {
+      value: "production",
+      label: "รายการสั่งผลิต",
+      icon: Factory,
       color: "text-blue-600",
       bgColor: "bg-blue-500",
       count: getStatusCount(["รายการสั่งผลิต"])
@@ -2054,24 +1841,45 @@ const Quotation = () => {
                     {tabValue === "proposed" && quotation.customerConfirmed && (
                       <Button
                         size="sm"
-                        onClick={(e) => {
+                        onClick={async (e) => {
                           e.stopPropagation();
-                          setMockQuotations(prev => prev.map(q => {
-                            if (q.id === quotation.id) {
-                              return {
-                                ...q,
-                                status: "รายการสั่งผลิต" as QuotationStatus,
-                                productionStep: "ออกใบ PO" as ProductionStep,
-                                productionStepHistory: [{
-                                  step: "ออกใบ PO" as ProductionStep,
-                                  updatedAt: new Date().toISOString(),
-                                  updatedBy: "จัดซื้อ ผู้ใช้งาน"
-                                }],
-                              };
-                            }
-                            return q;
-                          }));
-                          toast.success("สั่งผลิตสำเร็จ - งานถูกย้ายไป 'รายการสั่งผลิต'");
+                          try {
+                            const updatedDetails = {
+                              ...(quotation as any).rawDetails,
+                              productionStep: "ออกใบ PO" as ProductionStep,
+                              productionStepHistory: [{
+                                step: "ออกใบ PO" as ProductionStep,
+                                updatedAt: new Date().toISOString(),
+                                updatedBy: "จัดซื้อ ผู้ใช้งาน"
+                              }]
+                            };
+                            const payload = {
+                              status: "รายการสั่งผลิต",
+                              details: updatedDetails
+                            };
+                            const res = await fetch(`${API_BASE}/price_estimations.php/${quotation.id}`, {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify(payload)
+                            });
+                            if (!res.ok) throw new Error("Failed to update status");
+
+                            setMockQuotations(prev => prev.map(q => {
+                              if (q.id === quotation.id) {
+                                return {
+                                  ...q,
+                                  status: "รายการสั่งผลิต" as QuotationStatus,
+                                  ...(updatedDetails as any)
+                                };
+                              }
+                              return q;
+                            }));
+                            toast.success("สั่งผลิตสำเร็จ - งานถูกย้ายไป 'รายการสั่งผลิต'");
+                            fetchQuotations();
+                          } catch (err) {
+                            console.error("Error ordering production:", err);
+                            toast.error("เกิดข้อผิดพลาดในการสั่งผลิต");
+                          }
                         }}
                         className="gap-2 bg-blue-600 hover:bg-blue-700"
                       >
@@ -2098,18 +1906,32 @@ const Quotation = () => {
                     {tabValue === "quoted" && (
                       <Button
                         size="sm"
-                        onClick={(e) => {
+                        onClick={async (e) => {
                           e.stopPropagation();
-                          setMockQuotations(prev => prev.map(q => {
-                            if (q.id === quotation.id) {
-                              return {
-                                ...q,
-                                status: "เสนอลูกค้า" as QuotationStatus,
-                              };
-                            }
-                            return q;
-                          }));
-                          toast.success("ส่งราคาให้ฝ่ายขายสำเร็จ - สถานะเปลี่ยนเป็น 'เสนอลูกค้า'");
+                          try {
+                            const payload = { status: "เสนอลูกค้า" };
+                            const res = await fetch(`${API_BASE}/price_estimations.php/${quotation.id}`, {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify(payload)
+                            });
+                            if (!res.ok) throw new Error("Failed to send price");
+
+                            setMockQuotations(prev => prev.map(q => {
+                              if (q.id === quotation.id) {
+                                return {
+                                  ...q,
+                                  status: "เสนอลูกค้า" as QuotationStatus,
+                                };
+                              }
+                              return q;
+                            }));
+                            toast.success("ส่งราคาให้ฝ่ายขายสำเร็จ - สถานะเปลี่ยนเป็น 'เสนอลูกค้า'");
+                            fetchQuotations();
+                          } catch (err) {
+                            console.error("Error sending price:", err);
+                            toast.error("เกิดข้อผิดพลาดในการส่งราคา");
+                          }
                         }}
                         className="gap-2 bg-green-600 hover:bg-green-700"
                       >
@@ -2135,7 +1957,7 @@ const Quotation = () => {
       </div>
     );
   };
-  
+
   // Open production modal
   const openProductionModal = (quotation: MockQuotation) => {
     setSelectedProductionItem(quotation);
@@ -2144,7 +1966,7 @@ const Quotation = () => {
     setActiveWorkflowStep("all");
     setShowProductionModal(true);
   };
-  
+
   // Close production modal
   const closeProductionModal = () => {
     setShowProductionModal(false);
@@ -2152,11 +1974,11 @@ const Quotation = () => {
     setActualExchangeRate(0);
     setActualShippingCost(0);
   };
-  
+
   // Update production step
   const updateProductionStep = (step: ProductionStep) => {
     if (!selectedProductionItem) return;
-    
+
     const newHistory = [
       ...(selectedProductionItem.productionStepHistory || []),
       {
@@ -2165,7 +1987,7 @@ const Quotation = () => {
         updatedBy: "จัดซื้อ ผู้ใช้งาน" // In real app, get from auth
       }
     ];
-    
+
     setMockQuotations(prev => prev.map(q => {
       if (q.id === selectedProductionItem.id) {
         return {
@@ -2176,36 +1998,36 @@ const Quotation = () => {
       }
       return q;
     }));
-    
+
     setSelectedProductionItem(prev => prev ? {
       ...prev,
       productionStep: step,
       productionStepHistory: newHistory
     } : null);
-    
+
     toast.success(`อัปเดตสถานะเป็น "${step}" สำเร็จ`);
   };
-  
+
   // Calculate actual net profit
   const calculateActualNetProfit = () => {
     if (!selectedProductionItem) return 0;
     const estimatedExchangeRate = 5.5; // Default ECR
     const estimatedShipping = (selectedProductionItem.estimatedTotalCost || 0) * 0.05; // Assume 5% of cost
-    
+
     // Difference in exchange rate and shipping
     const exchangeRateDiff = (actualExchangeRate - estimatedExchangeRate) * (selectedProductionItem.totalCost || 0) / estimatedExchangeRate;
     const shippingDiff = actualShippingCost - estimatedShipping;
-    
+
     const actualProfit = (selectedProductionItem.profit || 0) - exchangeRateDiff - shippingDiff;
     return actualProfit;
   };
-  
+
   // Save actual costing
   const saveActualCosting = () => {
     if (!selectedProductionItem) return;
-    
+
     const actualProfit = calculateActualNetProfit();
-    
+
     setMockQuotations(prev => prev.map(q => {
       if (q.id === selectedProductionItem.id) {
         return {
@@ -2217,14 +2039,14 @@ const Quotation = () => {
       }
       return q;
     }));
-    
+
     setSelectedProductionItem(prev => prev ? {
       ...prev,
       actualExchangeRate,
       actualShippingCost,
       actualNetProfit: actualProfit
     } : null);
-    
+
     toast.success("บันทึกต้นทุนจริงสำเร็จ");
   };
 
@@ -2255,8 +2077,8 @@ const Quotation = () => {
                 className="pl-10"
               />
             </div>
-            <Select 
-              value={productTypeFilter} 
+            <Select
+              value={productTypeFilter}
               onValueChange={(value: ProductType | "all") => setProductTypeFilter(value)}
             >
               <SelectTrigger className="w-full sm:w-[200px]">
@@ -2291,8 +2113,8 @@ const Quotation = () => {
                 >
                   <tab.icon className={`h-4 w-4 ${tab.color}`} />
                   <span className="hidden sm:inline">{tab.label}</span>
-                  <Badge 
-                    variant="secondary" 
+                  <Badge
+                    variant="secondary"
                     className={`ml-1 ${tab.bgColor} text-white text-xs px-2 py-0.5 min-w-[20px] flex items-center justify-center`}
                   >
                     {tab.count}
@@ -2303,8 +2125,8 @@ const Quotation = () => {
 
             {tabConfig.map((tab) => (
               <TabsContent key={tab.value} value={tab.value} className="mt-6">
-                <QuotationTable 
-                  quotations={getQuotationsByTab(tab.value)} 
+                <QuotationTable
+                  quotations={getQuotationsByTab(tab.value)}
                   tabValue={tab.value}
                 />
               </TabsContent>
@@ -2364,7 +2186,7 @@ const Quotation = () => {
                   {/* Product Specs Section */}
                   <div>
                     <h4 className="font-semibold text-sm text-foreground mb-4">รายละเอียดสินค้า</h4>
-                    
+
                     {/* Main Specs - 2 Column Grid */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
                       <div className="bg-muted/40 rounded-lg p-3">
@@ -2430,7 +2252,7 @@ const Quotation = () => {
                       <div className="bg-muted/40 rounded-lg p-3">
                         <p className="text-xs text-muted-foreground mb-2">รายละเอียดด้านหน้า</p>
                         <div className="flex gap-1.5 flex-wrap">
-                          {selectedQuotation.frontDetails?.split(", ").map((detail, idx) => (
+                          {(typeof selectedQuotation.frontDetails === 'string' ? selectedQuotation.frontDetails.split(", ") : []).map((detail, idx) => (
                             <Badge key={idx} variant="secondary" className="text-xs">{detail}</Badge>
                           )) || <span className="text-muted-foreground text-sm">-</span>}
                         </div>
@@ -2438,7 +2260,7 @@ const Quotation = () => {
                       <div className="bg-muted/40 rounded-lg p-3">
                         <p className="text-xs text-muted-foreground mb-2">รายละเอียดด้านหลัง</p>
                         <div className="flex gap-1.5 flex-wrap">
-                          {selectedQuotation.backDetails?.split(", ").map((detail, idx) => (
+                          {(typeof selectedQuotation.backDetails === 'string' ? selectedQuotation.backDetails.split(", ") : []).map((detail, idx) => (
                             <Badge key={idx} variant="secondary" className="text-xs">{detail}</Badge>
                           )) || <span className="text-muted-foreground text-sm">-</span>}
                         </div>
@@ -2476,7 +2298,7 @@ const Quotation = () => {
                   <Separator />
                   <div>
                     <p className="text-sm text-muted-foreground mb-3 font-medium">ข้อมูล Artwork</p>
-                    
+
                     {/* Artwork Image Preview */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div>
@@ -2495,7 +2317,7 @@ const Quotation = () => {
                               />
                             </button>
                             <p className="text-xs text-muted-foreground text-center mt-2">คลิกที่รูปเพื่อขยายเต็มจอ</p>
-                            
+
                             {/* Thumbnails */}
                             {selectedQuotation.artworkImages.length > 1 && (
                               <div className="flex gap-2 flex-wrap mt-3">
@@ -2503,11 +2325,10 @@ const Quotation = () => {
                                   <button
                                     key={index}
                                     onClick={() => setSelectedArtworkIndex(index)}
-                                    className={`w-16 h-16 rounded-lg overflow-hidden border-2 transition-all bg-muted p-1 ${
-                                      selectedArtworkIndex === index
-                                        ? "border-primary ring-2 ring-primary/20"
-                                        : "border-border hover:border-primary/50"
-                                    }`}
+                                    className={`w-16 h-16 rounded-lg overflow-hidden border-2 transition-all bg-muted p-1 ${selectedArtworkIndex === index
+                                      ? "border-primary ring-2 ring-primary/20"
+                                      : "border-border hover:border-primary/50"
+                                      }`}
                                   >
                                     <img
                                       src={sampleArtwork}
@@ -2527,7 +2348,7 @@ const Quotation = () => {
                           </div>
                         )}
                       </div>
-                      
+
                       {/* Design Files Section */}
                       <div>
                         <p className="text-sm text-muted-foreground mb-2">ไฟล์งานออกแบบ</p>
@@ -2550,8 +2371,8 @@ const Quotation = () => {
                                   </div>
                                 </div>
                               </div>
-                              <Button 
-                                variant="outline" 
+                              <Button
+                                variant="outline"
                                 size="sm"
                                 onClick={() => setIsUploadHistoryOpen(true)}
                                 className="gap-1.5"
@@ -2612,42 +2433,42 @@ const Quotation = () => {
 
               {/* Technical Summary Cards - Collapsible (Only for รอประเมิน tab) */}
               {selectedQuotation.status === "ยื่นคำขอประเมิน" && (
-              <Collapsible className="w-full">
-                <Card className="border-2 border-slate-200">
-                  <CollapsibleTrigger asChild>
-                    <CardHeader className="pb-3 cursor-pointer hover:bg-slate-50/50 transition-colors">
-                      <div className="flex items-center justify-between">
-                        <CardTitle className="flex items-center gap-2 text-slate-700 text-base">
-                          <FileText className="w-5 h-5" />
-                          Technical Summary (สำหรับส่งโรงงาน)
-                        </CardTitle>
-                        <ChevronDown className="w-5 h-5 text-slate-500 transition-transform duration-200 group-data-[state=open]:rotate-180" />
-                      </div>
-                    </CardHeader>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <CardContent className="pt-0">
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                        {/* Thai + English Mixed Summary */}
-                        <Card className="border-2 border-slate-300 bg-slate-50/50">
-                  <CardHeader className="pb-3">
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="flex items-center gap-2 text-slate-700 text-base">
-                        <FileText className="w-5 h-5" />
-                        Technical Summary (TH)
-                      </CardTitle>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="gap-2 hover:bg-slate-100"
-                        onClick={() => {
-                          const sizeFormatted = selectedQuotation.size.replace("ซม.", "cm.");
-                          const thicknessFormatted = selectedQuotation.thickness.replace("มิล", "mm.");
-                          const colorsFormatted = selectedQuotation.colors.join(", ");
-                          const lanyardFormatted = `${selectedQuotation.lanyardSize.replace("ซม.", "cm.")} (${selectedQuotation.lanyardPatterns} Designs)`;
-                          const quantityFormatted = `${selectedQuotation.quantity.toLocaleString()} pcs.`;
-                          
-                          const summaryText = `Product: Medal
+                <Collapsible className="w-full">
+                  <Card className="border-2 border-slate-200">
+                    <CollapsibleTrigger asChild>
+                      <CardHeader className="pb-3 cursor-pointer hover:bg-slate-50/50 transition-colors">
+                        <div className="flex items-center justify-between">
+                          <CardTitle className="flex items-center gap-2 text-slate-700 text-base">
+                            <FileText className="w-5 h-5" />
+                            Technical Summary (สำหรับส่งโรงงาน)
+                          </CardTitle>
+                          <ChevronDown className="w-5 h-5 text-slate-500 transition-transform duration-200 group-data-[state=open]:rotate-180" />
+                        </div>
+                      </CardHeader>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <CardContent className="pt-0">
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                          {/* Thai + English Mixed Summary */}
+                          <Card className="border-2 border-slate-300 bg-slate-50/50">
+                            <CardHeader className="pb-3">
+                              <div className="flex items-center justify-between">
+                                <CardTitle className="flex items-center gap-2 text-slate-700 text-base">
+                                  <FileText className="w-5 h-5" />
+                                  Technical Summary (TH)
+                                </CardTitle>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="gap-2 hover:bg-slate-100"
+                                  onClick={() => {
+                                    const sizeFormatted = selectedQuotation.size.replace("ซม.", "cm.");
+                                    const thicknessFormatted = selectedQuotation.thickness.replace("มิล", "mm.");
+                                    const colorsFormatted = selectedQuotation.colors.join(", ");
+                                    const lanyardFormatted = `${selectedQuotation.lanyardSize.replace("ซม.", "cm.")} (${selectedQuotation.lanyardPatterns} Designs)`;
+                                    const quantityFormatted = `${selectedQuotation.quantity.toLocaleString()} pcs.`;
+
+                                    const summaryText = `Product: Medal
 Material: ${selectedQuotation.material}
 Project: ${selectedQuotation.jobName}
 Plating: ${colorsFormatted}
@@ -2657,87 +2478,87 @@ Size: ${sizeFormatted}
 Thickness: ${thicknessFormatted}
 Lanyard: ${lanyardFormatted}
 Quantity: ${quantityFormatted}`;
-                          
-                          navigator.clipboard.writeText(summaryText);
-                          toast.success("คัดลอกข้อมูลเรียบร้อยแล้ว", {
-                            description: "สามารถนำไปวางใน LINE หรือแอปอื่นได้"
-                          });
-                        }}
-                      >
-                        <Copy className="w-4 h-4" />
-                        Copy
-                      </Button>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="font-mono text-sm bg-white rounded-lg p-4 border border-slate-200 whitespace-pre-line leading-relaxed">
-                      <p><span className="text-slate-500">Product:</span> Medal</p>
-                      <p><span className="text-slate-500">Material:</span> {selectedQuotation.material}</p>
-                      <p><span className="text-slate-500">Project:</span> {selectedQuotation.jobName}</p>
-                      <p><span className="text-slate-500">Plating:</span> {selectedQuotation.colors.join(", ")}</p>
-                      <p><span className="text-slate-500">Front:</span> {selectedQuotation.frontDetails || "-"}</p>
-                      <p><span className="text-slate-500">Back:</span> {selectedQuotation.backDetails || "-"}</p>
-                      <p><span className="text-slate-500">Size:</span> {selectedQuotation.size.replace("ซม.", "cm.")}</p>
-                      <p><span className="text-slate-500">Thickness:</span> {selectedQuotation.thickness.replace("มิล", "mm.")}</p>
-                      <p><span className="text-slate-500">Lanyard:</span> {selectedQuotation.lanyardSize.replace("ซม.", "cm.")} ({selectedQuotation.lanyardPatterns} Designs)</p>
-                      <p><span className="text-slate-500">Quantity:</span> {selectedQuotation.quantity.toLocaleString()} pcs.</p>
-                    </div>
-                  </CardContent>
-                </Card>
 
-                {/* Full English Summary */}
-                <Card className="border-2 border-blue-300 bg-blue-50/50">
-                  <CardHeader className="pb-3">
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="flex items-center gap-2 text-blue-700 text-base">
-                        <FileText className="w-5 h-5" />
-                        Technical Summary (EN)
-                      </CardTitle>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="gap-2 hover:bg-blue-100"
-                        onClick={() => {
-                          // Translate Thai details to English
-                          const translateFrontDetails = (details: string) => {
-                            const translations: Record<string, string> = {
-                              "พิมพ์โลโก้": "Logo Printing",
-                              "ลงสีสเปรย์": "Spray Paint",
-                              "ลงน้ำยาป้องกันสนิม": "Anti-Rust Coating",
-                              "พิมพ์ซิลค์สกรีน": "Silk Screen Printing",
-                              "แกะสลักข้อความ": "Text Engraving",
-                              "ขัดเงา": "Polishing",
-                              "แกะลึก": "Deep Engraving",
-                              "ปั๊มลาย": "Embossing"
-                            };
-                            return details.split(", ").map(item => translations[item.trim()] || item.trim()).join(", ");
-                          };
+                                    navigator.clipboard.writeText(summaryText);
+                                    toast.success("คัดลอกข้อมูลเรียบร้อยแล้ว", {
+                                      description: "สามารถนำไปวางใน LINE หรือแอปอื่นได้"
+                                    });
+                                  }}
+                                >
+                                  <Copy className="w-4 h-4" />
+                                  Copy
+                                </Button>
+                              </div>
+                            </CardHeader>
+                            <CardContent>
+                              <div className="font-mono text-sm bg-white rounded-lg p-4 border border-slate-200 whitespace-pre-line leading-relaxed">
+                                <p><span className="text-slate-500">Product:</span> Medal</p>
+                                <p><span className="text-slate-500">Material:</span> {selectedQuotation.material}</p>
+                                <p><span className="text-slate-500">Project:</span> {selectedQuotation.jobName}</p>
+                                <p><span className="text-slate-500">Plating:</span> {selectedQuotation.colors.join(", ")}</p>
+                                <p><span className="text-slate-500">Front:</span> {selectedQuotation.frontDetails || "-"}</p>
+                                <p><span className="text-slate-500">Back:</span> {selectedQuotation.backDetails || "-"}</p>
+                                <p><span className="text-slate-500">Size:</span> {selectedQuotation.size.replace("ซม.", "cm.")}</p>
+                                <p><span className="text-slate-500">Thickness:</span> {selectedQuotation.thickness.replace("มิล", "mm.")}</p>
+                                <p><span className="text-slate-500">Lanyard:</span> {selectedQuotation.lanyardSize.replace("ซม.", "cm.")} ({selectedQuotation.lanyardPatterns} Designs)</p>
+                                <p><span className="text-slate-500">Quantity:</span> {selectedQuotation.quantity.toLocaleString()} pcs.</p>
+                              </div>
+                            </CardContent>
+                          </Card>
 
-                          const translateColors = (colors: string[]) => {
-                            return colors.map(color => {
-                              if (color.includes("shinny gold")) return "Shiny Gold";
-                              if (color.includes("shinny silver")) return "Shiny Silver";
-                              if (color.includes("shinny copper")) return "Shiny Copper";
-                              return color;
-                            }).join(", ");
-                          };
+                          {/* Full English Summary */}
+                          <Card className="border-2 border-blue-300 bg-blue-50/50">
+                            <CardHeader className="pb-3">
+                              <div className="flex items-center justify-between">
+                                <CardTitle className="flex items-center gap-2 text-blue-700 text-base">
+                                  <FileText className="w-5 h-5" />
+                                  Technical Summary (EN)
+                                </CardTitle>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="gap-2 hover:bg-blue-100"
+                                  onClick={() => {
+                                    // Translate Thai details to English
+                                    const translateFrontDetails = (details: string) => {
+                                      const translations: Record<string, string> = {
+                                        "พิมพ์โลโก้": "Logo Printing",
+                                        "ลงสีสเปรย์": "Spray Paint",
+                                        "ลงน้ำยาป้องกันสนิม": "Anti-Rust Coating",
+                                        "พิมพ์ซิลค์สกรีน": "Silk Screen Printing",
+                                        "แกะสลักข้อความ": "Text Engraving",
+                                        "ขัดเงา": "Polishing",
+                                        "แกะลึก": "Deep Engraving",
+                                        "ปั๊มลาย": "Embossing"
+                                      };
+                                      return details.split(", ").map(item => translations[item.trim()] || item.trim()).join(", ");
+                                    };
 
-                          const translateMaterial = (material: string) => {
-                            if (material.includes("ซิงค์อัลลอย") || material.includes("Zinc Alloy")) return "Zinc Alloy";
-                            if (material.includes("ทองเหลือง")) return "Brass";
-                            return material;
-                          };
+                                    const translateColors = (colors: string[]) => {
+                                      return colors.map(color => {
+                                        if (color.includes("shinny gold")) return "Shiny Gold";
+                                        if (color.includes("shinny silver")) return "Shiny Silver";
+                                        if (color.includes("shinny copper")) return "Shiny Copper";
+                                        return color;
+                                      }).join(", ");
+                                    };
 
-                          const sizeFormatted = selectedQuotation.size.replace("ซม.", "cm.");
-                          const thicknessFormatted = selectedQuotation.thickness.replace("มิล", "mm.");
-                          const colorsFormatted = translateColors(selectedQuotation.colors);
-                          const lanyardFormatted = `${selectedQuotation.lanyardSize.replace("ซม.", "cm.")} (${selectedQuotation.lanyardPatterns} Designs)`;
-                          const quantityFormatted = `${selectedQuotation.quantity.toLocaleString()} pcs.`;
-                          const frontEn = translateFrontDetails(selectedQuotation.frontDetails || "-");
-                          const backEn = translateFrontDetails(selectedQuotation.backDetails || "-");
-                          const materialEn = translateMaterial(selectedQuotation.material);
-                          
-                          const summaryText = `Product: Medal
+                                    const translateMaterial = (material: string) => {
+                                      if (material.includes("ซิงค์อัลลอย") || material.includes("Zinc Alloy")) return "Zinc Alloy";
+                                      if (material.includes("ทองเหลือง")) return "Brass";
+                                      return material;
+                                    };
+
+                                    const sizeFormatted = selectedQuotation.size.replace("ซม.", "cm.");
+                                    const thicknessFormatted = selectedQuotation.thickness.replace("มิล", "mm.");
+                                    const colorsFormatted = translateColors(selectedQuotation.colors);
+                                    const lanyardFormatted = `${selectedQuotation.lanyardSize.replace("ซม.", "cm.")} (${selectedQuotation.lanyardPatterns} Designs)`;
+                                    const quantityFormatted = `${selectedQuotation.quantity.toLocaleString()} pcs.`;
+                                    const frontEn = translateFrontDetails(selectedQuotation.frontDetails || "-");
+                                    const backEn = translateFrontDetails(selectedQuotation.backDetails || "-");
+                                    const materialEn = translateMaterial(selectedQuotation.material);
+
+                                    const summaryText = `Product: Medal
 Material: ${materialEn}
 Project: ${selectedQuotation.jobName}
 Plating: ${colorsFormatted}
@@ -2747,536 +2568,536 @@ Size: ${sizeFormatted}
 Thickness: ${thicknessFormatted}
 Lanyard: ${lanyardFormatted}
 Quantity: ${quantityFormatted}`;
-                          
-                          navigator.clipboard.writeText(summaryText);
-                          toast.success("Copied to clipboard", {
-                            description: "Ready to paste in LINE or other apps"
-                          });
-                        }}
-                      >
-                        <Copy className="w-4 h-4" />
-                        Copy
-                      </Button>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="font-mono text-sm bg-white rounded-lg p-4 border border-blue-200 whitespace-pre-line leading-relaxed">
-                      {(() => {
-                        const translateFrontDetails = (details: string) => {
-                          const translations: Record<string, string> = {
-                            "พิมพ์โลโก้": "Logo Printing",
-                            "ลงสีสเปรย์": "Spray Paint",
-                            "ลงน้ำยาป้องกันสนิม": "Anti-Rust Coating",
-                            "พิมพ์ซิลค์สกรีน": "Silk Screen Printing",
-                            "แกะสลักข้อความ": "Text Engraving",
-                            "ขัดเงา": "Polishing",
-                            "แกะลึก": "Deep Engraving",
-                            "ปั๊มลาย": "Embossing"
-                          };
-                          return details.split(", ").map(item => translations[item.trim()] || item.trim()).join(", ");
-                        };
 
-                        const translateColors = (colors: string[]) => {
-                          return colors.map(color => {
-                            if (color.includes("shinny gold")) return "Shiny Gold";
-                            if (color.includes("shinny silver")) return "Shiny Silver";
-                            if (color.includes("shinny copper")) return "Shiny Copper";
-                            return color;
-                          }).join(", ");
-                        };
+                                    navigator.clipboard.writeText(summaryText);
+                                    toast.success("Copied to clipboard", {
+                                      description: "Ready to paste in LINE or other apps"
+                                    });
+                                  }}
+                                >
+                                  <Copy className="w-4 h-4" />
+                                  Copy
+                                </Button>
+                              </div>
+                            </CardHeader>
+                            <CardContent>
+                              <div className="font-mono text-sm bg-white rounded-lg p-4 border border-blue-200 whitespace-pre-line leading-relaxed">
+                                {(() => {
+                                  const translateFrontDetails = (details: string) => {
+                                    const translations: Record<string, string> = {
+                                      "พิมพ์โลโก้": "Logo Printing",
+                                      "ลงสีสเปรย์": "Spray Paint",
+                                      "ลงน้ำยาป้องกันสนิม": "Anti-Rust Coating",
+                                      "พิมพ์ซิลค์สกรีน": "Silk Screen Printing",
+                                      "แกะสลักข้อความ": "Text Engraving",
+                                      "ขัดเงา": "Polishing",
+                                      "แกะลึก": "Deep Engraving",
+                                      "ปั๊มลาย": "Embossing"
+                                    };
+                                    return details.split(", ").map(item => translations[item.trim()] || item.trim()).join(", ");
+                                  };
 
-                        const translateMaterial = (material: string) => {
-                          if (material.includes("ซิงค์อัลลอย") || material.includes("Zinc Alloy")) return "Zinc Alloy";
-                          if (material.includes("ทองเหลือง")) return "Brass";
-                          return material;
-                        };
+                                  const translateColors = (colors: string[]) => {
+                                    return colors.map(color => {
+                                      if (color.includes("shinny gold")) return "Shiny Gold";
+                                      if (color.includes("shinny silver")) return "Shiny Silver";
+                                      if (color.includes("shinny copper")) return "Shiny Copper";
+                                      return color;
+                                    }).join(", ");
+                                  };
 
-                        return (
-                          <>
-                            <p><span className="text-blue-500">Product:</span> Medal</p>
-                            <p><span className="text-blue-500">Material:</span> {translateMaterial(selectedQuotation.material)}</p>
-                            <p><span className="text-blue-500">Project:</span> {selectedQuotation.jobName}</p>
-                            <p><span className="text-blue-500">Plating:</span> {translateColors(selectedQuotation.colors)}</p>
-                            <p><span className="text-blue-500">Front:</span> {translateFrontDetails(selectedQuotation.frontDetails || "-")}</p>
-                            <p><span className="text-blue-500">Back:</span> {translateFrontDetails(selectedQuotation.backDetails || "-")}</p>
-                            <p><span className="text-blue-500">Size:</span> {selectedQuotation.size.replace("ซม.", "cm.")}</p>
-                            <p><span className="text-blue-500">Thickness:</span> {selectedQuotation.thickness.replace("มิล", "mm.")}</p>
-                            <p><span className="text-blue-500">Lanyard:</span> {selectedQuotation.lanyardSize.replace("ซม.", "cm.")} ({selectedQuotation.lanyardPatterns} Designs)</p>
-                            <p><span className="text-blue-500">Quantity:</span> {selectedQuotation.quantity.toLocaleString()} pcs.</p>
-                          </>
-                        );
-                      })()}
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-                    </CardContent>
-                  </CollapsibleContent>
-                </Card>
-              </Collapsible>
+                                  const translateMaterial = (material: string) => {
+                                    if (material.includes("ซิงค์อัลลอย") || material.includes("Zinc Alloy")) return "Zinc Alloy";
+                                    if (material.includes("ทองเหลือง")) return "Brass";
+                                    return material;
+                                  };
+
+                                  return (
+                                    <>
+                                      <p><span className="text-blue-500">Product:</span> Medal</p>
+                                      <p><span className="text-blue-500">Material:</span> {translateMaterial(selectedQuotation.material)}</p>
+                                      <p><span className="text-blue-500">Project:</span> {selectedQuotation.jobName}</p>
+                                      <p><span className="text-blue-500">Plating:</span> {translateColors(selectedQuotation.colors)}</p>
+                                      <p><span className="text-blue-500">Front:</span> {translateFrontDetails(selectedQuotation.frontDetails || "-")}</p>
+                                      <p><span className="text-blue-500">Back:</span> {translateFrontDetails(selectedQuotation.backDetails || "-")}</p>
+                                      <p><span className="text-blue-500">Size:</span> {selectedQuotation.size.replace("ซม.", "cm.")}</p>
+                                      <p><span className="text-blue-500">Thickness:</span> {selectedQuotation.thickness.replace("มิล", "mm.")}</p>
+                                      <p><span className="text-blue-500">Lanyard:</span> {selectedQuotation.lanyardSize.replace("ซม.", "cm.")} ({selectedQuotation.lanyardPatterns} Designs)</p>
+                                      <p><span className="text-blue-500">Quantity:</span> {selectedQuotation.quantity.toLocaleString()} pcs.</p>
+                                    </>
+                                  );
+                                })()}
+                              </div>
+                            </CardContent>
+                          </Card>
+                        </div>
+                      </CardContent>
+                    </CollapsibleContent>
+                  </Card>
+                </Collapsible>
               )}
 
               {/* Section 2: Action Bar - Hide when estimation started */}
               {!estimationStarted && (
-              <Card className="border-2 border-amber-200 bg-amber-50/30">
-                <CardContent className="py-4">
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-2">
-                      <AlertTriangle className="w-5 h-5 text-amber-600" />
-                      <span className="font-medium text-amber-700">การจัดการสถานะ</span>
+                <Card className="border-2 border-amber-200 bg-amber-50/30">
+                  <CardContent className="py-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="w-5 h-5 text-amber-600" />
+                        <span className="font-medium text-amber-700">การจัดการสถานะ</span>
+                      </div>
+                      <div className="flex gap-3">
+                        <Button
+                          variant="destructive"
+                          onClick={() => setShowRejectDialog(true)}
+                          className="gap-2"
+                        >
+                          <RotateCcw className="w-4 h-4" />
+                          ข้อมูลไม่ครบ / ตีกลับ
+                        </Button>
+                        <Button
+                          onClick={() => handleAcceptJob()}
+                          className="gap-2 bg-green-600 hover:bg-green-700"
+                        >
+                          <CheckCircle className="w-4 h-4" />
+                          รับงานเพื่อประเมินราคา
+                        </Button>
+                      </div>
                     </div>
-                    <div className="flex gap-3">
-                      <Button
-                        variant="destructive"
-                        onClick={() => setShowRejectDialog(true)}
-                        className="gap-2"
-                      >
-                        <RotateCcw className="w-4 h-4" />
-                        ข้อมูลไม่ครบ / ตีกลับ
-                      </Button>
-                      <Button
-                        onClick={() => handleAcceptJob()}
-                        className="gap-2 bg-green-600 hover:bg-green-700"
-                      >
-                        <CheckCircle className="w-4 h-4" />
-                        รับงานเพื่อประเมินราคา
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
               )}
 
               {/* Section 3: Multi-Supplier Estimation Table - Only show after clicking "เริ่มการประเมินราคา" */}
               {estimationStarted && (
-              <Card>
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <CardTitle className="flex items-center gap-2">
-                        <Calculator className="w-5 h-5" />
-                        ตารางประเมินราคา
-                        {!isReadOnlyMode && selectedQuotation?.status === "อยู่ระหว่างการประเมินราคา" && (
-                          <Badge className="bg-orange-100 text-orange-700 border-orange-300 ml-2">
-                            อยู่ระหว่างการประเมินราคา
-                          </Badge>
-                        )}
-                        {!isReadOnlyMode && selectedQuotation?.status === "อยู่ระหว่างการประเมินราคา" && (selectedQuotation?.rejectionLogs?.length || 0) > 0 && (
-                          <Badge className="bg-red-100 text-red-700 border-red-300 ml-2">
-                            Revision #{selectedQuotation.rejectionLogs.length}
-                          </Badge>
-                        )}
-                        {isReadOnlyMode && selectedQuotation?.status === "เสนอราคา" && (
-                          <Badge className="bg-purple-100 text-purple-700 border-purple-300 ml-2">
-                            เสนอราคา
-                          </Badge>
-                        )}
-                        {isReadOnlyMode && selectedQuotation?.status === "เสนอลูกค้า" && (
-                          <Badge className="bg-amber-100 text-amber-700 border-amber-300 ml-2">
-                            เสนอลูกค้า
-                          </Badge>
-                        )}
-                      </CardTitle>
-                      <p className="text-sm text-muted-foreground mt-2">
-                        {isReadOnlyMode && selectedQuotation?.status === "เสนอลูกค้า"
-                          ? "ข้อมูลการประเมินราคาที่เสร็จสิ้นแล้ว - โรงงานที่ได้รับเลือกจะแสดง Badge 'ผู้ชนะ'"
-                          : isReadOnlyMode 
-                            ? "ข้อมูลการประเมินราคาที่บันทึกไว้ - กดปุ่มแก้ไขเพื่อแก้ไขข้อมูล"
-                            : selectedQuotation?.status === "อยู่ระหว่างการประเมินราคา" && (selectedQuotation?.rejectionLogs?.length || 0) > 0
-                              ? "แก้ไขราคาตามที่ฝ่ายขายขอ แล้วกด 'ส่งราคาแก้ไข'"
-                              : "เลือกโรงงานที่ต้องการเปรียบเทียบ กรอกราคาแต่ละโรงงาน"}
-                      </p>
-                    </div>
-                    {isReadOnlyMode && selectedQuotation?.status !== "เสนอลูกค้า" && (
-                      <Button
-                        onClick={handleEnableEditing}
-                        className="gap-2 bg-amber-500 hover:bg-amber-600"
-                      >
-                        <Pencil className="w-4 h-4" />
-                        แก้ไขข้อมูล
-                      </Button>
-                    )}
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  {/* Factory Multi-Select Dropdown - Hide in read-only mode */}
-                  {!isReadOnlyMode && (
-                  <div className="p-4 bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg border-2 border-purple-200">
-                    <div className="flex items-center gap-2 mb-4">
-                      <Plus className="w-5 h-5 text-purple-600" />
-                      <span className="font-semibold text-purple-700">เลือกโรงงาน (Multi-Select)</span>
-                    </div>
-                    
-                    <Popover open={factorySelectOpen} onOpenChange={setFactorySelectOpen}>
-                      <PopoverTrigger asChild>
-                        <Button variant="outline" className="w-full justify-between min-h-[40px] h-auto py-2">
-                          <span className="text-muted-foreground">
-                            {selectedFactories.length === 0 
-                              ? "เลือกโรงงานที่ต้องการเปรียบเทียบ..." 
-                              : `เลือกแล้ว ${selectedFactories.length} โรงงาน`}
-                          </span>
-                          <Plus className="w-4 h-4 ml-2" />
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-[400px] p-0 overflow-hidden" align="start">
-                        <div className="p-3 border-b bg-muted/50 space-y-2">
-                          <p className="font-medium text-sm">เลือกโรงงาน (18 โรงงาน)</p>
-                          <div className="relative">
-                            <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                            <Input 
-                              placeholder="ค้นหาโรงงาน..."
-                              value={factorySearchQuery}
-                              onChange={(e) => setFactorySearchQuery(e.target.value)}
-                              className="pl-8 h-9"
-                            />
-                          </div>
-                          <p className="text-xs text-muted-foreground">เลือกได้หลายโรงงานพร้อมกัน</p>
-                        </div>
-                        <div className="max-h-[280px] overflow-y-auto overscroll-contain p-2 space-y-1">
-                          {factoryOptions
-                            .filter(factory => 
-                              factory.label.toLowerCase().includes(factorySearchQuery.toLowerCase()) ||
-                              factory.code.toLowerCase().includes(factorySearchQuery.toLowerCase())
-                            )
-                            .map((factory) => (
-                            <div 
-                              key={factory.value}
-                              className="flex items-center space-x-3 p-2 rounded-md hover:bg-muted/50 cursor-pointer"
-                              onClick={() => handleFactoryToggle(factory.value, !selectedFactories.includes(factory.value))}
-                            >
-                              <Checkbox 
-                                checked={selectedFactories.includes(factory.value)}
-                                onCheckedChange={(checked) => handleFactoryToggle(factory.value, checked as boolean)}
-                              />
-                              <div className="flex items-center gap-2 flex-1">
-                                <span className="text-sm font-medium">{factory.label}</span>
-                                <Badge variant="outline" className="text-xs">{factory.code}</Badge>
-                              </div>
-                            </div>
-                          ))}
-                          {factoryOptions.filter(factory => 
-                            factory.label.toLowerCase().includes(factorySearchQuery.toLowerCase()) ||
-                            factory.code.toLowerCase().includes(factorySearchQuery.toLowerCase())
-                          ).length === 0 && (
-                            <div className="p-4 text-center text-muted-foreground text-sm">
-                              ไม่พบโรงงานที่ค้นหา
-                            </div>
-                          )}
-                        </div>
-                      </PopoverContent>
-                    </Popover>
-                    
-                    {/* Selected factories display */}
-                    {selectedFactories.length > 0 && (
-                      <div className="flex flex-wrap gap-2 mt-3">
-                        {selectedFactories.map(factoryValue => {
-                          const factory = factoryOptions.find(f => f.value === factoryValue);
-                          return (
-                            <Badge 
-                              key={factoryValue} 
-                              variant="secondary" 
-                              className="gap-1 bg-purple-100 text-purple-700 hover:bg-purple-200"
-                            >
-                              {factory?.label}
-                              <X 
-                                className="w-3 h-3 cursor-pointer hover:text-red-600" 
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleFactoryToggle(factoryValue, false);
-                                }}
-                              />
+                <Card>
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <CardTitle className="flex items-center gap-2">
+                          <Calculator className="w-5 h-5" />
+                          ตารางประเมินราคา
+                          {!isReadOnlyMode && selectedQuotation?.status === "อยู่ระหว่างการประเมินราคา" && (
+                            <Badge className="bg-orange-100 text-orange-700 border-orange-300 ml-2">
+                              อยู่ระหว่างการประเมินราคา
                             </Badge>
-                          );
-                        })}
+                          )}
+                          {!isReadOnlyMode && selectedQuotation?.status === "อยู่ระหว่างการประเมินราคา" && (selectedQuotation?.rejectionLogs?.length || 0) > 0 && (
+                            <Badge className="bg-red-100 text-red-700 border-red-300 ml-2">
+                              Revision #{selectedQuotation.rejectionLogs.length}
+                            </Badge>
+                          )}
+                          {isReadOnlyMode && selectedQuotation?.status === "เสนอราคา" && (
+                            <Badge className="bg-purple-100 text-purple-700 border-purple-300 ml-2">
+                              เสนอราคา
+                            </Badge>
+                          )}
+                          {isReadOnlyMode && selectedQuotation?.status === "เสนอลูกค้า" && (
+                            <Badge className="bg-amber-100 text-amber-700 border-amber-300 ml-2">
+                              เสนอลูกค้า
+                            </Badge>
+                          )}
+                        </CardTitle>
+                        <p className="text-sm text-muted-foreground mt-2">
+                          {isReadOnlyMode && selectedQuotation?.status === "เสนอลูกค้า"
+                            ? "ข้อมูลการประเมินราคาที่เสร็จสิ้นแล้ว - โรงงานที่ได้รับเลือกจะแสดง Badge 'ผู้ชนะ'"
+                            : isReadOnlyMode
+                              ? "ข้อมูลการประเมินราคาที่บันทึกไว้ - กดปุ่มแก้ไขเพื่อแก้ไขข้อมูล"
+                              : selectedQuotation?.status === "อยู่ระหว่างการประเมินราคา" && (selectedQuotation?.rejectionLogs?.length || 0) > 0
+                                ? "แก้ไขราคาตามที่ฝ่ายขายขอ แล้วกด 'ส่งราคาแก้ไข'"
+                                : "เลือกโรงงานที่ต้องการเปรียบเทียบ กรอกราคาแต่ละโรงงาน"}
+                        </p>
+                      </div>
+                      {isReadOnlyMode && selectedQuotation?.status !== "เสนอลูกค้า" && (
+                        <Button
+                          onClick={handleEnableEditing}
+                          className="gap-2 bg-amber-500 hover:bg-amber-600"
+                        >
+                          <Pencil className="w-4 h-4" />
+                          แก้ไขข้อมูล
+                        </Button>
+                      )}
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    {/* Factory Multi-Select Dropdown - Hide in read-only mode */}
+                    {!isReadOnlyMode && (
+                      <div className="p-4 bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg border-2 border-purple-200">
+                        <div className="flex items-center gap-2 mb-4">
+                          <Plus className="w-5 h-5 text-purple-600" />
+                          <span className="font-semibold text-purple-700">เลือกโรงงาน (Multi-Select)</span>
+                        </div>
+
+                        <Popover open={factorySelectOpen} onOpenChange={setFactorySelectOpen}>
+                          <PopoverTrigger asChild>
+                            <Button variant="outline" className="w-full justify-between min-h-[40px] h-auto py-2">
+                              <span className="text-muted-foreground">
+                                {selectedFactories.length === 0
+                                  ? "เลือกโรงงานที่ต้องการเปรียบเทียบ..."
+                                  : `เลือกแล้ว ${selectedFactories.length} โรงงาน`}
+                              </span>
+                              <Plus className="w-4 h-4 ml-2" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-[400px] p-0 overflow-hidden" align="start">
+                            <div className="p-3 border-b bg-muted/50 space-y-2">
+                              <p className="font-medium text-sm">เลือกโรงงาน (18 โรงงาน)</p>
+                              <div className="relative">
+                                <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                                <Input
+                                  placeholder="ค้นหาโรงงาน..."
+                                  value={factorySearchQuery}
+                                  onChange={(e) => setFactorySearchQuery(e.target.value)}
+                                  className="pl-8 h-9"
+                                />
+                              </div>
+                              <p className="text-xs text-muted-foreground">เลือกได้หลายโรงงานพร้อมกัน</p>
+                            </div>
+                            <div className="max-h-[280px] overflow-y-auto overscroll-contain p-2 space-y-1">
+                              {factoryOptions
+                                .filter(factory =>
+                                  factory.label.toLowerCase().includes(factorySearchQuery.toLowerCase()) ||
+                                  factory.code.toLowerCase().includes(factorySearchQuery.toLowerCase())
+                                )
+                                .map((factory) => (
+                                  <div
+                                    key={factory.value}
+                                    className="flex items-center space-x-3 p-2 rounded-md hover:bg-muted/50 cursor-pointer"
+                                    onClick={() => handleFactoryToggle(factory.value, !selectedFactories.includes(factory.value))}
+                                  >
+                                    <Checkbox
+                                      checked={selectedFactories.includes(factory.value)}
+                                      onCheckedChange={(checked) => handleFactoryToggle(factory.value, checked as boolean)}
+                                    />
+                                    <div className="flex items-center gap-2 flex-1">
+                                      <span className="text-sm font-medium">{factory.label}</span>
+                                      <Badge variant="outline" className="text-xs">{factory.code}</Badge>
+                                    </div>
+                                  </div>
+                                ))}
+                              {factoryOptions.filter(factory =>
+                                factory.label.toLowerCase().includes(factorySearchQuery.toLowerCase()) ||
+                                factory.code.toLowerCase().includes(factorySearchQuery.toLowerCase())
+                              ).length === 0 && (
+                                  <div className="p-4 text-center text-muted-foreground text-sm">
+                                    ไม่พบโรงงานที่ค้นหา
+                                  </div>
+                                )}
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+
+                        {/* Selected factories display */}
+                        {selectedFactories.length > 0 && (
+                          <div className="flex flex-wrap gap-2 mt-3">
+                            {selectedFactories.map(factoryValue => {
+                              const factory = factoryOptions.find(f => f.value === factoryValue);
+                              return (
+                                <Badge
+                                  key={factoryValue}
+                                  variant="secondary"
+                                  className="gap-1 bg-purple-100 text-purple-700 hover:bg-purple-200"
+                                >
+                                  {factory?.label}
+                                  <X
+                                    className="w-3 h-3 cursor-pointer hover:text-red-600"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleFactoryToggle(factoryValue, false);
+                                    }}
+                                  />
+                                </Badge>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     )}
-                  </div>
-                  )}
 
-                  {/* Global Header - ข้อมูลต้นทุน */}
-                  <div className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border-2 border-blue-200">
-                    <div className="flex items-center gap-2 mb-4">
-                      <Settings className="w-5 h-5 text-blue-600" />
-                      <span className="font-semibold text-blue-700">ข้อมูลต้นทุน</span>
+                    {/* Global Header - ข้อมูลต้นทุน */}
+                    <div className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border-2 border-blue-200">
+                      <div className="flex items-center gap-2 mb-4">
+                        <Settings className="w-5 h-5 text-blue-600" />
+                        <span className="font-semibold text-blue-700">ข้อมูลต้นทุน</span>
+                      </div>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div>
+                          <Label className="text-xs text-muted-foreground">ค่าขนส่ง (RMB)</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={globalHeader.shippingCostRMB || ""}
+                            onChange={(e) => updateGlobalHeader("shippingCostRMB", parseFloat(e.target.value) || 0)}
+                            className="mt-1 text-center font-medium"
+                            placeholder="0.00"
+                            disabled={isReadOnlyMode}
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground">อัตราแลกเปลี่ยน</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={globalHeader.exchangeRate || ""}
+                            onChange={(e) => updateGlobalHeader("exchangeRate", parseFloat(e.target.value) || 0)}
+                            className="mt-1 text-center font-medium"
+                            placeholder="5.5"
+                            disabled={isReadOnlyMode}
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground">VAT (%)</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={globalHeader.vat || ""}
+                            onChange={(e) => updateGlobalHeader("vat", parseFloat(e.target.value) || 0)}
+                            className="mt-1 text-center font-medium"
+                            placeholder="7"
+                            disabled={isReadOnlyMode}
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground">จำนวน (ชิ้น)</Label>
+                          <Input
+                            type="number"
+                            value={globalHeader.quantity || ""}
+                            onChange={(e) => updateGlobalHeader("quantity", parseInt(e.target.value) || 0)}
+                            className="mt-1 text-center font-medium bg-green-50 border-green-200"
+                            placeholder="0"
+                            disabled={isReadOnlyMode}
+                          />
+                        </div>
+                      </div>
                     </div>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <div>
-                        <Label className="text-xs text-muted-foreground">ค่าขนส่ง (RMB)</Label>
-                        <Input 
-                          type="number" 
-                          step="0.01"
-                          value={globalHeader.shippingCostRMB || ""}
-                          onChange={(e) => updateGlobalHeader("shippingCostRMB", parseFloat(e.target.value) || 0)}
-                          className="mt-1 text-center font-medium"
-                          placeholder="0.00"
-                          disabled={isReadOnlyMode}
-                        />
-                      </div>
-                      <div>
-                        <Label className="text-xs text-muted-foreground">อัตราแลกเปลี่ยน</Label>
-                        <Input 
-                          type="number" 
-                          step="0.01"
-                          value={globalHeader.exchangeRate || ""}
-                          onChange={(e) => updateGlobalHeader("exchangeRate", parseFloat(e.target.value) || 0)}
-                          className="mt-1 text-center font-medium"
-                          placeholder="5.5"
-                          disabled={isReadOnlyMode}
-                        />
-                      </div>
-                      <div>
-                        <Label className="text-xs text-muted-foreground">VAT (%)</Label>
-                        <Input 
-                          type="number" 
-                          step="0.01"
-                          value={globalHeader.vat || ""}
-                          onChange={(e) => updateGlobalHeader("vat", parseFloat(e.target.value) || 0)}
-                          className="mt-1 text-center font-medium"
-                          placeholder="7"
-                          disabled={isReadOnlyMode}
-                        />
-                      </div>
-                      <div>
-                        <Label className="text-xs text-muted-foreground">จำนวน (ชิ้น)</Label>
-                        <Input 
-                          type="number" 
-                          value={globalHeader.quantity || ""}
-                          onChange={(e) => updateGlobalHeader("quantity", parseInt(e.target.value) || 0)}
-                          className="mt-1 text-center font-medium bg-green-50 border-green-200"
-                          placeholder="0"
-                          disabled={isReadOnlyMode}
-                        />
-                      </div>
-                    </div>
-                  </div>
 
-                  {/* ราคาขาย Section */}
-                  <div className="p-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border-2 border-green-200">
-                    <div className="flex items-center gap-2 mb-4">
-                      <Settings className="w-5 h-5 text-green-600" />
-                      <span className="font-semibold text-green-700">ราคาขาย</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Label className="text-xs text-green-700">ชิ้นงาน ราคาขาย/หน่วย (THB) <span className="text-red-500">*</span></Label>
-                        <Input 
-                          type="number" 
-                          step="0.01"
-                          value={globalHeader.unitSellingPriceTHB || ""}
-                          onChange={(e) => updateGlobalHeader("unitSellingPriceTHB", parseFloat(e.target.value) || 0)}
-                          className="mt-1 text-center font-medium"
-                          placeholder="0.00"
-                          disabled={isReadOnlyMode}
-                        />
+                    {/* ราคาขาย Section */}
+                    <div className="p-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border-2 border-green-200">
+                      <div className="flex items-center gap-2 mb-4">
+                        <Settings className="w-5 h-5 text-green-600" />
+                        <span className="font-semibold text-green-700">ราคาขาย</span>
                       </div>
-                      <div>
-                        <Label className="text-xs text-green-700">สายห้อย ราคาขาย/หน่วย (THB)</Label>
-                        <Input 
-                          type="number" 
-                          step="0.01"
-                          value={globalHeader.lanyardSellingPriceTHB || ""}
-                          onChange={(e) => updateGlobalHeader("lanyardSellingPriceTHB", parseFloat(e.target.value) || 0)}
-                          className="mt-1 text-center font-medium"
-                          placeholder="0.00"
-                          disabled={isReadOnlyMode}
-                        />
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label className="text-xs text-green-700">ชิ้นงาน ราคาขาย/หน่วย (THB) <span className="text-red-500">*</span></Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={globalHeader.unitSellingPriceTHB || ""}
+                            onChange={(e) => updateGlobalHeader("unitSellingPriceTHB", parseFloat(e.target.value) || 0)}
+                            className="mt-1 text-center font-medium"
+                            placeholder="0.00"
+                            disabled={isReadOnlyMode}
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs text-green-700">สายห้อย ราคาขาย/หน่วย (THB)</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={globalHeader.lanyardSellingPriceTHB || ""}
+                            onChange={(e) => updateGlobalHeader("lanyardSellingPriceTHB", parseFloat(e.target.value) || 0)}
+                            className="mt-1 text-center font-medium"
+                            placeholder="0.00"
+                            disabled={isReadOnlyMode}
+                          />
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  
-                  {supplierEntries.length === 0 ? (
-                    <div className="text-center py-12 text-muted-foreground">
-                      <Calculator className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                      <p>ยังไม่มีข้อมูลโรงงาน</p>
-                      <p className="text-sm">เลือกโรงงานจาก Dropdown ด้านบนเพื่อเริ่มกรอกราคา</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      <div className="overflow-x-auto">
-                        <Table>
-                          <TableHeader>
-                            <TableRow className="bg-muted/50">
-                              {/* Show selection column for อยู่ระหว่างประเมิน, เสนอราคา, or เสนอลูกค้า */}
-                              {(selectedQuotation?.status === "อยู่ระหว่างการประเมินราคา" || selectedQuotation?.status === "เสนอราคา" || selectedQuotation?.status === "เสนอลูกค้า") && (
-                                <TableHead className="w-[80px] text-center bg-green-50 font-bold">เลือก</TableHead>
-                              )}
-                              <TableHead className="min-w-[180px]">โรงงาน & รหัสงาน</TableHead>
-                              <TableHead className="min-w-[200px] text-center bg-orange-50">
-                                <div className="text-orange-700 font-bold">ต้นทุนหยวน</div>
-                                <div className="text-xs font-normal text-orange-600">(ทุน/หน่วย, ค่าโมล)</div>
-                              </TableHead>
-                              <TableHead className="w-[100px] text-center bg-cyan-50 font-bold">ทุนรวม<br/><span className="text-xs font-normal">(THB)</span></TableHead>
-                              <TableHead className="w-[100px] text-center bg-green-50 font-bold">ราคาขายรวม<br/><span className="text-xs font-normal">(THB)</span></TableHead>
-                              <TableHead className="w-[100px] text-center bg-amber-50 font-bold">กำไร<br/><span className="text-xs font-normal">(THB)</span></TableHead>
-                              <TableHead className="w-[100px] text-center bg-purple-50 font-bold">ค่าโมล(เพิ่มเติม)<br/><span className="text-xs font-normal">(THB)</span></TableHead>
-                              <TableHead className="min-w-[130px] text-center">หลักฐาน</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {supplierEntries.map((entry, index) => (
-                              <TableRow 
-                                key={entry.id}
-                                className={
-                                  entry.isWinner && (selectedQuotation?.status === "เสนอลูกค้า" || selectedQuotation?.status === "เสนอราคา")
-                                    ? "bg-green-50/70 border-l-4 border-l-green-500" 
-                                    : entry.isWinner && selectedQuotation?.status === "อยู่ระหว่างการประเมินราคา"
-                                      ? "bg-green-50/50 border-l-4 border-l-green-400"
-                                      : ""
-                                }
-                              >
-                                {/* Selection column for อยู่ระหว่างประเมิน, เสนอราคา, or เสนอลูกค้า */}
+
+                    {supplierEntries.length === 0 ? (
+                      <div className="text-center py-12 text-muted-foreground">
+                        <Calculator className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                        <p>ยังไม่มีข้อมูลโรงงาน</p>
+                        <p className="text-sm">เลือกโรงงานจาก Dropdown ด้านบนเพื่อเริ่มกรอกราคา</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="overflow-x-auto">
+                          <Table>
+                            <TableHeader>
+                              <TableRow className="bg-muted/50">
+                                {/* Show selection column for อยู่ระหว่างประเมิน, เสนอราคา, or เสนอลูกค้า */}
                                 {(selectedQuotation?.status === "อยู่ระหว่างการประเมินราคา" || selectedQuotation?.status === "เสนอราคา" || selectedQuotation?.status === "เสนอลูกค้า") && (
-                                  <TableCell className="text-center bg-green-50/30">
-                                    <Button
-                                      variant={entry.isWinner ? "default" : "outline"}
-                                      size="sm"
-                                      className={`gap-1 text-xs ${entry.isWinner ? "bg-green-600 hover:bg-green-700" : "hover:bg-green-50 hover:border-green-400"}`}
-                                      onClick={() => handleSelectWinnerReadOnly(entry.id)}
-                                    >
-                                      เลือก
-                                    </Button>
-                                  </TableCell>
+                                  <TableHead className="w-[80px] text-center bg-green-50 font-bold">เลือก</TableHead>
                                 )}
-                                <TableCell>
-                                  <div className="space-y-1">
-                                    <div className="flex items-center gap-2">
-                                      <span className="font-medium">{entry.factoryLabel || "ยังไม่ได้เลือก"}</span>
-                                      {entry.isWinner && (selectedQuotation?.status === "อยู่ระหว่างการประเมินราคา" || selectedQuotation?.status === "เสนอลูกค้า" || selectedQuotation?.status === "เสนอราคา") && (
-                                        <Badge className="bg-green-500 hover:bg-green-500 text-white text-xs px-2 py-0.5">เลือก</Badge>
-                                      )}
-                                    </div>
-                                    <div className="font-mono text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded inline-block">
-                                      {generateJobCode(entry.factoryValue, index)}
-                                    </div>
-                                  </div>
-                                </TableCell>
-                                <TableCell className="bg-orange-50/50">
-                                  <div className="grid grid-cols-2 gap-2">
-                                    <div>
-                                      <Label className="text-xs text-orange-600">ทุน/หน่วย</Label>
-                                      <Input
-                                        type="number"
-                                        step="0.01"
-                                        value={entry.unitCost || ""}
-                                        onChange={(e) => updateSupplierEntry(entry.id, "unitCost", parseFloat(e.target.value) || 0)}
-                                        className="h-8 text-center text-sm"
-                                        placeholder="0.00"
-                                        disabled={isReadOnlyMode}
-                                      />
-                                    </div>
-                                    <div>
-                                      <Label className="text-xs text-orange-600">ค่าโมล</Label>
-                                      <Input
-                                        type="number"
-                                        step="0.01"
-                                        value={entry.moldCost || ""}
-                                        onChange={(e) => updateSupplierEntry(entry.id, "moldCost", parseFloat(e.target.value) || 0)}
-                                        className="h-8 text-center text-sm"
-                                        placeholder="0.00"
-                                        disabled={isReadOnlyMode}
-                                      />
-                                    </div>
-                                  </div>
-                                </TableCell>
-                                <TableCell className="text-center bg-cyan-50/50">
-                                  <span className="font-bold text-lg text-cyan-700">
-                                    {entry.totalCostPerUnit?.toFixed(2) || "0.00"}
-                                  </span>
-                                </TableCell>
-                                <TableCell className="text-center bg-green-50/50">
-                                  <span className="font-bold text-lg text-green-700">
-                                    {entry.totalSellingPricePerUnit?.toFixed(2) || "0.00"}
-                                  </span>
-                                </TableCell>
-                                <TableCell className={`text-center ${(entry.totalProfit || 0) >= 0 ? 'bg-amber-50/50' : 'bg-red-50/50'}`}>
-                                  <span className={`font-bold text-lg ${(entry.totalProfit || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                    {entry.totalProfit?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || "0.00"}
-                                  </span>
-                                </TableCell>
-                                <TableCell className="text-center bg-purple-50/50">
-                                  <Input
-                                    type="number"
-                                    step="0.01"
-                                    value={entry.moldCostAdditionalTHB || ""}
-                                    onChange={(e) => updateSupplierEntry(entry.id, "moldCostAdditionalTHB", parseFloat(e.target.value) || 0)}
-                                    className="h-8 w-20 text-center text-sm mx-auto"
-                                    placeholder="0.00"
-                                    disabled={isReadOnlyMode}
-                                  />
-                                </TableCell>
-                                <TableCell className="text-center">
-                                  {isReadOnlyMode ? (
-                                    <div className="flex items-center justify-center gap-1">
+                                <TableHead className="min-w-[180px]">โรงงาน & รหัสงาน</TableHead>
+                                <TableHead className="min-w-[200px] text-center bg-orange-50">
+                                  <div className="text-orange-700 font-bold">ต้นทุนหยวน</div>
+                                  <div className="text-xs font-normal text-orange-600">(ทุน/หน่วย, ค่าโมล)</div>
+                                </TableHead>
+                                <TableHead className="w-[100px] text-center bg-cyan-50 font-bold">ทุนรวม<br /><span className="text-xs font-normal">(THB)</span></TableHead>
+                                <TableHead className="w-[100px] text-center bg-green-50 font-bold">ราคาขายรวม<br /><span className="text-xs font-normal">(THB)</span></TableHead>
+                                <TableHead className="w-[100px] text-center bg-amber-50 font-bold">กำไร<br /><span className="text-xs font-normal">(THB)</span></TableHead>
+                                <TableHead className="w-[100px] text-center bg-purple-50 font-bold">ค่าโมล(เพิ่มเติม)<br /><span className="text-xs font-normal">(THB)</span></TableHead>
+                                <TableHead className="min-w-[130px] text-center">หลักฐาน</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {supplierEntries.map((entry, index) => (
+                                <TableRow
+                                  key={entry.id}
+                                  className={
+                                    entry.isWinner && (selectedQuotation?.status === "เสนอลูกค้า" || selectedQuotation?.status === "เสนอราคา")
+                                      ? "bg-green-50/70 border-l-4 border-l-green-500"
+                                      : entry.isWinner && selectedQuotation?.status === "อยู่ระหว่างการประเมินราคา"
+                                        ? "bg-green-50/50 border-l-4 border-l-green-400"
+                                        : ""
+                                  }
+                                >
+                                  {/* Selection column for อยู่ระหว่างประเมิน, เสนอราคา, or เสนอลูกค้า */}
+                                  {(selectedQuotation?.status === "อยู่ระหว่างการประเมินราคา" || selectedQuotation?.status === "เสนอราคา" || selectedQuotation?.status === "เสนอลูกค้า") && (
+                                    <TableCell className="text-center bg-green-50/30">
                                       <Button
-                                        variant="outline"
+                                        variant={entry.isWinner ? "default" : "outline"}
                                         size="sm"
-                                        className="gap-1 text-xs px-2"
-                                        onClick={() => handleCopyRowAsImage(entry, index)}
+                                        className={`gap-1 text-xs ${entry.isWinner ? "bg-green-600 hover:bg-green-700" : "hover:bg-green-50 hover:border-green-400"}`}
+                                        onClick={() => handleSelectWinnerReadOnly(entry.id)}
                                       >
-                                        <Copy className="w-3 h-3" />
-                                        คัดลอก
+                                        เลือก
                                       </Button>
+                                    </TableCell>
+                                  )}
+                                  <TableCell>
+                                    <div className="space-y-1">
+                                      <div className="flex items-center gap-2">
+                                        <span className="font-medium">{entry.factoryLabel || "ยังไม่ได้เลือก"}</span>
+                                        {entry.isWinner && (selectedQuotation?.status === "อยู่ระหว่างการประเมินราคา" || selectedQuotation?.status === "เสนอลูกค้า" || selectedQuotation?.status === "เสนอราคา") && (
+                                          <Badge className="bg-green-500 hover:bg-green-500 text-white text-xs px-2 py-0.5">เลือก</Badge>
+                                        )}
+                                      </div>
+                                      <div className="font-mono text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded inline-block">
+                                        {generateJobCode(entry.factoryValue, index)}
+                                      </div>
                                     </div>
-                                  ) : (
-                                    <>
-                                      <div className="flex items-center justify-center gap-2">
+                                  </TableCell>
+                                  <TableCell className="bg-orange-50/50">
+                                    <div className="grid grid-cols-2 gap-2">
+                                      <div>
+                                        <Label className="text-xs text-orange-600">ทุน/หน่วย</Label>
+                                        <Input
+                                          type="number"
+                                          step="0.01"
+                                          value={entry.unitCost || ""}
+                                          onChange={(e) => updateSupplierEntry(entry.id, "unitCost", parseFloat(e.target.value) || 0)}
+                                          className="h-8 text-center text-sm"
+                                          placeholder="0.00"
+                                          disabled={isReadOnlyMode}
+                                        />
+                                      </div>
+                                      <div>
+                                        <Label className="text-xs text-orange-600">ค่าโมล</Label>
+                                        <Input
+                                          type="number"
+                                          step="0.01"
+                                          value={entry.moldCost || ""}
+                                          onChange={(e) => updateSupplierEntry(entry.id, "moldCost", parseFloat(e.target.value) || 0)}
+                                          className="h-8 text-center text-sm"
+                                          placeholder="0.00"
+                                          disabled={isReadOnlyMode}
+                                        />
+                                      </div>
+                                    </div>
+                                  </TableCell>
+                                  <TableCell className="text-center bg-cyan-50/50">
+                                    <span className="font-bold text-lg text-cyan-700">
+                                      {entry.totalCostPerUnit?.toFixed(2) || "0.00"}
+                                    </span>
+                                  </TableCell>
+                                  <TableCell className="text-center bg-green-50/50">
+                                    <span className="font-bold text-lg text-green-700">
+                                      {entry.totalSellingPricePerUnit?.toFixed(2) || "0.00"}
+                                    </span>
+                                  </TableCell>
+                                  <TableCell className={`text-center ${(entry.totalProfit || 0) >= 0 ? 'bg-amber-50/50' : 'bg-red-50/50'}`}>
+                                    <span className={`font-bold text-lg ${(entry.totalProfit || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                      {entry.totalProfit?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || "0.00"}
+                                    </span>
+                                  </TableCell>
+                                  <TableCell className="text-center bg-purple-50/50">
+                                    <Input
+                                      type="number"
+                                      step="0.01"
+                                      value={entry.moldCostAdditionalTHB || ""}
+                                      onChange={(e) => updateSupplierEntry(entry.id, "moldCostAdditionalTHB", parseFloat(e.target.value) || 0)}
+                                      className="h-8 w-20 text-center text-sm mx-auto"
+                                      placeholder="0.00"
+                                      disabled={isReadOnlyMode}
+                                    />
+                                  </TableCell>
+                                  <TableCell className="text-center">
+                                    {isReadOnlyMode ? (
+                                      <div className="flex items-center justify-center gap-1">
                                         <Button
                                           variant="outline"
                                           size="sm"
                                           className="gap-1 text-xs px-2"
                                           onClick={() => handleCopyRowAsImage(entry, index)}
-                                          title="คัดลอกข้อมูลเป็นรูปภาพ"
                                         >
                                           <Copy className="w-3 h-3" />
-                                        </Button>
-                                        <input
-                                          type="file"
-                                          id={`file-upload-${entry.id}`}
-                                          className="hidden"
-                                          accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
-                                          onChange={(e) => {
-                                            const file = e.target.files?.[0] || null;
-                                            handleSupplierFileUpload(entry.id, file);
-                                          }}
-                                        />
-                                        <Button
-                                          variant="outline"
-                                          size="sm"
-                                          className="gap-1 text-xs px-3"
-                                          onClick={() => document.getElementById(`file-upload-${entry.id}`)?.click()}
-                                        >
-                                          <Upload className="w-3 h-3" />
-                                          อัพโหลด
-                                        </Button>
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={() => removeSupplierEntry(entry.id)}
-                                          className="text-red-500 hover:text-red-700 hover:bg-red-50 p-2"
-                                        >
-                                          <Trash2 className="w-4 h-4" />
+                                          คัดลอก
                                         </Button>
                                       </div>
-                                      {entry.uploadedFile && (
-                                        <span className="text-xs text-green-600 truncate max-w-[100px] block mt-1" title={entry.uploadedFile.name}>
-                                          ✓ {entry.uploadedFile.name.length > 12 
-                                            ? `${entry.uploadedFile.name.slice(0, 10)}...` 
-                                            : entry.uploadedFile.name}
-                                        </span>
-                                      )}
-                                    </>
-                                  )}
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </div>
+                                    ) : (
+                                      <>
+                                        <div className="flex items-center justify-center gap-2">
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="gap-1 text-xs px-2"
+                                            onClick={() => handleCopyRowAsImage(entry, index)}
+                                            title="คัดลอกข้อมูลเป็นรูปภาพ"
+                                          >
+                                            <Copy className="w-3 h-3" />
+                                          </Button>
+                                          <input
+                                            type="file"
+                                            id={`file-upload-${entry.id}`}
+                                            className="hidden"
+                                            accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                                            onChange={(e) => {
+                                              const file = e.target.files?.[0] || null;
+                                              handleSupplierFileUpload(entry.id, file);
+                                            }}
+                                          />
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="gap-1 text-xs px-3"
+                                            onClick={() => document.getElementById(`file-upload-${entry.id}`)?.click()}
+                                          >
+                                            <Upload className="w-3 h-3" />
+                                            อัพโหลด
+                                          </Button>
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => removeSupplierEntry(entry.id)}
+                                            className="text-red-500 hover:text-red-700 hover:bg-red-50 p-2"
+                                          >
+                                            <Trash2 className="w-4 h-4" />
+                                          </Button>
+                                        </div>
+                                        {entry.uploadedFile && (
+                                          <span className="text-xs text-green-600 truncate max-w-[100px] block mt-1" title={entry.uploadedFile.name}>
+                                            ✓ {entry.uploadedFile.name.length > 12
+                                              ? `${entry.uploadedFile.name.slice(0, 10)}...`
+                                              : entry.uploadedFile.name}
+                                          </span>
+                                        )}
+                                      </>
+                                    )}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
 
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
               )}
 
               {/* Footer Actions - Only show after estimation started or in read-only mode */}
@@ -3287,7 +3108,7 @@ Quantity: ${quantityFormatted}`;
                     ปิด
                   </Button>
                 )}
-                
+
                 {/* Show full action buttons only after estimation started or in read-only mode */}
                 {(estimationStarted || isReadOnlyMode) && (
                   <>
@@ -3308,29 +3129,52 @@ Quantity: ${quantityFormatted}`;
                     {/* Show สั่งผลิต button for เสนอลูกค้า only when customer confirmed */}
                     {isReadOnlyMode && selectedQuotation?.status === "เสนอลูกค้า" && selectedQuotation?.customerConfirmed && (
                       <Button
-                        onClick={() => {
+                        onClick={async () => {
                           if (selectedQuotation) {
-                            const winnerEntry = supplierEntries.find(e => e.id === selectedWinner);
-                            setMockQuotations(prev => prev.map(q => {
-                              if (q.id === selectedQuotation.id) {
-                                return {
-                                  ...q,
-                                  status: "รายการสั่งผลิต" as QuotationStatus,
-                                  productionStep: "ออกใบ PO" as ProductionStep,
-                                  productionStepHistory: [{
-                                    step: "ออกใบ PO" as ProductionStep,
-                                    updatedAt: new Date().toISOString(),
-                                    updatedBy: "จัดซื้อ ผู้ใช้งาน"
-                                  }],
-                                  winnerFactoryValue: winnerEntry?.factoryValue || selectedQuotation.winnerFactoryValue,
-                                  factory: winnerEntry?.factoryValue || selectedQuotation.factory,
-                                  factoryLabel: winnerEntry?.factoryLabel || selectedQuotation.factoryLabel,
-                                };
-                              }
-                              return q;
-                            }));
-                            toast.success("สั่งผลิตสำเร็จ - งานถูกย้ายไป 'รายการสั่งผลิต'");
-                            closeManagementModal();
+                            try {
+                              const winnerEntry = supplierEntries.find(e => e.id === selectedWinner);
+                              const updatedDetails = {
+                                ...(selectedQuotation as any).rawDetails,
+                                productionStep: "ออกใบ PO" as ProductionStep,
+                                productionStepHistory: [{
+                                  step: "ออกใบ PO" as ProductionStep,
+                                  updatedAt: new Date().toISOString(),
+                                  updatedBy: "จัดซื้อ ผู้ใช้งาน"
+                                }],
+                                winnerFactoryValue: winnerEntry?.factoryValue || selectedQuotation.winnerFactoryValue,
+                                factoryLabel: winnerEntry?.factoryLabel || selectedQuotation.factoryLabel,
+                              };
+
+                              const payload = {
+                                status: "รายการสั่งผลิต",
+                                details: updatedDetails
+                              };
+
+                              const res = await fetch(`${API_BASE}/price_estimations.php/${selectedQuotation.id}`, {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify(payload)
+                              });
+
+                              if (!res.ok) throw new Error("Failed to order production");
+
+                              setMockQuotations(prev => prev.map(q => {
+                                if (q.id === selectedQuotation.id) {
+                                  return {
+                                    ...q,
+                                    status: "รายการสั่งผลิต" as QuotationStatus,
+                                    ...(updatedDetails as any)
+                                  };
+                                }
+                                return q;
+                              }));
+                              toast.success("สั่งผลิตสำเร็จ - งานถูกย้ายไป 'รายการสั่งผลิต'");
+                              closeManagementModal();
+                              fetchQuotations();
+                            } catch (err) {
+                              console.error("Error ordering production:", err);
+                              toast.error("เกิดข้อผิดพลาดในการสั่งผลิต");
+                            }
                           }
                         }}
                         className="gap-2 bg-blue-600 hover:bg-blue-700"
@@ -3369,25 +3213,15 @@ Quantity: ${quantityFormatted}`;
                           บันทึกข้อมูล
                         </Button>
                         <Button
-                          onClick={() => {
-                            const winnerEntry = supplierEntries.find(e => e.isWinner);
-                            if (!winnerEntry) {
+                          onClick={async () => {
+                            const winnerId = supplierEntries.find(e => e.isWinner)?.id;
+                            if (!winnerId) {
                               toast.error("กรุณาเลือกโรงงานที่ต้องการอนุมัติก่อน");
                               return;
                             }
-                            setMockQuotations(prev => prev.map(q => {
-                              if (q.id === selectedQuotation.id) {
-                                return {
-                                  ...q,
-                                  status: "เสนอราคา" as QuotationStatus,
-                                  winnerFactoryValue: winnerEntry.factoryValue,
-                                  factory: winnerEntry.factoryValue,
-                                  factoryLabel: winnerEntry.factoryLabel,
-                                };
-                              }
-                              return q;
-                            }));
-                            toast.success(`อนุมัติราคาสำเร็จ - โรงงาน: ${winnerEntry.factoryLabel} → ย้ายไปแถบ 'เสนอราคา'`);
+                            setSelectedWinner(winnerId);
+                            // Call the existing API handler
+                            await handleApproveWithWinner();
                             closeManagementModal();
                           }}
                           disabled={!supplierEntries.some(e => e.isWinner)}
@@ -3581,16 +3415,16 @@ Quantity: ${quantityFormatted}`;
               {/* Section 1: Product Details with JOB ID and Artwork */}
               <div className="border rounded-lg p-4">
                 <h3 className="text-sm font-semibold text-blue-600 mb-4">รายละเอียดสินค้า</h3>
-                
+
                 {/* Main Layout: Artwork Left + Specs Right */}
                 <div className="flex gap-4">
                   {/* Left Column: Artwork + JOB ID */}
                   <div className="flex-shrink-0 flex flex-col gap-2">
                     {/* Artwork Image */}
                     <div className="w-32 h-32 border rounded-lg overflow-hidden bg-muted/30 flex items-center justify-center">
-                      <img 
-                        src={selectedQuotation.artworkImages?.[0] || "/placeholder.svg"} 
-                        alt="Artwork" 
+                      <img
+                        src={selectedQuotation.artworkImages?.[0] || "/placeholder.svg"}
+                        alt="Artwork"
                         className="w-full h-full object-contain"
                       />
                     </div>
@@ -3600,7 +3434,7 @@ Quantity: ${quantityFormatted}`;
                       <span className="font-bold text-sm text-blue-700">{selectedQuotation.jobCode}</span>
                     </div>
                   </div>
-                  
+
                   {/* Right Column: 2x3 Specs Grid */}
                   <div className="flex-1 grid grid-cols-3 grid-rows-2 gap-3">
                     {/* Row 1 */}
@@ -3731,20 +3565,34 @@ Quantity: ${quantityFormatted}`;
               กลับไปแก้ไข
             </Button>
             <Button
-              onClick={() => {
-                setShowApprovalConfirmDialog(false);
+              onClick={async () => {
                 if (selectedQuotation) {
-                  setMockQuotations(prev => prev.map(q => {
-                    if (q.id === selectedQuotation.id) {
-                      return {
-                        ...q,
-                        status: "อยู่ระหว่างการประเมินราคา" as QuotationStatus,
-                      };
-                    }
-                    return q;
-                  }));
-                  toast.success("ส่งขออนุมัติราคาสำเร็จ - สถานะเปลี่ยนเป็น 'อยู่ระหว่างการประเมินราคา'");
-                  closeManagementModal();
+                  try {
+                    const payload = { status: "อยู่ระหว่างการประเมินราคา" };
+                    const res = await fetch(`${API_BASE}/price_estimations.php/${selectedQuotation.id}`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(payload)
+                    });
+                    if (!res.ok) throw new Error("Failed to update status");
+
+                    setMockQuotations(prev => prev.map(q => {
+                      if (q.id === selectedQuotation.id) {
+                        return {
+                          ...q,
+                          status: "อยู่ระหว่างการประเมินราคา" as QuotationStatus,
+                        };
+                      }
+                      return q;
+                    }));
+                    toast.success("ส่งขออนุมัติราคาสำเร็จ - สถานะเปลี่ยนเป็น 'อยู่ระหว่างการประเมินราคา'");
+                    setShowApprovalConfirmDialog(false);
+                    closeManagementModal();
+                    fetchQuotations();
+                  } catch (err) {
+                    console.error("Error approving:", err);
+                    toast.error("เกิดข้อผิดพลาดในการส่งขออนุมัติ");
+                  }
                 }
               }}
               className="gap-2 bg-green-600 hover:bg-green-700"
@@ -3811,16 +3659,16 @@ Quantity: ${quantityFormatted}`;
               {/* Section 1: Product Details with JOB ID and Artwork */}
               <div className="border rounded-lg p-4">
                 <h3 className="text-sm font-semibold text-blue-600 mb-4">รายละเอียดสินค้า</h3>
-                
+
                 {/* Main Layout: Artwork Left + Specs Right */}
                 <div className="flex gap-4">
                   {/* Left Column: Artwork + JOB ID */}
                   <div className="flex-shrink-0 flex flex-col gap-2">
                     {/* Artwork Image */}
                     <div className="w-32 h-32 border rounded-lg overflow-hidden bg-muted/30 flex items-center justify-center">
-                      <img 
-                        src={summaryQuotation.artworkImages?.[0] || "/placeholder.svg"} 
-                        alt="Artwork" 
+                      <img
+                        src={summaryQuotation.artworkImages?.[0] || "/placeholder.svg"}
+                        alt="Artwork"
                         className="w-full h-full object-contain"
                       />
                     </div>
@@ -3830,7 +3678,7 @@ Quantity: ${quantityFormatted}`;
                       <span className="font-bold text-sm text-blue-700">{summaryQuotation.jobCode}</span>
                     </div>
                   </div>
-                  
+
                   {/* Right Column: 2x3 Specs Grid */}
                   <div className="flex-1 grid grid-cols-3 grid-rows-2 gap-3">
                     {/* Row 1 */}
@@ -3978,17 +3826,59 @@ Quantity: ${quantityFormatted}`;
             <Button
               disabled={!summarySelectedFactory}
               className="bg-green-600 hover:bg-green-700 text-white"
-              onClick={() => {
+              onClick={async () => {
                 if (summaryQuotation && summarySelectedFactory) {
                   const selectedEntry = summarySupplierEntries.find(e => e.id === summarySelectedFactory);
-                  setMockQuotations(prev => prev.map(q =>
-                    q.id === summaryQuotation.id
-                      ? { ...q, status: "ประเมินเสร็จสิ้น" as QuotationStatus, winnerFactoryValue: selectedEntry?.factoryValue, factory: selectedEntry?.factoryValue || "", factoryLabel: selectedEntry?.factoryLabel || "" }
-                      : q
-                  ));
-                  setShowSummaryDialog(false);
-                  setSummarySelectedFactory(null);
-                  toast.success(`อนุมัติราคาโรงงาน ${selectedEntry?.factoryLabel} เรียบร้อย`);
+                  if (!selectedEntry) return;
+
+                  try {
+                    const updatedDetails = {
+                      ...(summaryQuotation as any).rawDetails,
+                      supplierEntries: summarySupplierEntries.map(e => ({
+                        ...e,
+                        uploadedFile: null
+                      })),
+                      globalHeader: summaryGlobalHeader,
+                      winnerFactoryValue: selectedEntry.factoryValue,
+                      factoryLabel: selectedEntry.factoryLabel,
+                      estimationStarted: true
+                    };
+
+                    const payload = {
+                      status: "เสนอราคา",
+                      price: selectedEntry.totalSellingPricePerUnit * (summaryGlobalHeader.quantity || summaryQuotation.quantity),
+                      details: updatedDetails
+                    };
+
+                    const res = await fetch(`${API_BASE}/price_estimations.php/${summaryQuotation.id}`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(payload)
+                    });
+
+                    if (!res.ok) throw new Error("Failed to approve");
+
+                    setMockQuotations(prev => prev.map(q => {
+                      if (q.id === summaryQuotation.id) {
+                        return {
+                          ...q,
+                          status: "เสนอราคา" as QuotationStatus,
+                          winnerFactoryValue: selectedEntry.factoryValue,
+                          factory: selectedEntry.factoryValue,
+                          factoryLabel: selectedEntry.factoryLabel,
+                        };
+                      }
+                      return q;
+                    }));
+
+                    setShowSummaryDialog(false);
+                    setSummarySelectedFactory(null);
+                    toast.success(`อนุมัติราคาโรงงาน ${selectedEntry.factoryLabel} เรียบร้อย - สถานะเป็น 'เสนอราคา'`);
+                    fetchQuotations();
+                  } catch (err) {
+                    console.error("Error approving from summary:", err);
+                    toast.error("เกิดข้อผิดพลาดในการอนุมัติ");
+                  }
                 }
               }}
             >
@@ -4215,7 +4105,7 @@ Quantity: ${quantityFormatted}`;
                   {/* รายละเอียดสำหรับประเมินราคา - Sales Style Table Layout */}
                   <div>
                     <h4 className="font-semibold text-primary mb-4">รายละเอียดสำหรับประเมินราคา</h4>
-                    
+
                     {/* Size and Thickness */}
                     <div className="grid grid-cols-2 gap-8 mb-4">
                       <div>
@@ -4327,7 +4217,7 @@ Quantity: ${quantityFormatted}`;
                   <Separator />
                   <div>
                     <p className="text-sm text-muted-foreground mb-3 font-medium">ข้อมูล Artwork</p>
-                    
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div>
                         <p className="text-sm text-muted-foreground mb-2">รูป Artwork</p>
@@ -4352,7 +4242,7 @@ Quantity: ${quantityFormatted}`;
                           </div>
                         )}
                       </div>
-                      
+
                       {/* Design Files Section */}
                       <div>
                         <p className="text-sm text-muted-foreground mb-2">ไฟล์งานออกแบบ</p>
@@ -4375,8 +4265,8 @@ Quantity: ${quantityFormatted}`;
                                   </div>
                                 </div>
                               </div>
-                              <Button 
-                                variant="outline" 
+                              <Button
+                                variant="outline"
                                 size="sm"
                                 onClick={() => setIsUploadHistoryOpen(true)}
                                 className="gap-1.5"

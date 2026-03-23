@@ -74,9 +74,15 @@ if ($method === 'GET') {
     exit();
 }
 
-// POST create
+// Read body for all mutations
+$data = json_decode(file_get_contents("php://input"), true);
+
+// POST create / update routing
 if ($method === 'POST') {
-    $data = json_decode(file_get_contents("php://input"), true);
+    if ($id) {
+        goto update_logic;
+    }
+
     if (empty($data)) {
         http_response_code(400);
         echo json_encode(["status" => "error", "message" => "Request body is empty"]);
@@ -158,15 +164,18 @@ if ($method === 'POST') {
     exit();
 }
 
-// PUT / PATCH update
-if ($method === 'PUT' || $method === 'PATCH') {
+// PUT / PATCH / POST update logic
+update_logic:
+if ($method === 'PUT' || $method === 'PATCH' || ($method === 'POST' && $id)) {
     if (!$id) {
         http_response_code(400);
         echo json_encode(["status" => "error", "message" => "ID is required"]);
         exit();
     }
 
-    $data = json_decode(file_get_contents("php://input"), true);
+    if (!isset($data)) {
+        $data = json_decode(file_get_contents("php://input"), true);
+    }
     if (empty($data)) {
         http_response_code(400);
         echo json_encode(["status" => "error", "message" => "Request body is empty"]);
