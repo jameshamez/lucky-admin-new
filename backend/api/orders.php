@@ -31,7 +31,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 require '../condb.php';
 /** @var mysqli $conn */
-$conn->select_db('finfinph_lcukycompany');
+$db_options = ['nacresc1_1', 'finfinph_lcukycompany', 'finfinph_luckycompany'];
+foreach ($db_options as $db) {
+    if (@$conn->select_db($db))
+        break;
+}
 $conn->set_charset("utf8mb4");
 
 $method = $_SERVER['REQUEST_METHOD'];

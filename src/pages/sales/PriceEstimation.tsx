@@ -64,7 +64,7 @@ const saveFilters = (filters: Record<string, any>) => {
   } catch { }
 };
 
-const API_BASE = "https://finfinphone.com/api-lucky/admin";
+const API_BASE = "https://nacres.co.th/api-lucky/admin";
 
 export default function PriceEstimation() {
   const navigate = useNavigate();

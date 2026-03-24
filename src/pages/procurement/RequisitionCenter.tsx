@@ -19,7 +19,7 @@ import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
-const API_BASE = "https://finfinphone.com/api-lucky/admin";
+const API_BASE = "https://nacres.co.th/api-lucky/admin";
 
 export default function RequisitionCenter() {
   const [usageDate, setUsageDate] = useState<Date>();

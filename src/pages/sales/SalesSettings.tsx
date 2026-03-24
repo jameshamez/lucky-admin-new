@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-const API_BASE_URL = "https://finfinphone.com/api-lucky/admin/sales_settings.php";
+const API_BASE_URL = "https://nacres.co.th/api-lucky/admin/sales_settings.php";
 
 export default function SalesSettings() {
   const [openDialog, setOpenDialog] = useState(false);

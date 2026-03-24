@@ -185,7 +185,7 @@ interface FactoryEntry {
   uploadedFile: File | null; // ไฟล์แนบหลักฐานการตีราคา
 }
 
-const API_BASE = "https://finfinphone.com/api-lucky/admin";
+const API_BASE = "https://nacres.co.th/api-lucky/admin";
 
 const Quotation = () => {
   const navigate = useNavigate();

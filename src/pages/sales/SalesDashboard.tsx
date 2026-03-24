@@ -41,7 +41,7 @@ import StackedSalesChart from "@/components/sales/StackedSalesChart";
 import { DateRange } from "react-day-picker";
 import { toast } from "sonner";
 
-const API_BASE_URL = "https://finfinphone.com/api-lucky/admin/sales_dashboard.php";
+const API_BASE_URL = "https://nacres.co.th/api-lucky/admin/sales_dashboard.php";
 
 const getStatusStyle = (type: string) => {
   switch (type) {

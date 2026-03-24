@@ -492,7 +492,7 @@ export default function OrderDetail() {
 
         // If orderId is not numeric (is a job_id like JOB-xxx), find the numeric order_id first
         if (isNaN(Number(orderId))) {
-          const searchRes = await fetch(`https://finfinphone.com/api-lucky/admin/orders.php?search=${orderId}`);
+          const searchRes = await fetch(`https://nacres.co.th/api-lucky/admin/orders.php?search=${orderId}`);
           const searchJson = await searchRes.json();
           if (searchJson.status === "success" && searchJson.data && searchJson.data.length > 0) {
             // Find exact match by job_id
@@ -506,7 +506,7 @@ export default function OrderDetail() {
         // Fetch full detail using numeric id (actually uses order_id param if my fix at line 57 works or search works)
         // Since I fixed line 57 to order_id = ?, I'll try to find a way to pass it.
         // Actually, let's use the param name that works: order_id
-        const res = await fetch(`https://finfinphone.com/api-lucky/admin/orders.php?order_id=${finalOrderId}`);
+        const res = await fetch(`https://nacres.co.th/api-lucky/admin/orders.php?order_id=${finalOrderId}`);
         const json = await res.json();
 
         if (json.status === "success" && json.data) {

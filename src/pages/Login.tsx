@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Loader2, Lock, User, ShieldCheck } from "lucide-react";
 
-const API_AUTH_URL = "https://finfinphone.com/api-lucky/admin/auth.php";
+const API_AUTH_URL = "https://nacres.co.th/api-lucky/admin/auth.php";
 
 export default function Login() {
     const navigate = useNavigate();

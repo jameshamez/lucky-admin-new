@@ -52,7 +52,7 @@ import {
   Loader2
 } from "lucide-react";
 
-const API_BASE_URL = "https://finfinphone.com/api-lucky/admin";
+const API_BASE_URL = "https://nacres.co.th/api-lucky/admin";
 
 // VIP status helper
 const customerImportance = (totalValue: number): { level: 'VIP' | 'General'; color: string } => {

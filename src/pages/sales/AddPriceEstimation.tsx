@@ -239,7 +239,7 @@ export default function AddPriceEstimation({
       if (!id) return;
 
       try {
-        const res = await fetch(`https://finfinphone.com/api-lucky/admin/price_estimations.php/${id}`);
+        const res = await fetch(`https://nacres.co.th/api-lucky/admin/price_estimations.php/${id}`);
         if (!res.ok) throw new Error("Failed to fetch data");
         const json = await res.json();
 
@@ -437,7 +437,7 @@ export default function AddPriceEstimation({
   useEffect(() => {
     const fetchSalesEmployees = async () => {
       try {
-        const res = await fetch('https://finfinphone.com/api-lucky/admin/employees.php');
+        const res = await fetch('https://nacres.co.th/api-lucky/admin/employees.php');
         if (!res.ok) throw new Error('Failed to fetch employees');
         const json = await res.json();
         if (json.status === 'success' && json.data) {
@@ -461,7 +461,7 @@ export default function AddPriceEstimation({
     const fetchCustomers = async () => {
       setIsLoadingCustomers(true);
       try {
-        const res = await fetch('https://finfinphone.com/api-lucky/admin/customers.php');
+        const res = await fetch('https://nacres.co.th/api-lucky/admin/customers.php');
         if (!res.ok) throw new Error('Failed to fetch customers');
         const json = await res.json();
         if (json.status === 'success' && json.data) {
@@ -1173,7 +1173,7 @@ export default function AddPriceEstimation({
         }
       };
 
-      const res = await fetch(`https://finfinphone.com/api-lucky/admin/price_estimations.php${isEditMode ? `/${id}` : ''}`, {
+      const res = await fetch(`https://nacres.co.th/api-lucky/admin/price_estimations.php${isEditMode ? `/${id}` : ''}`, {
         method: isEditMode ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)

@@ -1,4 +1,4 @@
-export const API_BASE_URL = 'https://finfinphone.com/api-lucky/admin/graphic';
+export const API_BASE_URL = 'https://nacres.co.th/api-lucky/admin/graphic';
 
 export interface DesignJob {
     id?: number;

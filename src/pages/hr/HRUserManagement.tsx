@@ -46,7 +46,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-const API_BASE = "https://finfinphone.com/api-lucky/admin/users.php";
+const API_BASE = "https://nacres.co.th/api-lucky/admin/users.php";
 
 const DEPARTMENTS = [
     "ฝ่ายขาย",

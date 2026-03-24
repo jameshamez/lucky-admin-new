@@ -733,8 +733,8 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
   }, [selectedAmphureName, selectedProvinceName]);
 
   // API base URLs
-  const CUSTOMERS_API = "https://finfinphone.com/api-lucky/admin/customers.php";
-  const LOCAL_API = "https://finfinphone.com/api-lucky/admin/";
+  const CUSTOMERS_API = "https://nacres.co.th/api-lucky/admin/customers.php";
+  const LOCAL_API = "https://nacres.co.th/api-lucky/admin/";
 
   // Load all customers from finfinphone server on mount
   useEffect(() => {

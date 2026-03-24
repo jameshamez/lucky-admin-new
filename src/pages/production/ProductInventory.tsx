@@ -242,8 +242,8 @@ const emptyProcurementCost: ProcurementCost = {
   meas: 0, gw: 0, tgw: 0,
 };
 
-const API_PRODUCT_URL = "https://finfinphone.com/api-lucky/portal/getProduct.php";
-const BASE_IMAGE_URL = "https://finfinphone.com/api-lucky/";
+const API_PRODUCT_URL = "https://nacres.co.th/api-lucky/portal/getProduct.php";
+const BASE_IMAGE_URL = "https://nacres.co.th/api-lucky/";
 
 // Helper: map API product -> ProductItem
 function mapApiProduct(p: any): ProductItem {
@@ -579,7 +579,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
       console.log("Sending form data to update product:", Object.fromEntries(formData.entries()));
 
       // เรียก API ตรวจสอบ URL อีกครั้งว่าใช้ updateProduct.php หรือไม่
-      const response = await fetch("https://finfinphone.com/api-lucky/portal/updateProduct.php", {
+      const response = await fetch("https://nacres.co.th/api-lucky/portal/updateProduct.php", {
         method: "POST",
         body: formData,
       });
@@ -647,7 +647,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
     try {
       setIsLoading(true);
       const response = await fetch(
-        "https://finfinphone.com/api-lucky/portal/getProduct.php"
+        "https://nacres.co.th/api-lucky/portal/getProduct.php"
       );
 
       if (!response.ok) {
@@ -888,7 +888,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
 
       // เรียก API
       const response = await fetch(
-        "https://finfinphone.com/api-lucky/portal/addProduct.php",
+        "https://nacres.co.th/api-lucky/portal/addProduct.php",
         {
           method: "POST",
           body: formData,

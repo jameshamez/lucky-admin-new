@@ -43,7 +43,7 @@ import {
 import { format } from "date-fns";
 import { toast } from "sonner";
 
-const API_BASE_URL = "https://finfinphone.com/api-lucky/admin/sales_reports.php";
+const API_BASE_URL = "https://nacres.co.th/api-lucky/admin/sales_reports.php";
 
 export default function SalesReports() {
   const [activeTab, setActiveTab] = useState("sales");

@@ -396,7 +396,7 @@ export default function OrderTracking() {
   const fetchOrders = useCallback(async () => {
     setIsLoading(true);
     try {
-      const res = await fetch("https://finfinphone.com/api-lucky/admin/orders.php");
+      const res = await fetch("https://nacres.co.th/api-lucky/admin/orders.php");
       const json = await res.json();
       if (json.status === "success" && json.data) {
         const mappedOrders = json.data.map((o: any) => {
@@ -652,7 +652,7 @@ export default function OrderTracking() {
     if (!pendingOrder) return;
     setIsUpdatingDepts(true);
     try {
-      const res = await fetch(`https://finfinphone.com/api-lucky/admin/orders.php?id=${pendingOrder.numericId}`, {
+      const res = await fetch(`https://nacres.co.th/api-lucky/admin/orders.php?id=${pendingOrder.numericId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

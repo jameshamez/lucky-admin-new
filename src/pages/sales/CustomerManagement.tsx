@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 
 // PHP Backend API URL
-const API_BASE_URL = "https://finfinphone.com/api-lucky/admin";
+const API_BASE_URL = "https://nacres.co.th/api-lucky/admin";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";

@@ -19,7 +19,7 @@ import { th } from "date-fns/locale";
 import { toast } from "@/hooks/use-toast";
 
 const CURRENT_DEPT = 'sales';
-const API_BASE = "https://finfinphone.com/api-lucky/admin";
+const API_BASE = "https://nacres.co.th/api-lucky/admin";
 
 // Safe date formatting helper for API data
 const formatSafeDateTime = (dateVal: string, formatStr: string = "dd/MM/yyyy HH:mm") => {

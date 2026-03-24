@@ -12,7 +12,7 @@ import { CalendarIcon, Upload } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 
-const API_BASE_URL = "https://finfinphone.com/api-lucky/admin";
+const API_BASE_URL = "https://nacres.co.th/api-lucky/admin";
 
 interface ActivityFormProps {
   customerId: string;

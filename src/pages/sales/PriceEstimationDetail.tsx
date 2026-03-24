@@ -108,7 +108,7 @@ export default function PriceEstimationDetail() {
   useEffect(() => {
     const fetchDetail = async () => {
       try {
-        const res = await fetch(`https://finfinphone.com/api-lucky/admin/price_estimations.php/${id}`);
+        const res = await fetch(`https://nacres.co.th/api-lucky/admin/price_estimations.php/${id}`);
         if (!res.ok) throw new Error("Failed to fetch");
         const json = await res.json();
 

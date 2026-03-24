@@ -537,7 +537,7 @@ export default function Expenses() {
   const fetchExpenseDetails = async (id: number | string) => {
     try {
       // Fetch details if we need nested items/payments
-      const response = await fetch(`https://finfinphone.com/api-lucky/admin/accounting/expenses.php?id=${id}`);
+      const response = await fetch(`https://nacres.co.th/api-lucky/admin/accounting/expenses.php?id=${id}`);
       const resData = await response.json();
       if (resData.status === "success") {
         const exp = resData.data;

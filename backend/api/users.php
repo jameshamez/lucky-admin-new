@@ -16,7 +16,7 @@ require '../condb.php';
 /** @var mysqli $conn */
 
 // Database Selection
-$db_options = ['finfinph_lcukycompany', 'finfinph_luckycompany'];
+$db_options = ['nacresc1_1', 'finfinph_lcukycompany', 'finfinph_luckycompany'];
 foreach ($db_options as $db) {
     if (@$conn->select_db($db))
         break;
