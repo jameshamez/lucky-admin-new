@@ -85,6 +85,7 @@ import InventoryHistory from "./pages/production/InventoryHistory";
 import InventorySettings from "./pages/production/InventorySettings";
 import RequestsManagement from "./pages/production/RequestsManagement";
 import VehicleRequestManagement from "./pages/production/VehicleRequestManagement";
+import VehicleRequestDetail from "./pages/production/VehicleRequestDetail";
 import ProductionReports from "./pages/production/ProductionReports";
 import ProductionProductInventory from "./pages/production/ProductInventory";
 import DepartmentSelection from "./pages/DepartmentSelection";
@@ -424,6 +425,11 @@ const App = () => (
           <Route path="/production/vehicle-management" element={
             <DashboardLayout>
               <VehicleRequestManagement />
+            </DashboardLayout>
+          } />
+          <Route path="/production/vehicle-request/:id" element={
+            <DashboardLayout>
+              <VehicleRequestDetail />
             </DashboardLayout>
           } />
           <Route path="/production/reports" element={

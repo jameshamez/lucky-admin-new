@@ -7,7 +7,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Sheet, SheetContent, SheetTitle, SheetDescription } from "@/components/ui/sheet";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetTitle, SheetDescription, SheetHeader } from "@/components/ui/sheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Check, X, Plus, Upload, Car, ClipboardList, Eye, ChevronsUpDown, Pencil, Fuel, BarChart3, Settings } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
@@ -15,6 +16,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import { productionService } from "@/services/productionService";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 
 // ─── Types ──────────────────────────────────────────────────
 interface VehicleUsageLog {
@@ -53,6 +55,9 @@ export default function VehicleRequestManagement() {
   const [showLogDrawer, setShowLogDrawer] = useState(false);
   const [viewingVehicle, setViewingVehicle] = useState<Vehicle | null>(null);
   const [formDirty, setFormDirty] = useState(false);
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const navigate = useNavigate();
 
   // Vehicle CRUD
   const [showVehicleDrawer, setShowVehicleDrawer] = useState(false);
@@ -120,10 +125,10 @@ export default function VehicleRequestManagement() {
     }
   };
 
-  const handleReject = async (id: string) => {
+  const handleReject = async (id: string, reason: string) => {
     try {
-      await productionService.updateVehicleReservationStatus(id, "ไม่อนุมัติ");
-      setRequests(prev => prev.map(r => r.id === id ? { ...r, status: "ไม่อนุมัติ" } : r));
+      await productionService.updateVehicleReservationStatus(id, "ไม่อนุมัติ", reason);
+      setRequests(prev => prev.map(r => r.id === id ? { ...r, status: "ไม่อนุมัติ", reject_reason: reason } : r));
       toast({ title: "ไม่อนุมัติคำขอสำเร็จ", variant: "destructive" });
     } catch (error) {
       toast({ title: "ไม่สามารถดำเนินการได้", variant: "destructive" });
@@ -323,19 +328,24 @@ export default function VehicleRequestManagement() {
                   ) : sortedRequests.map((r) => (
                     <TableRow key={r.id}>
                       <TableCell className="font-medium">{r.id}</TableCell>
-                      <TableCell>{r.customerLineName}</TableCell>
-                      <TableCell>{r.product}</TableCell>
-                      <TableCell>{r.deliveryBy}</TableCell>
-                      <TableCell>{r.deliveryDate}</TableCell>
-                      <TableCell>{r.deliveryLocation}</TableCell>
+                      <TableCell>{r.customerLineName || r.customer_name || "-"}</TableCell>
+                      <TableCell>{r.product || r.product_detail || "-"}</TableCell>
+                      <TableCell>{r.deliveryBy || r.requester || "-"}</TableCell>
+                      <TableCell>{r.deliveryDate || (r.start_datetime ? new Date(r.start_datetime).toLocaleDateString("th-TH") : "-")}</TableCell>
+                      <TableCell>{r.deliveryLocation || r.address || "-"}</TableCell>
                       <TableCell><Badge variant={getStatusColor(r.status)}>{r.status}</Badge></TableCell>
                       <TableCell>
-                        {r.status === "รออนุมัติ" ? (
-                          <div className="flex gap-2">
-                            <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white" onClick={() => handleApprove(r.id)}><Check className="h-4 w-4 mr-1" /> อนุมัติ</Button>
-                            <Button size="sm" className="bg-[#CE3175] hover:bg-[#b5295f] text-white" onClick={() => handleReject(r.id)}><X className="h-4 w-4 mr-1" /> ไม่อนุมัติ</Button>
-                          </div>
-                        ) : <span className="text-sm text-muted-foreground">-</span>}
+                        <div className="flex gap-2">
+                        {r.status === "รออนุมัติ" && (
+                          <>
+                            <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white px-2" onClick={() => handleApprove(r.id)}><Check className="h-4 w-4" /></Button>
+                            <Button size="sm" className="bg-[#CE3175] hover:bg-[#b5295f] text-white px-2" onClick={() => { setRejectingId(r.id); setRejectReason(""); }}><X className="h-4 w-4" /></Button>
+                          </>
+                        )}
+                          <Button size="sm" variant="outline" className="px-2" onClick={() => navigate(`/production/vehicle-request/${r.id}`, { state: { request: r } })}>
+                            <Eye className="w-4 h-4 mr-1" /> รายละเอียด
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -722,6 +732,36 @@ export default function VehicleRequestManagement() {
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* ===== DIALOG: ใส่เหตุผลไม่อนุมัติ ===== */}
+      <Dialog open={!!rejectingId} onOpenChange={(open) => { if (!open) setRejectingId(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-red-600 flex items-center gap-2">
+              <X className="w-5 h-5" /> ไม่อนุมัติคำขอใช้รถ
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-3">
+              <Label className="font-bold text-sm">เหตุผล (จำเป็น)</Label>
+              <Textarea 
+                placeholder="โปรดระบุเหตุผล เช่น รถกระบะคิวเต็มวันนั้น, ให้ใช้รถส่วนตัวนำของไปส่งแทน..." 
+                value={rejectReason} 
+                onChange={(e) => setRejectReason(e.target.value)} 
+                className="min-h-[100px] text-base"
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setRejectingId(null)}>ยกเลิก</Button>
+            <Button variant="destructive" onClick={() => {
+              if (!rejectReason.trim()) { toast({ title: "กรุณาระบุเหตุผล", variant: "destructive" }); return; }
+              handleReject(rejectingId!, rejectReason);
+              setRejectingId(null);
+            }}>ยืนยันไม่อนุมัติ</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <style>{`
         .vehicle-drawer { box-shadow: 8px 0 30px rgba(27, 58, 92, 0.15); }

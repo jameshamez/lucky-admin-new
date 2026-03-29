@@ -23,7 +23,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 require '../condb.php';
 /** @var mysqli $conn */
-$conn->select_db('finfinph_lcukycompany');
+$conn->select_db('nacresc1_1');
 $conn->set_charset("utf8mb4");
 
 $method = $_SERVER['REQUEST_METHOD'];
@@ -74,18 +74,31 @@ if ($method === 'GET') {
     exit();
 }
 
-// Read body for all mutations
-$data = json_decode(file_get_contents("php://input"), true);
+// Data Retrieval Helper (JSON + Fallback to $_POST)
+$input_raw = file_get_contents("php://input");
+$data = json_decode($input_raw, true);
+if ($data === null) {
+    $data = $_POST;
+}
 
-// POST create / update routing
+// Redirect POST to UPDATE if ID is present
+if ($method === 'POST' && $id) {
+    $method = 'PATCH';
+}
+
+// POST create
 if ($method === 'POST') {
-    if ($id) {
-        goto update_logic;
-    }
-
     if (empty($data)) {
         http_response_code(400);
-        echo json_encode(["status" => "error", "message" => "Request body is empty"]);
+        echo json_encode([
+            "status" => "error",
+            "message" => "Request body is empty",
+            "debug" => [
+                "raw_input" => $input_raw,
+                "received_data" => $data,
+                "method" => $_SERVER['REQUEST_METHOD']
+            ]
+        ]);
         exit();
     }
 
@@ -121,15 +134,19 @@ if ($method === 'POST') {
     $notes = $data['notes'] ?? '';
     $details = !empty($data['details']) ? json_encode($data['details']) : null;
     $estimation_date = !empty($data['estimation_date']) ? $data['estimation_date'] : date('Y-m-d');
+    $product_color = $data['product_color'] ?? '';
+    $product_size = $data['product_size'] ?? '';
+    $product_details = $data['product_details'] ?? '';
 
     $sql = "INSERT INTO price_estimations_sales (
         estimate_id, estimation_date, customer_id, customer_name, customer_phone, customer_line, customer_email,
-        sales_owner_id, job_name, product_category, product_type, quantity, budget, price, status, notes, details
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+        sales_owner_id, job_name, product_category, product_type, quantity, budget, price, status, notes, details,
+        product_color, product_size, product_details
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
 
     $stmt = $conn->prepare($sql);
     $stmt->bind_param(
-        "ssissssssssidddss",
+        "ssissssssssidddsssss",
         $estimate_id,
         $estimation_date,
         $customer_id,
@@ -146,7 +163,10 @@ if ($method === 'POST') {
         $price,
         $status,
         $notes,
-        $details
+        $details,
+        $product_color,
+        $product_size,
+        $product_details
     );
 
     if (!$stmt->execute()) {
@@ -164,21 +184,24 @@ if ($method === 'POST') {
     exit();
 }
 
-// PUT / PATCH / POST update logic
-update_logic:
-if ($method === 'PUT' || $method === 'PATCH' || ($method === 'POST' && $id)) {
+// PUT / PATCH update
+if ($method === 'PUT' || $method === 'PATCH') {
     if (!$id) {
         http_response_code(400);
-        echo json_encode(["status" => "error", "message" => "ID is required"]);
+        echo json_encode(["status" => "error", "message" => "ID is required for update"]);
         exit();
     }
 
-    if (!isset($data)) {
-        $data = json_decode(file_get_contents("php://input"), true);
-    }
     if (empty($data)) {
         http_response_code(400);
-        echo json_encode(["status" => "error", "message" => "Request body is empty"]);
+        echo json_encode([
+            "status" => "error",
+            "message" => "Request body is empty for update",
+            "debug" => [
+                "raw_input" => $input_raw,
+                "received_data" => $data
+            ]
+        ]);
         exit();
     }
 
@@ -202,7 +225,10 @@ if ($method === 'PUT' || $method === 'PATCH' || ($method === 'POST' && $id)) {
         'status',
         'revision_count',
         'notes',
-        'details'
+        'details',
+        'product_color',
+        'product_size',
+        'product_details'
     ];
 
     foreach ($allowed as $f) {

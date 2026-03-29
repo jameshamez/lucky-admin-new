@@ -31,11 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 require '../condb.php';
 /** @var mysqli $conn */
-$db_options = ['nacresc1_1', 'finfinph_lcukycompany', 'finfinph_luckycompany'];
-foreach ($db_options as $db) {
-    if (@$conn->select_db($db))
-        break;
-}
+$conn->select_db('nacresc1_1');
 $conn->set_charset("utf8mb4");
 
 $method = $_SERVER['REQUEST_METHOD'];
@@ -116,6 +112,17 @@ if ($method === 'GET') {
         if (!empty($order['production_workflow'])) {
             $order['production_workflow'] = json_decode($order['production_workflow'], true);
         }
+        // parse design_files JSON
+        if (!empty($order['design_files'])) {
+            $order['design_files'] = json_decode($order['design_files'], true);
+        }
+
+        foreach ($items as &$item) {
+            if (!empty($item['details'])) {
+                $item['details'] = json_decode($item['details'], true);
+            }
+        }
+        unset($item);
 
         $order['items'] = $items;
         $order['payments'] = $payments;
@@ -316,13 +323,23 @@ if ($method === 'GET') {
     exit();
 }
 
+// Data Retrieval Helper (JSON + Fallback to $_POST)
+$input_raw = file_get_contents("php://input");
+$data = json_decode($input_raw, true);
+if ($data === null) {
+    $data = $_POST;
+}
+
+// Redirect POST to UPDATE if ID is present
+if ($method === 'POST' && $id) {
+    $method = 'PATCH';
+}
+
 // ==================== POST ====================
 if ($method === 'POST') {
-    $data = json_decode(file_get_contents("php://input"), true);
-
     if (empty($data)) {
         http_response_code(400);
-        echo json_encode(["status" => "error", "message" => "Request body is empty"]);
+        echo json_encode(["status" => "error", "message" => "Request body is empty", "debug" => ["raw_input" => $input_raw, "method" => $_SERVER['REQUEST_METHOD']]]);
         exit();
     }
 
@@ -347,16 +364,17 @@ if ($method === 'POST') {
     $departments_json = !empty($data['departments']) ? json_encode($data['departments']) : null;
 
     $sql = "INSERT INTO orders (
-        job_id, quotation_number, order_date, responsible_person,
+        job_id, quotation_number, quotation_url, order_date, responsible_person,
         customer_id, customer_name, customer_phone, customer_line, customer_email, customer_address,
-        needs_tax_invoice, tax_payer_name, tax_id, tax_address,
+        needs_tax_invoice, invoice_type, tax_payer_name, tax_id, tax_address,
         urgency_level, job_name, event_location, usage_date, delivery_date,
         product_category, product_type, budget, sales_channel,
         subtotal, delivery_cost, vat_amount, total_amount, total_price,
         payment_method, payment_status, paid_amount,
         delivery_type, delivery_recipient, delivery_phone, delivery_address, preferred_delivery_date,
-        status, job_created, departments, notes
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+        origin_branch, destination_branch, preferred_time_slot,
+        status, job_created, departments, notes, graphics_notes, design_files
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
 
     $stmt = $conn->prepare($sql);
     if (!$stmt) {
@@ -368,15 +386,17 @@ if ($method === 'POST') {
     // Assign all values to real variables (bind_param requires references)
     $v_job_id = $data['job_id'];
     $v_quotation_number = $data['quotation_number'] ?? null;
+    $v_quotation_url = $data['quotation_url'] ?? null;
     $v_order_date = $data['order_date'] ?? date('Y-m-d');
     $v_responsible_person = $data['responsible_person'] ?? '';
-    $v_customer_id = isset($data['customer_id']) ? intval($data['customer_id']) : 0; // must be int for bind_param 'i'
-    $v_customer_name = $data['customer_name'];
+    $v_customer_id = isset($data['customer_id']) ? intval($data['customer_id']) : 0;
+    $v_customer_name = $data['customer_name'] ?? '';
     $v_customer_phone = $data['customer_phone'] ?? '';
     $v_customer_line = $data['customer_line'] ?? '';
     $v_customer_email = $data['customer_email'] ?? '';
     $v_customer_address = $data['customer_address'] ?? null;
     $v_require_tax_invoice = intval($data['require_tax_invoice'] ?? 0);
+    $v_invoice_type = $data['invoice_type'] ?? 'no-tax-invoice';
     $v_tax_payer_name = $data['tax_payer_name'] ?? null;
     $v_tax_id = $data['tax_id'] ?? null;
     $v_tax_address = $data['tax_address'] ?? null;
@@ -387,11 +407,12 @@ if ($method === 'POST') {
     $v_delivery_date = (!empty($data['delivery_date'])) ? $data['delivery_date'] : null;
     $v_product_category = $data['product_category'] ?? '';
     $v_product_type = $data['product_type'] ?? '';
-    $v_budget = isset($data['budget']) && $data['budget'] !== null ? floatval($data['budget']) : 0.0; // must be float for bind_param 'd'
+    $v_budget = floatval($data['budget'] ?? 0);
     $v_sales_channel = $data['sales_channel'] ?? null;
     $v_subtotal = floatval($data['subtotal'] ?? 0);
     $v_delivery_cost = floatval($data['delivery_cost'] ?? 0);
     $v_vat_amount = floatval($data['vat_amount'] ?? 0);
+    $v_total_amount = floatval($data['total_amount'] ?? ($data['total_price'] ?? 0));
     $v_total_price = floatval($data['total_price'] ?? ($data['total_amount'] ?? 0));
     $v_payment_method = $data['payment_method'] ?? '';
     $v_payment_status = $data['payment_status'] ?? 'รอชำระเงิน';
@@ -401,14 +422,21 @@ if ($method === 'POST') {
     $v_delivery_phone = $data['delivery_phone'] ?? null;
     $v_delivery_address = $data['delivery_address'] ?? null;
     $v_preferred_delivery_date = $data['preferred_delivery_date'] ?? null;
+    $v_origin_branch = $data['origin_branch'] ?? null;
+    $v_destination_branch = $data['destination_branch'] ?? null;
+    $v_preferred_time_slot = $data['preferred_time_slot'] ?? null;
     $v_order_status = $data['order_status'] ?? 'สร้างคำสั่งซื้อใหม่';
     $v_job_created = intval($data['job_created'] ?? 0);
+    $v_departments = !empty($data['departments']) ? json_encode($data['departments']) : null;
     $v_notes = $data['notes'] ?? null;
+    $v_graphics_notes = $data['graphics_notes'] ?? null;
+    $v_design_files = !empty($data['design_files']) ? json_encode($data['design_files']) : null;
 
     $stmt->bind_param(
-        "ssssisssssissssssssssdsddddssdssssssiiss",
+        "sssssissssisssssssssssdsddddddssdssssssisssssss",
         $v_job_id,
         $v_quotation_number,
+        $v_quotation_url,
         $v_order_date,
         $v_responsible_person,
         $v_customer_id,
@@ -418,6 +446,7 @@ if ($method === 'POST') {
         $v_customer_email,
         $v_customer_address,
         $v_require_tax_invoice,
+        $v_invoice_type,
         $v_tax_payer_name,
         $v_tax_id,
         $v_tax_address,
@@ -433,8 +462,8 @@ if ($method === 'POST') {
         $v_subtotal,
         $v_delivery_cost,
         $v_vat_amount,
+        $v_total_amount,
         $v_total_price,
-        $v_total_price, // For total_amount compatibility if needed
         $v_payment_method,
         $v_payment_status,
         $v_paid_amount,
@@ -443,10 +472,15 @@ if ($method === 'POST') {
         $v_delivery_phone,
         $v_delivery_address,
         $v_preferred_delivery_date,
+        $v_origin_branch,
+        $v_destination_branch,
+        $v_preferred_time_slot,
         $v_order_status,
         $v_job_created,
-        $departments_json,
-        $v_notes
+        $v_departments,
+        $v_notes,
+        $v_graphics_notes,
+        $v_design_files
     );
 
     if (!$stmt->execute()) {
@@ -502,8 +536,8 @@ if ($method === 'POST') {
 
     // Insert payment records
     if (!empty($data['payments']) && is_array($data['payments'])) {
-        $pay_sql = "INSERT INTO order_payments (order_id, payment_type, payment_label, amount, transfer_date, slip_url, additional_details)
-                     VALUES (?,?,?,?,?,?,?)";
+        $pay_sql = "INSERT INTO order_payments (order_id, payment_type, payment_label, amount, transfer_date, slip_url, receiving_bank, additional_details)
+                     VALUES (?,?,?,?,?,?,?,?)";
         $pay_stmt = $conn->prepare($pay_sql);
 
         foreach ($data['payments'] as $payment) {
@@ -512,20 +546,38 @@ if ($method === 'POST') {
             $p_amount = floatval($payment['amount'] ?? 0);
             $p_transfer_date = $payment['transferDate'] ?? null;
             $p_slip_url = $payment['slipUrl'] ?? null;
+            $p_receiving_bank = $payment['receivingBank'] ?? null;
             $p_additional_details = $payment['additionalDetails'] ?? null;
 
             $pay_stmt->bind_param(
-                "issdss" . "s",
+                "issdssss",
                 $order_id,
                 $p_type,
                 $p_label,
                 $p_amount,
                 $p_transfer_date,
                 $p_slip_url,
+                $p_receiving_bank,
                 $p_additional_details
             );
             $pay_stmt->execute();
         }
+    }
+
+    // Auto-sync Graphic job
+    $depts = !empty($data['departments']) ? $data['departments'] : [];
+    if (!is_array($depts) && is_string($depts)) {
+        $depts = json_decode($depts, true) ?: [];
+    }
+    if (is_array($depts) && in_array('ฝ่ายกราฟฟิก', $depts)) {
+        $job_code_es = $conn->real_escape_string($data['job_id']);
+        $c_name_es = $conn->real_escape_string($data['customer_name'] ?? 'ไม่ระบุชื่อ');
+        $j_type_es = $conn->real_escape_string($data['job_name'] ?? 'ทั่วไป');
+        $o_by_es = $conn->real_escape_string($data['responsible_person'] ?? '');
+        $due_es = $conn->real_escape_string($data['delivery_date'] ?? date('Y-m-d'));
+        $o_date_es = $conn->real_escape_string($data['order_date'] ?? date('Y-m-d'));
+        
+        $conn->query("INSERT IGNORE INTO design_jobs (job_code, client_name, job_type, urgency, status, ordered_by, due_date, order_date) VALUES ('$job_code_es', '$c_name_es', '$j_type_es', 'ปกติ', 'รอรับงาน', '$o_by_es', '$due_es', '$o_date_es')");
     }
 
     http_response_code(201);
@@ -546,7 +598,6 @@ if ($method === 'PUT') {
         exit();
     }
 
-    $data = json_decode(file_get_contents("php://input"), true);
     if (empty($data)) {
         http_response_code(400);
         echo json_encode(["status" => "error", "message" => "Request body is empty"]);
@@ -586,6 +637,7 @@ if ($method === 'PUT') {
         'customer_email',
         'customer_address',
         'needs_tax_invoice',
+        'invoice_type',
         'tax_payer_name',
         'tax_id',
         'tax_address',
@@ -596,15 +648,21 @@ if ($method === 'PUT') {
         'delivery_phone',
         'delivery_address',
         'preferred_delivery_date',
+        'origin_branch',
+        'destination_branch',
+        'preferred_time_slot',
         'notes',
+        'graphics_notes',
         'quotation_number',
+        'quotation_url',
+        'design_files',
         'production_workflow',
     ];
 
     foreach ($allowed_fields as $field) {
         if (array_key_exists($field, $data)) {
             $value = $data[$field];
-            if ($field === 'departments' && is_array($value)) {
+            if (($field === 'departments' || $field === 'design_files') && is_array($value)) {
                 $value = json_encode($value, JSON_UNESCAPED_UNICODE);
             }
             if ($field === 'production_workflow' && is_array($value)) {
@@ -635,6 +693,28 @@ if ($method === 'PUT') {
         exit();
     }
 
+    // Auto-sync Graphic job if department includes it
+    if (in_array('departments = ?', $fields)) {
+        if (isset($data['departments'])) {
+            $depts = is_array($data['departments']) ? $data['departments'] : json_decode($data['departments'], true);
+            if (is_array($depts) && in_array('ฝ่ายกราฟฟิก', $depts)) {
+                $ordQuery = $conn->query("SELECT * FROM orders WHERE order_id = " . intval($id));
+                if ($ordQuery && $ordQuery->num_rows > 0) {
+                    $ord = $ordQuery->fetch_assoc();
+                    $job_code = $conn->real_escape_string($ord['job_id']);
+                    
+                    $c_name_es = $conn->real_escape_string($ord['customer_name'] ?: 'ไม่ระบุชื่อ');
+                    $j_type_es = $conn->real_escape_string($ord['job_name'] ?: 'ทั่วไป');
+                    $o_by_es = $conn->real_escape_string($ord['responsible_person']);
+                    $due_es = $conn->real_escape_string($ord['delivery_date'] ?: date('Y-m-d'));
+                    $o_date_es = $conn->real_escape_string($ord['order_date'] ?: date('Y-m-d'));
+                    
+                    $conn->query("INSERT IGNORE INTO design_jobs (job_code, client_name, job_type, urgency, status, ordered_by, due_date, order_date) VALUES ('$job_code', '$c_name_es', '$j_type_es', 'ปกติ', 'รอรับงาน', '$o_by_es', '$due_es', '$o_date_es')");
+                }
+            }
+        }
+    }
+
     echo json_encode(["status" => "success", "message" => "Order updated successfully"]);
     exit();
 }
@@ -646,8 +726,6 @@ if ($method === 'PATCH') {
         echo json_encode(["status" => "error", "message" => "Order ID is required"]);
         exit();
     }
-
-    $data = json_decode(file_get_contents("php://input"), true);
 
     // รองรับ: เปลี่ยน order_status, job_created, departments
     $fields = [];
@@ -698,6 +776,26 @@ if ($method === 'PATCH') {
     $stmt->bind_param($types, ...$params);
 
     if ($stmt->execute()) {
+        // Auto-sync Graphic job if department includes it
+        if (isset($data['departments'])) {
+            $depts = is_array($data['departments']) ? $data['departments'] : json_decode($data['departments'], true);
+            if (is_array($depts) && in_array('ฝ่ายกราฟฟิก', $depts)) {
+                $ordQuery = $conn->query("SELECT * FROM orders WHERE order_id = " . intval($id));
+                if ($ordQuery && $ordQuery->num_rows > 0) {
+                    $ord = $ordQuery->fetch_assoc();
+                    $job_code = $conn->real_escape_string($ord['job_id']);
+                    
+                    $c_name_es = $conn->real_escape_string($ord['customer_name'] ?: 'ไม่ระบุชื่อ');
+                    $j_type_es = $conn->real_escape_string($ord['job_name'] ?: 'ทั่วไป');
+                    $o_by_es = $conn->real_escape_string($ord['responsible_person']);
+                    $due_es = $conn->real_escape_string($ord['delivery_date'] ?: date('Y-m-d'));
+                    $o_date_es = $conn->real_escape_string($ord['order_date'] ?: date('Y-m-d'));
+                    
+                    $conn->query("INSERT IGNORE INTO design_jobs (job_code, client_name, job_type, urgency, status, ordered_by, due_date, order_date) VALUES ('$job_code', '$c_name_es', '$j_type_es', 'ปกติ', 'รอรับงาน', '$o_by_es', '$due_es', '$o_date_es')");
+                }
+            }
+        }
+
         echo json_encode(["status" => "success", "message" => "Order patched successfully"]);
     } else {
         http_response_code(500);

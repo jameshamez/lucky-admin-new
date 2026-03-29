@@ -14,7 +14,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 require '../../condb.php';
-$conn->select_db('finfinph_lcukycompany');
+$conn->select_db('nacresc1_1');
 $conn->set_charset("utf8mb4");
 
 if ($conn->connect_error) {
@@ -144,6 +144,27 @@ if ($method === 'GET') {
         exit();
     }
 
+    // --- Auto-sync Missing Sales Orders ---
+    // Safely pull any orders that have the "ฝ่ายกราฟฟิก" department but aren't in design_jobs yet
+    $sync_sql = "
+        INSERT IGNORE INTO design_jobs (job_code, client_name, job_type, urgency, status, ordered_by, due_date, order_date)
+        SELECT 
+            job_id, 
+            COALESCE(NULLIF(customer_name, ''), 'ไม่ระบุชื่อ'), 
+            COALESCE(NULLIF(job_name, ''), 'ทั่วไป'), 
+            'ปกติ', 
+            'รอรับงาน', 
+            responsible_person, 
+            COALESCE(NULLIF(delivery_date, ''), CURDATE()), 
+            COALESCE(NULLIF(order_date, ''), CURDATE())
+        FROM orders
+        WHERE departments LIKE '%ฝ่ายกราฟฟิก%'
+    ";
+    if (!$conn->query($sync_sql)) {
+        // Just log it or ignore, don't break the whole API
+        error_log("Design Sync Error: " . $conn->error);
+    }
+
     // List with filters
     $page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
     $limit = isset($_GET['limit']) ? max(1, intval($_GET['limit'])) : 50;
@@ -203,11 +224,22 @@ if ($method === 'GET') {
     $count_sql = "SELECT COUNT(*) as total FROM design_jobs WHERE $where_sql";
     if ($params) {
         $cs = $conn->prepare($count_sql);
+        if (!$cs) {
+            http_response_code(500);
+            echo json_encode(["status" => "error", "message" => "Prepare count failed: " . $conn->error]);
+            exit();
+        }
         $cs->bind_param($types, ...$params);
         $cs->execute();
         $total = $cs->get_result()->fetch_assoc()['total'];
     } else {
-        $total = $conn->query($count_sql)->fetch_assoc()['total'];
+        $count_res = $conn->query($count_sql);
+        if (!$count_res) {
+            http_response_code(500);
+            echo json_encode(["status" => "error", "message" => "Count query failed: " . $conn->error]);
+            exit();
+        }
+        $total = $count_res->fetch_assoc()['total'];
     }
 
     // Data

@@ -82,11 +82,13 @@ export const productionService = {
         return await res.json();
     },
 
-    updateVehicleReservationStatus: async (id: number | string, status: string) => {
+    updateVehicleReservationStatus: async (id: number | string, status: string, rejectReason?: string) => {
+        const payload: any = { id, status };
+        if (rejectReason) payload.reject_reason = rejectReason;
         const res = await fetch(`${API_BASE_URL}/vehicle_reservations.php`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id, status })
+            body: JSON.stringify(payload)
         });
         return await res.json();
     },

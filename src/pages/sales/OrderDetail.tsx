@@ -29,7 +29,8 @@ import {
   Factory,
   Globe,
   MapPin,
-  ThumbsUp
+  ThumbsUp,
+  Eye
 } from "lucide-react";
 import { toast } from "sonner";
 import artworkSample from "@/assets/artwork-sample.png";
@@ -108,6 +109,14 @@ interface Order {
   address: string;
   taxId: string;
   orderItems: OrderItem[];
+  graphicsNotes?: string;
+  designFiles?: string[];
+  quotationUrl?: string;
+  invoiceType?: string;
+  payments?: any[];
+  originBranch?: string;
+  destinationBranch?: string;
+  preferredTimeSlot?: string;
 }
 
 const mockOrders: Order[] = [
@@ -573,7 +582,15 @@ export default function OrderDetail() {
             email: apiData.customer_email || "-",
             address: apiData.customer_address || apiData.delivery_address || "-",
             taxId: apiData.tax_id || "-",
-            orderItems: mappedItems
+            orderItems: mappedItems,
+            graphicsNotes: apiData.graphics_notes || null,
+            designFiles: apiData.design_files ? (typeof apiData.design_files === 'string' ? JSON.parse(apiData.design_files) : apiData.design_files) : [],
+            quotationUrl: apiData.quotation_url || null,
+            invoiceType: apiData.invoice_type || "no-tax-invoice",
+            payments: apiData.payments || [],
+            originBranch: apiData.origin_branch,
+            destinationBranch: apiData.destination_branch,
+            preferredTimeSlot: apiData.preferred_time_slot,
           });
         }
       } catch (err) {
@@ -709,6 +726,12 @@ export default function OrderDetail() {
                 <p className="text-sm text-muted-foreground">ที่อยู่</p>
                 <p className="font-medium">{order.address}</p>
               </div>
+              <div>
+                <p className="text-sm text-muted-foreground">ประเภทเอกสาร</p>
+                <Badge variant="outline" className="mt-1">
+                  {order.invoiceType === 'tax-invoice' ? 'ใบกำกับภาษี' : 'ไม่ออกใบกำกับภาษี/บิลเงินสด'}
+                </Badge>
+              </div>
             </div>
           </div>
 
@@ -746,6 +769,19 @@ export default function OrderDetail() {
                 <p className="text-sm text-muted-foreground">จำนวน</p>
                 <p className="font-medium">{order.orderItems.reduce((sum, item) => sum + item.quantity, 0)} ชิ้น</p>
               </div>
+              {order.quotationUrl && (
+                <div>
+                  <p className="text-sm text-muted-foreground">ใบเสนอราคา</p>
+                  <Button 
+                    variant="link" 
+                    className="p-0 h-auto text-primary"
+                    onClick={() => window.open(order.quotationUrl, '_blank')}
+                  >
+                    <FileText className="w-4 h-4 mr-1" />
+                    ดูไฟล์ใบเสนอราคา
+                  </Button>
+                </div>
+              )}
             </div>
 
             {/* Production Progress Bar */}
@@ -913,11 +949,59 @@ export default function OrderDetail() {
             );
           })()}
 
-          {/* Artwork Info */}
+          {/* Graphics & Design Info */}
+          <div className="bg-white rounded-lg shadow-sm border p-6">
+            <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <ImageIcon className="w-5 h-5 text-primary" />
+              ข้อมูลงานกราฟิก
+            </h2>
+
+            {/* Graphics Notes */}
+            <div className="mb-6">
+              <p className="text-sm text-muted-foreground mb-1">รายละเอียดการเชื่อมกราฟิก</p>
+              <div className="p-4 bg-muted/30 rounded-lg min-h-[60px]">
+                {order.graphicsNotes ? (
+                  <p className="whitespace-pre-wrap">{order.graphicsNotes}</p>
+                ) : (
+                  <p className="text-muted-foreground italic text-sm">ไม่มีข้อมูลเพิ่มเติม</p>
+                )}
+              </div>
+            </div>
+
+            {/* Design Files */}
+            <div>
+              <p className="text-sm text-muted-foreground mb-3 font-medium">ไฟล์งานออกแบบ ({order.designFiles?.length || 0} ไฟล์)</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                {order.designFiles && order.designFiles.length > 0 ? (
+                  order.designFiles.map((fileUrl, idx) => (
+                    <div key={idx} className="border rounded-lg p-3 flex items-center justify-between hover:border-primary/50 transition-colors">
+                      <div className="flex items-center gap-3 overflow-hidden">
+                        <div className="w-10 h-10 bg-primary/10 rounded flex items-center justify-center flex-shrink-0">
+                          <FileText className="w-5 h-5 text-primary" />
+                        </div>
+                        <div className="truncate">
+                          <p className="font-medium text-sm truncate">{fileUrl.split('/').pop()}</p>
+                          <p className="text-[10px] text-muted-foreground truncate uppercase">{fileUrl.split('.').pop()}</p>
+                        </div>
+                      </div>
+                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => window.open(fileUrl, '_blank')}>
+                        <Eye className="w-4 h-4 text-primary" />
+                      </Button>
+                    </div>
+                  ))
+                ) : (
+                  <div className="col-span-full border border-dashed rounded-lg p-8 flex flex-col items-center justify-center text-muted-foreground opacity-50">
+                    <ImageIcon className="w-8 h-8 mb-2" />
+                    <p className="text-sm">ไม่มีไฟล์งานที่แนบไว้</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Artwork Image */}
           <div className="bg-white rounded-lg shadow-sm border p-6">
             <h2 className="text-lg font-semibold mb-4">ข้อมูล Artwork</h2>
-
-            {/* Artwork Image */}
             <div className="mb-6">
               <p className="text-sm text-muted-foreground mb-3">รูป Artwork</p>
               <div className="border rounded-lg p-4 bg-muted/20">
@@ -1508,6 +1592,82 @@ export default function OrderDetail() {
             );
           })()}
 
+          {/* Payment History */}
+          <div className="bg-white rounded-lg shadow-sm border p-6">
+            <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <History className="w-5 h-5 text-primary" />
+              ประวัติการชำระเงิน
+            </h2>
+            
+            <div className="space-y-4">
+              {order.payments && order.payments.length > 0 ? (
+                <div className="rounded-lg border overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/50">
+                        <TableHead>ลำดับ</TableHead>
+                        <TableHead>ประเภท</TableHead>
+                        <TableHead>วัน/เวลาโอน</TableHead>
+                        <TableHead>ธนาคารที่รับ</TableHead>
+                        <TableHead className="text-right">จำนวนเงิน</TableHead>
+                        <TableHead className="text-center w-20">สลิป</TableHead>
+                        <TableHead>รายละเอียด</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {order.payments.map((p, idx) => (
+                        <TableRow key={idx}>
+                          <TableCell className="font-medium text-sm">{idx + 1}</TableCell>
+                          <TableCell>
+                            <Badge variant="secondary" className="font-normal font-sm">
+                              {p.payment_label || p.payment_type}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
+                            {p.transfer_date || "-"}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {p.receiving_bank || "-"}
+                          </TableCell>
+                          <TableCell className="text-right font-semibold">
+                            {p.amount ? parseFloat(p.amount).toLocaleString() : "0"} ฿
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {p.slip_url ? (
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                className="h-8 w-8 p-0"
+                                onClick={() => window.open(p.slip_url, '_blank')}
+                                title="ดูสลิป"
+                              >
+                                <ImageIcon className="w-4 h-4 text-primary" />
+                              </Button>
+                            ) : "-"}
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">
+                            {p.additional_details || "-"}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      <TableRow className="bg-muted/30">
+                        <TableCell colSpan={4} className="font-semibold text-right">ยอดชำระแล้วทั้งหมด</TableCell>
+                        <TableCell className="text-right font-bold text-primary">
+                          {order.payments.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0).toLocaleString()} ฿
+                        </TableCell>
+                        <TableCell colSpan={2}></TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <div className="border border-dashed rounded-lg p-12 flex flex-col items-center justify-center text-muted-foreground">
+                  <Clock className="w-10 h-10 mb-2 opacity-20" />
+                  <p>ไม่พบรายการประวัติการชำระเงิน</p>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 

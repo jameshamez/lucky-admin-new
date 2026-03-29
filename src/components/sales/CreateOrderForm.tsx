@@ -56,6 +56,7 @@ const createOrderSchema = z.object({
   customerLine: z.string().optional(),
   customerEmail: z.string().optional(),
   requireTaxInvoice: z.boolean().optional(),
+  invoiceType: z.string().optional(),
   taxPayerName: z.string().optional(),
   taxId: z.string().optional(),
   taxAddress: z.string().optional(),
@@ -63,6 +64,7 @@ const createOrderSchema = z.object({
   // Section 3: Order Information
   jobId: z.string().optional(),
   quotationNumber: z.string().optional(),
+  quotationUrl: z.string().optional(),
   urgencyLevel: z.string({ required_error: "กรุณาเลือกความเร่งด่วน" }).min(1, "กรุณาเลือกความเร่งด่วน"),
   jobName: z.string({ required_error: "กรุณาระบุชื่องาน" }).min(1, "กรุณาระบุชื่องาน"),
   eventLocation: z.string().optional(),
@@ -114,6 +116,9 @@ const createOrderSchema = z.object({
     deliveryInstructions: z.string().optional(),
     pickupDate: z.date().optional(),
     pickupTimePeriod: z.string().optional(),
+    originBranch: z.string().optional(),
+    destinationBranch: z.string().optional(),
+    preferredTimeSlot: z.string().optional(),
   }).optional(),
 });
 
@@ -284,7 +289,9 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
     transferDate?: Date;
     slipFile: File | null;
     slipPreview: string;
+    slipUrl: string;
     additionalDetails: string;
+    receivingBank?: string;
   }[]>([]);
   const [newPayment, setNewPayment] = useState<{
     type: string;
@@ -292,8 +299,27 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
     transferDate?: Date;
     slipFile: File | null;
     slipPreview: string;
+    slipUrl: string;
     additionalDetails: string;
-  }>({ type: '', amount: '', transferDate: undefined, slipFile: null, slipPreview: '', additionalDetails: '' });
+    receivingBank: string;
+  }>({ type: '', amount: '', transferDate: undefined, slipFile: null, slipPreview: '', slipUrl: '', additionalDetails: '', receivingBank: '' });
+
+  const [isUploading, setIsUploading] = useState(false);
+
+  // Graphics connection info
+  const [graphicsNotes, setGraphicsNotes] = useState("");
+  const [designFiles, setDesignFiles] = useState<{ file: File; url: string; name: string; size: number }[]>([]);
+
+  // Receiving bank options
+  const bankOptions = [
+    { value: "kbank", label: "ธ.กสิกรไทย", account: "xxx-x-xxxxx-x" },
+    { value: "scb", label: "ธ.ไทยพาณิชย์", account: "xxx-x-xxxxx-x" },
+    { value: "bbl", label: "ธ.กรุงเทพ", account: "xxx-x-xxxxx-x" },
+    { value: "ktb", label: "ธ.กรุงไทย", account: "xxx-x-xxxxx-x" },
+    { value: "bay", label: "ธ.กรุงศรีอยุธยา", account: "xxx-x-xxxxx-x" },
+    { value: "tmb", label: "ธ.ทหารไทยธนชาต", account: "xxx-x-xxxxx-x" },
+    { value: "promptpay", label: "PromptPay / พร้อมเพย์", account: "xxx-xxx-xxxx" },
+  ];
 
   // Price estimation data (from /sales/price-estimation)
   const basePriceEstimations = [
@@ -648,6 +674,7 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
     const labels: Record<string, string> = {
       'deposit': 'มัดจำ',
       'full': 'ชำระเต็มจำนวน',
+      'remaining_balance': 'ชำระยอดส่วนที่เหลือ',
       'design_fee': 'ค่าบริการออกแบบ',
       'additional': 'ชำระเพิ่มเติม'
     };
@@ -735,6 +762,43 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
   // API base URLs
   const CUSTOMERS_API = "https://nacres.co.th/api-lucky/admin/customers.php";
   const LOCAL_API = "https://nacres.co.th/api-lucky/admin/";
+
+  // Helper function: Upload file to server
+  const uploadFile = async (file: File, category: string = 'general'): Promise<string | null> => {
+    try {
+      setIsUploading(true);
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("category", category);
+
+      const response = await fetch(`${LOCAL_API}order_upload.php`, {
+        method: "POST",
+        body: formData,
+      });
+
+      const json = await response.json();
+      if (json.status === "success") {
+        return json.data.fileUrl; // We store full URL for convenience
+      } else {
+        toast({
+          title: "อัปโหลดไฟล์ไม่สำเร็จ",
+          description: json.message || "เกิดข้อผิดพลาดในการอัปโหลด",
+          variant: "destructive",
+        });
+        return null;
+      }
+    } catch (err) {
+      console.error("Upload error:", err);
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: "โปรดตรวจสอบการเชื่อมต่ออินเทอร์เน็ต",
+        variant: "destructive",
+      });
+      return null;
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   // Load all customers from finfinphone server on mount
   useEffect(() => {
@@ -871,6 +935,7 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
         customer.billing_postcode,
       ].filter(Boolean).join(" ") || "");
       form.setValue("requireTaxInvoice", true);
+      form.setValue("invoiceType", "tax-invoice");
       setShowTaxFields(true);
     }
 
@@ -1884,6 +1949,9 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
       ...data,
       // หมวดสินค้า
       productCategory: selectedCategory,
+      // ประเภทเอกสาร
+      invoiceType: data.invoiceType || (showTaxFields ? "tax-invoice" : "no-tax-invoice"),
+      requireTaxInvoice: showTaxFields,
       // รายการสินค้า
       savedProducts: allItems,
       items: allItems,
@@ -1892,6 +1960,9 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
       // ชำระเงิน
       paymentItems: paymentItems,
       payments: paymentItems,
+      // ข้อมูลเชื่อมกราฟฟิก
+      graphicsNotes: graphicsNotes,
+      designFiles: designFiles.map(df => df.url), // ส่งแค่อาร์เรย์ของ URL
     };
 
     console.log("Form submitted with payload:", payload);
@@ -2090,13 +2161,31 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
               />
             </div>
 
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="requireTaxInvoice"
-                checked={showTaxFields}
-                onCheckedChange={(checked) => setShowTaxFields(checked === true)}
-              />
-              <Label htmlFor="requireTaxInvoice">ออกใบกำกับภาษี</Label>
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">ประเภทเอกสาร</Label>
+              <RadioGroup
+                value={showTaxFields ? "tax-invoice" : "no-tax-invoice"}
+                onValueChange={(value) => {
+                  const isTax = value === "tax-invoice";
+                  setShowTaxFields(isTax);
+                  form.setValue("requireTaxInvoice", isTax);
+                  form.setValue("invoiceType", value);
+                }}
+                className="flex flex-col space-y-2"
+              >
+                <div className="flex items-center space-x-2 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors cursor-pointer">
+                  <RadioGroupItem value="no-tax-invoice" id="no-tax-invoice" />
+                  <Label htmlFor="no-tax-invoice" className="cursor-pointer font-normal">
+                    ไม่ออกใบกำกับภาษี / บิลเงินสด
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors cursor-pointer">
+                  <RadioGroupItem value="tax-invoice" id="tax-invoice" />
+                  <Label htmlFor="tax-invoice" className="cursor-pointer font-normal">
+                    ออกใบกำกับภาษี
+                  </Label>
+                </div>
+              </RadioGroup>
             </div>
 
             {showTaxFields && (
@@ -2184,6 +2273,7 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                       <SelectContent className="bg-background z-50">
                         <SelectItem value="deposit">มัดจำ</SelectItem>
                         <SelectItem value="full">ชำระเต็มจำนวน</SelectItem>
+                        <SelectItem value="remaining_balance">ชำระยอดส่วนที่เหลือ</SelectItem>
                         <SelectItem value="design_fee">ค่าบริการออกแบบ</SelectItem>
                         <SelectItem value="additional">ชำระเพิ่มเติม</SelectItem>
                       </SelectContent>
@@ -2202,20 +2292,54 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                           type="file"
                           accept="image/*,.pdf"
                           className="hidden"
-                          onChange={(e) => {
+                          onChange={async (e) => {
                             const file = e.target.files?.[0];
                             if (file) {
-                              setNewPayment({
-                                ...newPayment,
-                                slipFile: file,
-                                slipPreview: URL.createObjectURL(file)
-                              });
+                              const url = await uploadFile(file, 'slip');
+                              if (url) {
+                                setNewPayment({
+                                  ...newPayment,
+                                  slipFile: file,
+                                  slipPreview: URL.createObjectURL(file),
+                                  slipUrl: url
+                                });
+                              }
                             }
                           }}
                         />
                       </label>
                     </div>
                   </div>
+                </div>
+
+                {/* Bank Selection */}
+                <div className="mb-4">
+                  <label className="text-sm font-medium mb-2 block">ธนาคารที่รับโอน</label>
+                  <Select
+                    value={newPayment.receivingBank}
+                    onValueChange={(value) => setNewPayment({ ...newPayment, receivingBank: value })}
+                  >
+                    <SelectTrigger className="bg-background">
+                      <SelectValue placeholder="เลือกธนาคารที่รับโอน" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-background z-50">
+                      {bankOptions.map((bank) => (
+                        <SelectItem key={bank.value} value={bank.value}>
+                          {bank.label} ({bank.account})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {newPayment.receivingBank && (
+                    <div className="mt-2 p-3 bg-primary/5 border border-primary/20 rounded-lg">
+                      <p className="text-sm font-medium text-primary">
+                        {bankOptions.find(b => b.value === newPayment.receivingBank)?.label}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        เลขบัญชี: {bankOptions.find(b => b.value === newPayment.receivingBank)?.account}
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Additional details for "ชำระเพิ่มเติม" */}
@@ -2308,7 +2432,7 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                     size="sm"
                     onClick={() => {
                       setShowPaymentForm(false);
-                      setNewPayment({ type: '', amount: '', transferDate: undefined, slipFile: null, slipPreview: '', additionalDetails: '' });
+                      setNewPayment({ type: '', amount: '', transferDate: undefined, slipFile: null, slipPreview: '', additionalDetails: '', receivingBank: '' });
                     }}
                   >
                     ยกเลิก
@@ -2349,11 +2473,13 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                             transferDate: normalizedTransferDate,
                             slipFile: newPayment.slipFile,
                             slipPreview: newPayment.slipPreview,
+                            slipUrl: newPayment.slipUrl,
                             additionalDetails: newPayment.additionalDetails,
+                            receivingBank: newPayment.receivingBank,
                           },
                         ]);
 
-                        setNewPayment({ type: '', amount: '', transferDate: undefined, slipFile: null, slipPreview: '', additionalDetails: '' });
+                        setNewPayment({ type: '', amount: '', transferDate: undefined, slipFile: null, slipPreview: '', slipUrl: '', additionalDetails: '', receivingBank: '' });
                         setShowPaymentForm(false);
 
                         toast({
@@ -2392,6 +2518,11 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                     <div className="flex items-center gap-4">
                       <div className="flex flex-col">
                         <span className="font-medium text-sm">{item.typeLabel}</span>
+                        {item.receivingBank && (
+                          <span className="text-xs text-muted-foreground">
+                            {bankOptions.find(b => b.value === item.receivingBank)?.label ?? item.receivingBank}
+                          </span>
+                        )}
                         {item.additionalDetails && (
                           <span className="text-xs text-muted-foreground">{item.additionalDetails}</span>
                         )}
@@ -2433,6 +2564,101 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                 ยังไม่มีรายการชำระเงิน
               </p>
             )}
+          </CardContent>
+        </Card>
+
+        {/* Section: ข้อมูลเชื่อมกราฟฟิก */}
+        <Card>
+          <CardHeader>
+            <CardTitle>ข้อมูลเชื่อมกราฟฟิก</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <Label className="text-sm font-medium">หมายเหตุ / คำสั่งสำหรับฝ่ายกราฟฟิก</Label>
+              <Textarea
+                value={graphicsNotes}
+                onChange={(e) => setGraphicsNotes(e.target.value)}
+                placeholder="ระบุรายละเอียดงานกราฟฟิก เช่น สี, ขนาด, ตำแหน่งโลโก้, รูปแบบที่ต้องการ, จำนวน Proof ที่ต้องขอ"
+                className="mt-2 min-h-[100px]"
+              />
+            </div>
+
+            {/* แนบไฟล์แบบ */}
+            <div>
+              <Label className="text-sm font-medium">แนบไฟล์แบบ (Design Files)</Label>
+              <div className="mt-2 border-2 border-dashed border-border rounded-lg p-4">
+                <label className="cursor-pointer flex flex-col items-center gap-2 text-muted-foreground hover:text-foreground transition-colors">
+                  <Upload className="w-8 h-8" />
+                  <span className="text-sm text-center">
+                    {isUploading ? "กำลังอัปโหลดไฟล์..." : "คลิกเพื่ออัปโหลดไฟล์แบบ (AI, PSD, PDF, รูปภาพ)"}
+                  </span>
+                  <span className="text-xs text-muted-foreground">รองรับหลายไฟล์</span>
+                  <input
+                    type="file"
+                    accept=".ai,.psd,.pdf,.eps,.png,.jpg,.jpeg,.svg,.cdr"
+                    multiple
+                    className="hidden"
+                    disabled={isUploading}
+                    onChange={async (e) => {
+                      const files = Array.from(e.target.files || []);
+                      if (files.length > 0) {
+                        const uploads = await Promise.all(
+                          files.map(async (file) => {
+                            const url = await uploadFile(file, 'design');
+                            return url ? { file, url, name: file.name, size: file.size } : null;
+                          })
+                        );
+                        
+                        const successfulUploads = uploads.filter((u): u is { file: File; url: string; name: string; size: number } => u !== null);
+                        
+                        setDesignFiles(prev => [...prev, ...successfulUploads]);
+                        toast({
+                          title: `อัปโหลด ${successfulUploads.length} ไฟล์สำเร็จแล้ว`,
+                          description: successfulUploads.map(f => f.name).join(", "),
+                        });
+                      }
+                    }}
+                  />
+                </label>
+              </div>
+
+              {designFiles.length > 0 && (
+                <div className="mt-3 space-y-2">
+                  <Label className="text-xs text-muted-foreground">ไฟล์ที่แนบ ({designFiles.length} ไฟล์)</Label>
+                  {designFiles.map((item, index) => (
+                    <div key={index} className="flex items-center justify-between p-2 bg-muted/50 rounded-lg">
+                      <div className="flex items-center gap-2">
+                        <FileText className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-sm truncate max-w-xs">{item.name}</span>
+                        <span className="text-xs text-muted-foreground">
+                          ({(item.size / 1024).toFixed(1)} KB)
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => window.open(item.url, '_blank')}
+                          className="h-8 w-8 p-0"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setDesignFiles(prev => prev.filter((_, i) => i !== index))}
+                          className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
 
@@ -2479,12 +2705,27 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                   type="file"
                   accept=".pdf,.jpg,.jpeg,.png"
                   className="flex-1"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      const url = await uploadFile(file, 'quotation');
+                      if (url) {
+                        form.setValue("quotationUrl", url);
+                        toast({
+                          title: "อัปโหลดใบเสนอราคาสำเร็จ",
+                          description: file.name
+                        });
+                      }
+                    }
+                  }}
                 />
-                <Button type="button" variant="outline" size="sm">
-                  <Upload className="h-4 w-4 mr-1" />
-                  อัปโหลด
-                </Button>
               </div>
+              {form.watch("quotationUrl") && (
+                <div className="mt-2 flex items-center gap-2 text-sm text-green-600">
+                  <Check className="w-4 h-4" />
+                  <span>อัปโหลดเรียบร้อยแล้ว: {form.watch("quotationUrl")?.split('/').pop()}</span>
+                </div>
+              )}
               <p className="text-xs text-muted-foreground mt-1">รองรับไฟล์ PDF, JPG, PNG</p>
             </div>
 
@@ -4492,11 +4733,17 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                                 </SelectTrigger>
                               </FormControl>
                               <SelectContent>
-                                <SelectItem value="ems">EMS</SelectItem>
-                                <SelectItem value="kerry">Kerry</SelectItem>
-                                <SelectItem value="flash">Flash</SelectItem>
-                                <SelectItem value="private_transport">ขนส่งเอกชน</SelectItem>
-                                <SelectItem value="pickup">นัดรับ</SelectItem>
+                                <SelectItem value="ems">EMS / ไปรษณีย์ด่วน</SelectItem>
+                                <SelectItem value="thaipost">ไปรษณีย์ธรรมดา</SelectItem>
+                                <SelectItem value="kerry">Kerry Express</SelectItem>
+                                <SelectItem value="flash">Flash Express</SelectItem>
+                                <SelectItem value="jt">J&T Express</SelectItem>
+                                <SelectItem value="ninja">Ninja Van</SelectItem>
+                                <SelectItem value="grab">Grab Express</SelectItem>
+                                <SelectItem value="lalamove">Lalamove</SelectItem>
+                                <SelectItem value="private_transport">ขนส่งเอกชน / รถบรรทุก</SelectItem>
+                                <SelectItem value="company_delivery">จัดส่งโดยบริษัท</SelectItem>
+                                <SelectItem value="pickup">รับสินค้าเอง / นัดรับ</SelectItem>
                               </SelectContent>
                             </Select>
                             <FormMessage />
@@ -4547,6 +4794,111 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                         )}
                       />
                     </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                      {/* ต้นทาง/ปลายทาง (สาขา) */}
+                      <FormField
+                        control={form.control}
+                        name="deliveryInfo.originBranch"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>สาขาต้นทาง</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value}>
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="เลือกสาขาต้นทาง" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="HQ">สำนักงานใหญ่</SelectItem>
+                                <SelectItem value="WH">คลังสินค้า</SelectItem>
+                                <SelectItem value="SB1">สาขา 1</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="deliveryInfo.destinationBranch"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>สาขาปลายทาง</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value}>
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="เลือกสาขาปลายทาง" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="HQ">สำนักงานใหญ่</SelectItem>
+                                <SelectItem value="WH">คลังสินค้า</SelectItem>
+                                <SelectItem value="SB1">สาขา 1</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                      {/* เวลารับลูกค้าสะดวกรับ */}
+                      <FormField
+                        control={form.control}
+                        name="deliveryInfo.preferredTimeSlot"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>เวลารับลูกค้าสะดวกรับ</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value}>
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="เลือกช่วงเวลา" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="09:00-11:00">ช่วงเช้า (09:00 - 11:00)</SelectItem>
+                                <SelectItem value="11:00-13:00">ก่อนบ่าย (11:00 - 13:00)</SelectItem>
+                                <SelectItem value="13:00-15:00">ช่วงบ่าย (13:00 - 15:00)</SelectItem>
+                                <SelectItem value="15:00-17:00">เย็น (15:00 - 17:00)</SelectItem>
+                                <SelectItem value="anytime">สะดวกรับทั้งวัน</SelectItem>
+                                <SelectItem value="specific">ระบุในหมายเหตุ</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    {/* ค่าขนส่ง / การชำระค่าจัดส่ง */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="deliveryInfo.paymentMethod"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>การชำระค่าจัดส่ง</FormLabel>
+                            <Select onValueChange={field.onChange} defaultValue={field.value}>
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="เลือกวิธีชำระค่าจัดส่ง" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="prepaid">ชำระแล้ว (รวมกับยอดสินค้า)</SelectItem>
+                                <SelectItem value="cod">เก็บเงินปลายทาง (COD)</SelectItem>
+                                <SelectItem value="free">ฟรีค่าจัดส่ง</SelectItem>
+                                <SelectItem value="collect">เรียกเก็บแยก</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
                   </div>
 
                   {/* 5.4 Additional Instructions */}
@@ -4578,8 +4930,8 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
             ยกเลิก
           </Button>
 
-          <Button type="submit" variant="secondary">
-            บันทึก
+          <Button type="submit" variant="secondary" disabled={isUploading}>
+            {isUploading ? "กำลังอัปโหลด..." : "บันทึก"}
           </Button>
 
           {/* Conditional buttons based on product type */}

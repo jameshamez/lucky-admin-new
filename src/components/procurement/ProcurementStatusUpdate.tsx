@@ -24,7 +24,9 @@ import {
   Factory,
   Download,
   Trash2,
-  Plus
+  Plus,
+  FastForward,
+  UserCheck
 } from "lucide-react";
 import artworkSample from "@/assets/artwork-sample.png";
 import { toast } from "sonner";
@@ -40,7 +42,7 @@ interface QCStep {
   key: string;
   label: string;
   photos: QCPhotoUpload[];
-  status: "pending" | "completed" | "locked";
+  status: "pending" | "completed" | "locked" | "skipped" | "sales_approved";
   completedBy?: string;
   completedAt?: string;
 }
@@ -51,7 +53,7 @@ interface ShippingStep {
   label: string;
   icon: React.ElementType;
   photos: QCPhotoUpload[];
-  status: "pending" | "completed" | "locked";
+  status: "pending" | "completed" | "locked" | "skipped" | "sales_approved";
   completedBy?: string;
   completedAt?: string;
 }
@@ -62,7 +64,7 @@ interface LogisticsStep {
   label: string;
   icon: React.ElementType;
   photos: QCPhotoUpload[];
-  status: "pending" | "completed" | "locked";
+  status: "pending" | "completed" | "locked" | "skipped" | "sales_approved";
   completedBy?: string;
   completedAt?: string;
 }
@@ -87,28 +89,20 @@ export default function ProcurementStatusUpdate({ orderId, filterStep = "all", h
     {
       key: "artwork",
       label: "ตรวจสอบ Artwork",
-      photos: [
-        { url: artworkSample, uploadedBy: "วิชัย", uploadedAt: "2025-01-05 10:30" }
-      ],
-      status: "completed",
-      completedBy: "วิชัย",
-      completedAt: "2025-01-05 10:30"
+      photos: [],
+      status: "pending",
     },
     {
       key: "cnc",
       label: "ตรวจสอบงาน CNC",
-      photos: [
-        { url: artworkSample, uploadedBy: "วิชัย", uploadedAt: "2025-01-07 09:00" }
-      ],
-      status: "completed",
-      completedBy: "วิชัย",
-      completedAt: "2025-01-07 09:00"
+      photos: [],
+      status: "locked",
     },
     {
       key: "production",
       label: "ผลิตชิ้นงาน",
       photos: [],
-      status: "pending",
+      status: "locked",
     },
     {
       key: "color_check",
@@ -136,34 +130,22 @@ export default function ProcurementStatusUpdate({ orderId, filterStep = "all", h
       key: "factory_ship",
       label: "โรงงานส่งออก",
       icon: Factory,
-      photos: [
-        { url: artworkSample, uploadedBy: "จัดซื้อ สมชาย", uploadedAt: "23/1/2569 10:36:22" }
-      ],
-      status: "completed",
-      completedBy: "จัดซื้อ สมชาย",
-      completedAt: "23/1/2569 10:36:25"
+      photos: [],
+      status: "locked",
     },
     {
       key: "in_transit",
       label: "ระหว่างขนส่ง",
       icon: Ship,
-      photos: [
-        { url: artworkSample, uploadedBy: "จัดซื้อ สมชาย", uploadedAt: "25/1/2569 14:20:00" }
-      ],
-      status: "completed",
-      completedBy: "จัดซื้อ สมชาย",
-      completedAt: "25/1/2569 14:20:10"
+      photos: [],
+      status: "locked",
     },
     {
       key: "arrived_th",
       label: "ถึงไทย",
       icon: Plane,
-      photos: [
-        { url: artworkSample, uploadedBy: "จัดซื้อ สมชาย", uploadedAt: "30/1/2569 11:00:00" }
-      ],
-      status: "completed",
-      completedBy: "จัดซื้อ สมชาย",
-      completedAt: "30/1/2569 11:00:30"
+      photos: [],
+      status: "locked",
     },
   ]);
 
@@ -173,19 +155,15 @@ export default function ProcurementStatusUpdate({ orderId, filterStep = "all", h
       key: "warehouse_to_store",
       label: "ส่งจากโกดัง → ร้าน",
       icon: Truck,
-      photos: [
-        { url: artworkSample, uploadedBy: "คลังสินค้า สมหมาย", uploadedAt: "31/1/2569 08:30:00" }
-      ],
-      status: "completed",
-      completedBy: "คลังสินค้า สมหมาย",
-      completedAt: "31/1/2569 08:30:15"
+      photos: [],
+      status: "locked",
     },
     {
       key: "store_qc",
       label: "ตรวจนับ & QC ที่ร้าน",
       icon: ClipboardCheck,
       photos: [],
-      status: "pending",
+      status: "locked",
     },
     {
       key: "delivery_success",
@@ -197,8 +175,8 @@ export default function ProcurementStatusUpdate({ orderId, filterStep = "all", h
   ]);
 
   // Expanded state
-  const [expandedQC, setExpandedQC] = useState<string[]>(["lanyard"]);
-  const [expandedShipping, setExpandedShipping] = useState<string[]>(["factory_ship"]);
+  const [expandedQC, setExpandedQC] = useState<string[]>(["artwork"]);
+  const [expandedShipping, setExpandedShipping] = useState<string[]>([]);
   const [expandedLogistics, setExpandedLogistics] = useState<string[]>([]);
 
   // Lightbox
@@ -221,9 +199,14 @@ export default function ProcurementStatusUpdate({ orderId, filterStep = "all", h
   };
 
   // Upload photo handler
-  const handlePhotoUpload = (stepKey: string, type: "qc" | "shipping" | "logistics") => {
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>, stepKey: string, type: "qc" | "shipping" | "logistics") => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const imageUrl = URL.createObjectURL(file);
+
     const newPhoto: QCPhotoUpload = {
-      url: artworkSample, // In real app, this would be the uploaded file URL
+      url: imageUrl, // Real file preview URL
       uploadedBy: "จัดซื้อ สมชาย",
       uploadedAt: new Date().toLocaleString("th-TH")
     };
@@ -251,15 +234,40 @@ export default function ProcurementStatusUpdate({ orderId, filterStep = "all", h
     toast.success("อัพโหลดรูปภาพสำเร็จ");
   };
 
-  // Mark step as complete
-  const handleMarkComplete = (stepKey: string, type: "qc" | "shipping" | "logistics") => {
+  // Delete photo handler
+  const handleDeletePhoto = (stepKey: string, type: "qc" | "shipping" | "logistics", photoIdx: number) => {
+    if (type === "qc") {
+      setQcSteps(prev => prev.map(step => 
+        step.key === stepKey 
+          ? { ...step, photos: step.photos.filter((_, idx) => idx !== photoIdx) }
+          : step
+      ));
+    } else if (type === "shipping") {
+      setShippingSteps(prev => prev.map(step => 
+        step.key === stepKey 
+          ? { ...step, photos: step.photos.filter((_, idx) => idx !== photoIdx) }
+          : step
+      ));
+    } else {
+      setLogisticsSteps(prev => prev.map(step => 
+        step.key === stepKey 
+          ? { ...step, photos: step.photos.filter((_, idx) => idx !== photoIdx) }
+          : step
+      ));
+    }
+  };
+
+  // Action step: complete or skip
+  const handleStepAction = (stepKey: string, type: "qc" | "shipping" | "logistics", action: "complete" | "skip" | "sales_approve") => {
     const now = new Date().toLocaleString("th-TH");
+    const targetStatus = action === "skip" ? "skipped" : (action === "sales_approve" ? "sales_approved" : "completed");
+    const actorName = action === "sales_approve" ? "ฝ่ายขาย (ยืนยันแบบ)" : "จัดซื้อ สมชาย";
     
     if (type === "qc") {
       setQcSteps(prev => {
         const newSteps = prev.map((step, idx) => {
           if (step.key === stepKey) {
-            return { ...step, status: "completed" as const, completedBy: "จัดซื้อ สมชาย", completedAt: now };
+            return { ...step, status: targetStatus, completedBy: actorName, completedAt: now };
           }
           // Unlock next step
           if (idx > 0 && prev[idx - 1].key === stepKey && step.status === "locked") {
@@ -273,7 +281,7 @@ export default function ProcurementStatusUpdate({ orderId, filterStep = "all", h
       setShippingSteps(prev => {
         const newSteps = prev.map((step, idx) => {
           if (step.key === stepKey) {
-            return { ...step, status: "completed" as const, completedBy: "จัดซื้อ สมชาย", completedAt: now };
+            return { ...step, status: targetStatus, completedBy: actorName, completedAt: now };
           }
           if (idx > 0 && prev[idx - 1].key === stepKey && step.status === "locked") {
             return { ...step, status: "pending" as const };
@@ -286,7 +294,7 @@ export default function ProcurementStatusUpdate({ orderId, filterStep = "all", h
       setLogisticsSteps(prev => {
         const newSteps = prev.map((step, idx) => {
           if (step.key === stepKey) {
-            return { ...step, status: "completed" as const, completedBy: "จัดซื้อ สมชาย", completedAt: now };
+            return { ...step, status: targetStatus, completedBy: actorName, completedAt: now };
           }
           if (idx > 0 && prev[idx - 1].key === stepKey && step.status === "locked") {
             return { ...step, status: "pending" as const };
@@ -297,22 +305,26 @@ export default function ProcurementStatusUpdate({ orderId, filterStep = "all", h
       });
     }
 
-    toast.success("อัพเดทสถานะสำเร็จ");
+    toast.success(action === "sales_approve" ? "เซลล์ยืนยันแบบสำเร็จ" : (action === "complete" ? "อัพเดทสถานะสำเร็จ" : "ข้ามขั้นตอนสำเร็จ"));
   };
 
   // Calculate progress
-  const qcCompleted = qcSteps.filter(s => s.status === "completed").length;
-  const shippingCompleted = shippingSteps.filter(s => s.status === "completed").length;
-  const logisticsCompleted = logisticsSteps.filter(s => s.status === "completed").length;
+  const qcCompleted = qcSteps.filter(s => s.status === "completed" || s.status === "skipped" || s.status === "sales_approved").length;
+  const shippingCompleted = shippingSteps.filter(s => s.status === "completed" || s.status === "skipped" || s.status === "sales_approved").length;
+  const logisticsCompleted = logisticsSteps.filter(s => s.status === "completed" || s.status === "skipped" || s.status === "sales_approved").length;
 
   const getCardStyle = (status: string) => {
     if (status === "locked") return "border-muted bg-muted/30 opacity-60";
+    if (status === "skipped") return "border-slate-300 bg-slate-50/60 grayscale opacity-80";
+    if (status === "sales_approved") return "border-blue-300 bg-blue-50/50";
     if (status === "completed") return "border-green-300 bg-green-50/50";
     return "border-primary bg-primary/5 shadow-md";
   };
 
   const getStatusBadge = (status: string) => {
     if (status === "locked") return <Badge className="bg-muted text-muted-foreground"><Lock className="w-3 h-3 mr-1" />รอขั้นตอนก่อนหน้า</Badge>;
+    if (status === "skipped") return <Badge className="bg-slate-500 text-white">ข้ามขั้นตอน</Badge>;
+    if (status === "sales_approved") return <Badge className="bg-blue-500 text-white"><UserCheck className="w-3 h-3 mr-1" />เซลล์ยืนยันผ่านแล้ว</Badge>;
     if (status === "completed") return <Badge className="bg-green-500 text-white">เสร็จสิ้น</Badge>;
     return <Badge className="bg-primary text-primary-foreground">กำลังดำเนินการ</Badge>;
   };
@@ -326,7 +338,9 @@ export default function ProcurementStatusUpdate({ orderId, filterStep = "all", h
   ) => {
     const isExpanded = expanded.includes(step.key);
     const isLocked = step.status === "locked";
-    const isCompleted = step.status === "completed";
+    const isCompleted = step.status === "completed" || step.status === "skipped" || step.status === "sales_approved";
+    const isSkipped = step.status === "skipped";
+    const isSalesApproved = step.status === "sales_approved";
     const StepIcon = 'icon' in step ? step.icon : CheckCircle2;
 
     return (
@@ -340,10 +354,14 @@ export default function ProcurementStatusUpdate({ orderId, filterStep = "all", h
         >
           <div className="flex items-center gap-3">
             <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-              isLocked ? "bg-muted" : isCompleted ? "bg-green-500" : "bg-primary"
+              isLocked ? "bg-muted" : isSkipped ? "bg-slate-400" : isSalesApproved ? "bg-blue-500" : isCompleted ? "bg-green-500" : "bg-primary"
             }`}>
               {isLocked ? (
                 <Lock className="w-4 h-4 text-muted-foreground" />
+              ) : isSkipped ? (
+                <FastForward className="w-4 h-4 text-white" />
+              ) : isSalesApproved ? (
+                <UserCheck className="w-4 h-4 text-white" />
               ) : isCompleted ? (
                 <CheckCircle2 className="w-4 h-4 text-white" />
               ) : (
@@ -360,7 +378,7 @@ export default function ProcurementStatusUpdate({ orderId, filterStep = "all", h
               {isCompleted && step.completedAt && (
                 <p className="text-xs text-muted-foreground mt-0.5">
                   <Clock className="w-3 h-3 inline mr-1" />
-                  เสร็จเมื่อ {step.completedAt} โดย {step.completedBy}
+                  {step.status === "skipped" ? "ข้ามเมื่อ" : (step.status === "sales_approved" ? "เซลล์ยืนยันเมื่อ" : "เสร็จเมื่อ")} {step.completedAt} โดย {step.completedBy}
                 </p>
               )}
             </div>
@@ -375,52 +393,132 @@ export default function ProcurementStatusUpdate({ orderId, filterStep = "all", h
         {isExpanded && !isLocked && (
           <CardContent className="px-3 pb-3 pt-0">
             <div className="border-t border-border pt-3 space-y-4">
-              {/* Photos Section */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <ImageIcon className="w-4 h-4 text-primary" />
-                    <span className="text-sm font-medium">รูปภาพอัปเดต</span>
-                    <Badge variant="secondary" className="text-xs h-5">
-                      {step.photos.length} รูป
-                    </Badge>
+              {/* Step Content based on type */}
+              {(type === "shipping" || step.key === "warehouse_to_store") ? (
+                <div>
+                  <div className="flex items-center justify-between mb-2 border-b pb-2">
+                    <div className="flex items-center gap-2">
+                      {step.key === "warehouse_to_store" ? <Package className="w-4 h-4 text-blue-600" /> : <Truck className="w-4 h-4 text-orange-600" />}
+                      <span className="text-sm font-medium">{step.key === "warehouse_to_store" ? "บันทึกสินค้าถึงร้าน" : "บันทึกวันจัดส่ง"}</span>
+                    </div>
                   </div>
-                </div>
-
-                {step.photos.length > 0 ? (
-                  <div className="grid grid-cols-3 gap-2 mb-3">
-                    {step.photos.map((photo, photoIdx) => (
-                      <div key={photoIdx} className="relative group">
-                        <img
-                          src={photo.url}
-                          alt={`${step.label} - ${photoIdx + 1}`}
-                          className="w-full h-20 object-cover rounded-lg border cursor-pointer hover:opacity-90 transition-opacity"
-                          onClick={() => openLightbox(photo.url)}
+                  
+                  {step.status === "pending" ? (
+                    <div className="space-y-4 pt-2">
+                      <div className="flex flex-col gap-2">
+                        <Label className="text-sm font-medium text-muted-foreground">{step.key === "warehouse_to_store" ? "วันที่สินค้าถึงร้าน" : "วันที่จัดส่ง / ทำรายการ"}</Label>
+                        <Input 
+                          type="date" 
+                          defaultValue={new Date().toLocaleDateString('en-CA')}
+                          className="w-full"
+                          onChange={(e) => {
+                             if(e.target.value) {
+                               handleStepAction(step.key, type, "complete");
+                               if (step.key === "warehouse_to_store") {
+                                 toast.success(`แจ้งแผนกผลิตและจัดส่งเรียบร้อย — สินค้า ${orderId} ถึงร้านแล้ว รอ ตรวจสอบสินค้า QC`, { duration: 5000 });
+                               }
+                             }
+                          }}
                         />
-                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center">
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            className="h-7 w-7 p-0"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openLightbox(photo.url);
-                            }}
-                          >
-                            <Eye className="w-3 h-3" />
-                          </Button>
-                        </div>
-                        <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded-b-lg truncate">
-                          {photo.uploadedBy} • {photo.uploadedAt.split(' ')[1] || photo.uploadedAt}
-                        </div>
+                        <p className="text-xs text-muted-foreground">* ระบบจะแสดงวันที่ปัจจุบันให้อัตโนมัติ หรือเลือกวันที่และระบบจะบันทึกสถานะทันที</p>
                       </div>
-                    ))}
+                      
+                      <div className="flex justify-between gap-2 pt-2">
+                        <Button 
+                          size="sm"
+                          variant="secondary"
+                          className="w-1/3 gap-1 px-3 text-slate-600 hover:bg-slate-200"
+                          onClick={() => handleStepAction(step.key, type, "skip")}
+                        >
+                          <FastForward className="w-4 h-4" />
+                          ข้าม
+                        </Button>
+                        <Button
+                          size="sm"
+                          className={`w-2/3 ${step.key === "warehouse_to_store" ? "bg-blue-600 hover:bg-blue-700" : "bg-orange-500 hover:bg-orange-600"} text-white gap-2`}
+                          onClick={() => {
+                             handleStepAction(step.key, type, "complete");
+                             if (step.key === "warehouse_to_store") {
+                               toast.success(`แจ้งแผนกผลิตและจัดส่งเรียบร้อย — สินค้า ${orderId} ถึงร้านแล้ว รอ ตรวจสอบสินค้า QC`, { duration: 5000 });
+                             }
+                          }}
+                        >
+                          {step.key === "warehouse_to_store" ? <Package className="w-4 h-4" /> : <Truck className="w-4 h-4" />}
+                          {step.key === "warehouse_to_store" ? "อัพเดท สินค้าถึงร้าน" : "ยืนยันจัดส่งสินค้า"}
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className={`py-6 px-4 ${step.key === "warehouse_to_store" ? "bg-blue-50/50 border-blue-200" : "bg-orange-50/50 border-orange-200"} rounded-lg text-center border`}>
+                      <p className={`text-sm font-medium flex flex-col items-center justify-center gap-2 ${step.key === "warehouse_to_store" ? "text-blue-700" : "text-orange-700"}`}>
+                        {step.status === "skipped" ? (
+                          <><FastForward className="w-6 h-6 mb-1 text-slate-400" /> {step.key === "warehouse_to_store" ? "ข้ามขั้นตอนสินค้าถึงร้านนี้" : "ข้ามขั้นตอนการจัดส่งนี้"}</>
+                        ) : (
+                          <><CheckCircle2 className="w-6 h-6 mb-1 text-green-500" /> {step.key === "warehouse_to_store" ? "แจ้งสินค้าถึงร้านเรียบร้อยแล้ว!" : "ยืนยันข้อมูลการจัดส่งเรียบร้อยแล้ว!"}</>
+                        )}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <ImageIcon className="w-4 h-4 text-primary" />
+                      <span className="text-sm font-medium">รูปภาพอัปเดต</span>
+                      <Badge variant="secondary" className="text-xs h-5">
+                        {step.photos.length} รูป
+                      </Badge>
+                    </div>
                   </div>
-                ) : (
-                  <div className="flex items-center justify-center h-20 bg-muted/50 rounded-lg border border-dashed mb-3">
-                    <span className="text-sm text-muted-foreground">ยังไม่มีรูปภาพ</span>
-                  </div>
-                )}
+
+                  {step.photos.length > 0 ? (
+                    <div className="grid grid-cols-3 gap-2 mb-3">
+                      {step.photos.map((photo, photoIdx) => (
+                        <div key={photoIdx} className="relative group">
+                          <img
+                            src={photo.url}
+                            alt={`${step.label} - ${photoIdx + 1}`}
+                            className="w-full h-20 object-cover rounded-lg border cursor-pointer hover:opacity-90 transition-opacity"
+                            onClick={() => openLightbox(photo.url)}
+                          />
+                          <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center gap-2">
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              className="h-7 w-7 p-0"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openLightbox(photo.url);
+                              }}
+                            >
+                              <Eye className="w-3 h-3" />
+                            </Button>
+                            {step.status === "pending" && (
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                className="h-7 w-7 p-0"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeletePhoto(step.key, type, photoIdx);
+                                }}
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            )}
+                          </div>
+                          <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded-b-lg truncate">
+                            {photo.uploadedBy} • {photo.uploadedAt.split(' ')[1] || photo.uploadedAt}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center h-20 bg-muted/50 rounded-lg border border-dashed mb-3">
+                      <span className="text-sm text-muted-foreground">ยังไม่มีรูปภาพ</span>
+                    </div>
+                  )}
 
                 {/* Upload Button - Only show for pending steps */}
                 {step.status === "pending" && (
@@ -430,7 +528,7 @@ export default function ProcurementStatusUpdate({ orderId, filterStep = "all", h
                         size="sm" 
                         variant="outline" 
                         className="gap-2 flex-1"
-                        onClick={() => handlePhotoUpload(step.key, type)}
+                        onClick={() => document.getElementById(`upload-${type}-${step.key}`)?.click()}
                       >
                         <Upload className="w-4 h-4" />
                         อัพโหลดรูป
@@ -440,51 +538,47 @@ export default function ProcurementStatusUpdate({ orderId, filterStep = "all", h
                         accept="image/*"
                         className="hidden"
                         id={`upload-${type}-${step.key}`}
-                        onChange={() => handlePhotoUpload(step.key, type)}
+                        onChange={(e) => handlePhotoUpload(e, step.key, type)}
                       />
                     </div>
 
-                {/* Mark Complete Button */}
-                    <Button 
-                      size="sm"
-                      className="w-full bg-green-500 hover:bg-green-600 text-white gap-2"
-                      onClick={() => handleMarkComplete(step.key, type)}
-                      disabled={step.photos.length === 0}
-                    >
-                      <CheckCircle2 className="w-4 h-4" />
-                      ยืนยันขั้นตอนนี้เสร็จสิ้น
-                    </Button>
+                    {/* Action Buttons */}
+                    <div className="flex flex-wrap gap-2">
+                      <Button 
+                        size="sm"
+                        variant="secondary"
+                        className="gap-1 px-3 text-slate-600 hover:bg-slate-200 flex-1 min-w-[30%]"
+                        onClick={() => handleStepAction(step.key, type, "skip")}
+                      >
+                        <FastForward className="w-4 h-4" />
+                        ข้าม
+                      </Button>
+                      <Button 
+                        size="sm"
+                        className="flex-1 min-w-[30%] bg-blue-500 hover:bg-blue-600 text-white gap-2"
+                        onClick={() => handleStepAction(step.key, type, "sales_approve")}
+                        disabled={step.photos.length === 0}
+                      >
+                        <UserCheck className="w-4 h-4" />
+                        เซลล์ยืนยันแบบ
+                      </Button>
+                      <Button 
+                        size="sm"
+                        className="flex-1 min-w-[30%] bg-green-500 hover:bg-green-600 text-white gap-2"
+                        onClick={() => handleStepAction(step.key, type, "complete")}
+                        disabled={step.photos.length === 0}
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        ยืนยันงาน (จัดซื้อ)
+                      </Button>
+                    </div>
                     {step.photos.length === 0 && (
-                      <p className="text-xs text-amber-600 text-center">* กรุณาอัพโหลดรูปอย่างน้อย 1 รูปก่อนยืนยัน</p>
+                      <p className="text-xs text-amber-600 text-center">* กรุณาอัพโหลดรูป 1 รูป ก่อนการยืนยัน หรือกด 'ข้าม'</p>
                     )}
-
                   </div>
                 )}
-
-                {/* Special button for warehouse_to_store: notify production - shown regardless of step status */}
-                {step.key === "warehouse_to_store" && type === "logistics" && (() => {
-                  const storeQcStep = logisticsSteps.find(s => s.key === "store_qc");
-                  const alreadyNotified = storeQcStep?.status === "pending" || storeQcStep?.status === "completed";
-                  return (
-                    <Button
-                      size="sm"
-                      className={`w-full gap-2 mt-3 ${alreadyNotified ? "bg-green-600 hover:bg-green-700" : "bg-blue-600 hover:bg-blue-700"} text-white`}
-                      onClick={() => {
-                        if (step.status === "pending") {
-                          handleMarkComplete("warehouse_to_store", "logistics");
-                        }
-                        toast.success(
-                          `แจ้งแผนกผลิตและจัดส่งเรียบร้อย — สินค้า ${orderId} ถึงร้านแล้ว รอ ตรวจสอบสินค้า QC`,
-                          { duration: 5000 }
-                        );
-                      }}
-                    >
-                      <Package className="w-4 h-4" />
-                      {alreadyNotified ? "✓ แจ้งสินค้าถึงร้านแล้ว" : "อัพเดท สินค้าถึงร้าน"}
-                    </Button>
-                  );
-                })()}
-              </div>
+                </div>
+              )}
             </div>
           </CardContent>
         )}

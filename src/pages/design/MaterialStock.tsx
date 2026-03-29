@@ -160,6 +160,12 @@ export default function MaterialStock() {
   const [stockPage, setStockPage] = useState(1);
   const [stockPageSize, setStockPageSize] = useState(10);
 
+  // Accounting / PR states
+  const [isPRDrawerOpen, setIsPRDrawerOpen] = useState(false);
+  const [prItems, setPrItems] = useState<any[]>([]);
+  const [prRequester, setPrRequester] = useState("");
+  const [prRemark, setPrRemark] = useState("");
+
   // Fetch data
   const fetchData = async () => {
     setLoading(true);
@@ -522,6 +528,140 @@ export default function MaterialStock() {
     }
   };
 
+  // === PR / Accounting handlers ===
+  const handleOpenPRDrawer = () => {
+    // Auto-fill low stock items
+    const lowStockItems = materials.filter(m => m.current_qty <= m.min_qty).map(m => ({
+      material_name: m.material_name,
+      unit: m.unit,
+      current_qty: m.current_qty,
+      min_qty: m.min_qty,
+      request_qty: m.min_qty > 0 ? (m.min_qty * 2) - m.current_qty : 10 // Recommend some qty
+    }));
+    setPrItems(lowStockItems.length > 0 ? lowStockItems : []);
+    setIsPRDrawerOpen(true);
+  };
+
+  const addPrItem = () => {
+    setPrItems([...prItems, { material_name: "", unit: "", current_qty: 0, min_qty: 0, request_qty: 1 }]);
+  };
+
+  const removePrItem = (index: number) => {
+    const newItems = [...prItems];
+    newItems.splice(index, 1);
+    setPrItems(newItems);
+  };
+
+  const updatePrItem = (index: number, field: string, value: any) => {
+    const newItems = [...prItems];
+    if (field === 'material_name') {
+      const mat = materials.find(m => m.material_name === value);
+      if (mat) {
+        newItems[index] = { ...newItems[index], material_name: mat.material_name, unit: mat.unit, current_qty: mat.current_qty, min_qty: mat.min_qty };
+      }
+    } else {
+      newItems[index] = { ...newItems[index], [field]: value };
+    }
+    setPrItems(newItems);
+  };
+
+  const handlePrintPR = () => {
+    if (prItems.length === 0) {
+      toast.error("กรุณาเพิ่มรายการวัสดุที่ต้องการสั่งซื้อ");
+      return;
+    }
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    let itemsHtml = '';
+    prItems.forEach((item, idx) => {
+      itemsHtml += `
+        <tr>
+          <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${idx + 1}</td>
+          <td style="border: 1px solid #ddd; padding: 8px;">${item.material_name}</td>
+          <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${item.current_qty} ${item.unit}</td>
+          <td style="border: 1px solid #ddd; padding: 8px; text-align: center; font-weight: bold;">${item.request_qty} ${item.unit}</td>
+          <td style="border: 1px solid #ddd; padding: 8px;"></td>
+        </tr>
+      `;
+    });
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>ใบขอซื้อวัสดุ (Purchase Requisition)</title>
+        <style>
+          body { font-family: 'Sarabun', sans-serif; padding: 40px; color: #333; }
+          h2 { text-align: center; margin-bottom: 5px; }
+          .header-info { display: flex; justify-content: space-between; margin-bottom: 20px; font-size: 14px; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+          th { border: 1px solid #ddd; padding: 10px; background-color: #f8f9fa; }
+          .signatures { display: flex; justify-content: space-between; margin-top: 50px; text-align: center; }
+          .sig-box { width: 30%; }
+          .line { border-bottom: 1px solid #333; margin-bottom: 5px; height: 30px; }
+        </style>
+      </head>
+      <body onload="window.print();">
+        <h2>ใบขอให้สั่งซื้อวัสดุ (Purchase Requisition)</h2>
+        <h4 style="text-align: center; margin-top: 0; color: #666;">ส่ง: แผนกบัญชี / จัดซื้อ</h4>
+        
+        <div class="header-info">
+          <div>
+            <p><strong>แผนกที่ขอ:</strong> ฝ่ายกราฟฟิก (Design)</p>
+            <p><strong>ผู้ขอซื้อ:</strong> ${prRequester || '____________________'}</p>
+            <p><strong>หมายเหตุ:</strong> ${prRemark || '-'}</p>
+          </div>
+          <div>
+            <p><strong>วันที่ขอซื้อ:</strong> ${new Date().toLocaleDateString('th-TH')}</p>
+            <p><strong>วันที่ต้องการใช้งาน:</strong> ____________________</p>
+          </div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th width="10%">ลำดับ</th>
+              <th width="40%">รายการวัสดุที่ต้องการสั่งซื้อ</th>
+              <th width="15%">คงเหลือในสต็อก</th>
+              <th width="15%">จำนวนที่ขอซื้อ</th>
+              <th width="20%">หมายเหตุบัญชี</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${itemsHtml}
+          </tbody>
+        </table>
+
+        <div class="signatures">
+          <div class="sig-box">
+            <div class="line"></div>
+            <p>ผู้ขอซื้อ (ฝ่ายกราฟฟิก)</p>
+            <p>วันที่: ...../...../.....</p>
+          </div>
+          <div class="sig-box">
+            <div class="line"></div>
+            <p>ผู้อนุมัติ (หัวหน้าแผนก)</p>
+            <p>วันที่: ...../...../.....</p>
+          </div>
+          <div class="sig-box">
+            <div class="line"></div>
+            <p>ผู้รับเรื่อง (แผนกบัญชี/จัดซื้อ)</p>
+            <p>วันที่: ...../...../.....</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+    
+    setIsPRDrawerOpen(false);
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -673,6 +813,9 @@ export default function MaterialStock() {
               </div>
             </div>
             <div className="flex gap-2">
+              <Button onClick={handleOpenPRDrawer} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                <FileText className="w-4 h-4 mr-2" />ขอซื้อวัสดุ (ส่งบัญชี)
+              </Button>
               <Button variant="outline" size="sm" onClick={() => handleExportCSV('stock')}>
                 <Download className="w-4 h-4 mr-2" />Export CSV
               </Button>
@@ -956,6 +1099,78 @@ export default function MaterialStock() {
               </div>
             </div>
           )}
+        </SheetContent>
+      </Sheet>
+
+      {/* Create Purchase Requisition (PR) Drawer */}
+      <Sheet open={isPRDrawerOpen} onOpenChange={setIsPRDrawerOpen}>
+        <SheetContent className="w-[500px] sm:w-[700px] max-w-none">
+          <SheetHeader>
+            <SheetTitle>สร้างใบขอสั่งซื้อ (ส่งฝ่ายบัญชี)</SheetTitle>
+            <SheetDescription>ระบบแนะนำรายการวัสดุที่ถึงจุดสั่งซื้อขั้นต่ำให้อัตโนมัติ สามารถเพิ่มหรือลบรายการได้</SheetDescription>
+          </SheetHeader>
+          <div className="space-y-4 mt-6 overflow-y-auto max-h-[calc(100vh-140px)] px-1">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>ผู้ขอซื้อ (พนักงานกราฟฟิก)</Label>
+                <Input value={prRequester} onChange={(e) => setPrRequester(e.target.value)} placeholder="ชื่อ นามสกุล" className="mt-1" />
+              </div>
+              <div>
+                <Label>หมายเหตุสำหรับบัญชี</Label>
+                <Input value={prRemark} onChange={(e) => setPrRemark(e.target.value)} placeholder="..." className="mt-1" />
+              </div>
+            </div>
+
+            <div className="mt-6 border rounded-lg p-4 bg-muted/10">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-semibold">รายการวัสดุที่ต้องการขอซื้อ</h3>
+                <Button size="sm" variant="outline" onClick={addPrItem}><Plus className="w-4 h-4 mr-1" /> เพิ่มรายการ</Button>
+              </div>
+
+              {prItems.length === 0 ? (
+                <div className="text-center py-6 text-muted-foreground border-2 border-dashed rounded-md">ไม่มีรายการวัสดุ</div>
+              ) : (
+                <div className="space-y-3">
+                  {prItems.map((item, index) => (
+                    <div key={index} className="flex items-center gap-2 bg-background p-2 border rounded-md relative shadow-sm">
+                      <div className="flex-1">
+                        <Label className="text-xs text-muted-foreground">รายการวัสดุ</Label>
+                        <Select value={item.material_name} onValueChange={(val) => updatePrItem(index, 'material_name', val)}>
+                          <SelectTrigger className="h-8 mt-1"><SelectValue placeholder="เลือกวัสดุ" /></SelectTrigger>
+                          <SelectContent>
+                            {materials.map(m => (<SelectItem key={m.id} value={m.material_name}>{m.material_name}</SelectItem>))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="w-[100px]">
+                        <Label className="text-xs text-muted-foreground">คงเหลือ</Label>
+                        <Input disabled value={item.current_qty !== undefined ? `${item.current_qty} ${item.unit}` : "-"} className="h-8 mt-1 bg-muted font-semibold text-center text-xs" />
+                      </div>
+                      <div className="w-[100px]">
+                        <Label className="text-xs font-bold text-blue-600">จำนวนที่ขอซื้อ</Label>
+                        <Input type="number" min="1" value={item.request_qty} onChange={(e) => updatePrItem(index, 'request_qty', parseInt(e.target.value) || 0)} className="h-8 mt-1" />
+                      </div>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 mt-5 text-destructive hover:bg-destructive/10" onClick={() => removePrItem(index)}>
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            
+            <div className="bg-blue-50 text-blue-800 p-3 rounded-md text-sm flex gap-2">
+              <AlertTriangle className="w-5 h-5 flex-shrink-0" />
+              <p>ระบบจะสร้างไฟล์และเปิดหน้าต่างให้คุณ <b>สั่งพิมพ์ (Print)</b> หรือ <b>Save as PDF</b> เพื่อส่งเอกสารใบขอซื้อนี้ไปให้ทางแผนกบัญชีดำเนินการต่อ</p>
+            </div>
+
+            <div className="flex justify-end pt-4 mt-4 border-t gap-2">
+              <Button variant="outline" onClick={() => setIsPRDrawerOpen(false)}>ยกเลิก</Button>
+              <Button onClick={handlePrintPR} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                <FileText className="w-4 h-4 mr-2" /> พิมพ์ใบขอซื้อ
+              </Button>
+            </div>
+          </div>
         </SheetContent>
       </Sheet>
 

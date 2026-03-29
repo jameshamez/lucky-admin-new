@@ -417,7 +417,16 @@ export default function ProcurementReports() {
               </TableBody>
             </Table>
           </div>
-          <p className="text-xs text-muted-foreground mt-2">* ตีราคา / สั่งผลิต / เปิด PO (หน่วย: งาน)</p>
+          <div className="mt-4 p-3 bg-blue-50/50 rounded-lg border border-blue-100 text-sm text-blue-800">
+            <p className="font-semibold flex items-center gap-2 mb-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-500 inline-block"></span>
+              คำชี้แจงเกี่ยวกับการนับจำนวน "ตีราคา"
+            </p>
+            <p className="pl-3.5 text-blue-700/80 text-xs">
+              การสรุปยอด "ตีราคา" จะอ้างอิงจากบัญชีไลน์ลูกค้า (LINE) <b>แบบไม่ซ้ำ (Unique User)</b> 
+              <br/>เช่น ลูกค้า 1 คนขอตีราคาสินค้า 5 ครั้ง ระบบจะนับยอดการตีราคาเป็นแค่ 1 ครั้ง เพื่อให้สอดคล้องกับ Conversion Rate ที่แม่นยำที่สุด
+            </p>
+          </div>
         </CardContent>
       </Card>
 
@@ -426,7 +435,7 @@ export default function ProcurementReports() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <FileCheck className="w-5 h-5" />
-            เปรียบเทียบ: ส่งตีราคา vs สั่งผลิตจริง
+            เปรียบเทียบ: จำนวนลูกค้าที่ส่งตีราคา vs ลูกค้าที่สั่งผลิตจริง
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -474,13 +483,13 @@ export default function ProcurementReports() {
 
           {/* Conversion Rate Table */}
           <div className="mt-6">
-            <h4 className="text-sm font-medium mb-3">อัตราการแปลงจากตีราคาเป็นสั่งผลิต</h4>
+            <h4 className="text-sm font-medium mb-3">อัตราการแปลงจากลูกค้าที่ให้ตีราคา เป็น ลูกค้าสั่งผลิต (Conversion Rate)</h4>
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>ประเภทสินค้า</TableHead>
-                  <TableHead className="text-center">ส่งตีราคา (งาน)</TableHead>
-                  <TableHead className="text-center">สั่งผลิตจริง (งาน)</TableHead>
+                  <TableHead className="text-center">ลูกค้าส่งตีราคา (คน)</TableHead>
+                  <TableHead className="text-center">ลูกค้าที่สั่งผลิตจริง (คน)</TableHead>
                   <TableHead className="text-center">อัตราแปลง (%)</TableHead>
                   <TableHead className="text-center">สถานะ</TableHead>
                 </TableRow>

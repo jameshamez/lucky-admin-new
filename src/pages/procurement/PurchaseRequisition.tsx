@@ -75,6 +75,8 @@ interface PRItem {
   payments: PRPayment[];
   attachments: PRAttachment[];
   status: "pending" | "ordered" | "received" | "rejected";
+  poNumber?: string;
+  receiveAttachments: PRAttachment[];
 }
 
 // ========== Constants ==========
@@ -137,6 +139,7 @@ const initialData: PRItem[] = [
     includeVat: false,
     payments: [],
     attachments: [],
+    receiveAttachments: [],
     status: "pending",
   },
   {
@@ -156,7 +159,9 @@ const initialData: PRItem[] = [
     includeVat: true,
     payments: [{ id: "p1", date: new Date(2026, 1, 9), amount: 1050, method: "โอนเงิน" }],
     attachments: [],
+    receiveAttachments: [],
     status: "ordered",
+    poNumber: "PO-2026-0010",
   },
   {
     id: "3",
@@ -176,6 +181,7 @@ const initialData: PRItem[] = [
     includeVat: true,
     payments: [],
     attachments: [],
+    receiveAttachments: [],
     status: "received",
   },
   {
@@ -195,6 +201,7 @@ const initialData: PRItem[] = [
     includeVat: false,
     payments: [],
     attachments: [],
+    receiveAttachments: [],
     status: "rejected",
   },
 ];
@@ -264,6 +271,8 @@ export default function PurchaseRequisition() {
     includeVat: false,
     payments: [],
     attachments: [],
+    receiveAttachments: [],
+    poNumber: "",
   });
 
   // Search & filters
@@ -284,6 +293,7 @@ export default function PurchaseRequisition() {
 
   // File input ref
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const receiveFileInputRef = useRef<HTMLInputElement>(null);
 
   const filteredJobOptions = useMemo(() => {
     if (!jobSearchTerm) return jobIdOptions;
@@ -380,6 +390,8 @@ export default function PurchaseRequisition() {
       includeVat: false,
       payments: [],
       attachments: [],
+      receiveAttachments: [],
+      poNumber: "",
     });
     setActivePR(null);
     setDrawerMode("create");
@@ -399,6 +411,8 @@ export default function PurchaseRequisition() {
       includeVat: pr.includeVat,
       payments: [...pr.payments],
       attachments: [...pr.attachments],
+      receiveAttachments: [...(pr.receiveAttachments || [])],
+      poNumber: pr.poNumber || "",
     });
     setActivePR(pr);
     setDrawerMode("edit");
@@ -529,6 +543,23 @@ export default function PurchaseRequisition() {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     handleFiles(e.dataTransfer.files);
+  };
+
+  const handleReceiveFiles = (files: FileList | null) => {
+    if (!files) return;
+    const newAttachments: PRAttachment[] = Array.from(files).map(file => ({
+      id: String(Date.now()) + Math.random(),
+      file,
+      preview: file.type.startsWith("image/") ? URL.createObjectURL(file) : "",
+    }));
+    setForm(f => ({ ...f, receiveAttachments: [...f.receiveAttachments, ...newAttachments] }));
+  };
+
+  const removeReceiveAttachment = (id: string) => setForm(f => ({ ...f, receiveAttachments: f.receiveAttachments.filter(a => a.id !== id) }));
+
+  const handleReceiveDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    handleReceiveFiles(e.dataTransfer.files);
   };
 
   // Export CSV
@@ -787,6 +818,16 @@ export default function PurchaseRequisition() {
                   <div>
                     <Label className="text-xs font-semibold">เลขที่ PR</Label>
                     <Input value={isReadonly && activePR ? activePR.prNumber : generatePRNumber()} disabled className="h-9 text-sm bg-muted" />
+                  </div>
+                  <div>
+                    <Label className="text-xs font-semibold">เลขที่ PO (อ้างอิง)</Label>
+                    <Input 
+                      value={isReadonly && viewData ? (viewData.poNumber || "-") : form.poNumber} 
+                      onChange={e => setForm(f => ({ ...f, poNumber: e.target.value }))} 
+                      disabled={isReadonly} 
+                      placeholder="เช่น PO-2026-0001" 
+                      className="h-9 text-sm" 
+                    />
                   </div>
                   <DatePickerField label="วันที่ออก PR" value={isReadonly && viewData ? viewData.issueDate : form.issueDate} onChange={d => setForm(f => ({ ...f, issueDate: d }))} disabled={isReadonly} />
                   <DatePickerField label="วันที่ต้องการใช้งาน" value={isReadonly && viewData ? viewData.usageDate : form.usageDate} onChange={d => setForm(f => ({ ...f, usageDate: d }))} disabled={isReadonly} />
@@ -1206,6 +1247,79 @@ export default function PurchaseRequisition() {
                       </div>
                     ))}
                   </div>
+                </div>
+              )}
+
+              {/* Section 5: Receive Photos (Only visible if status is received) */}
+              {((!isReadonly && activePR?.status === "received") || (isReadonly && viewData?.status === "received")) && (
+                <div className="mt-8 border-t pt-6 border-dashed" style={{ borderColor: "#16a34a" }}>
+                  <h3 className="text-sm font-bold mb-3 flex items-center gap-2 text-green-700">
+                    📦 รูปถ่ายยืนยันรับของ
+                  </h3>
+                  
+                  {!isReadonly ? (
+                    <>
+                      <div
+                        className="border-2 border-dashed border-green-200 bg-green-50/50 rounded-lg p-6 text-center text-green-700 hover:bg-green-100/50 transition-colors cursor-pointer"
+                        onClick={() => receiveFileInputRef.current?.click()}
+                        onDragOver={e => e.preventDefault()}
+                        onDrop={handleReceiveDrop}
+                      >
+                        <ImageIcon className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                        <p className="text-sm font-medium">ลากวางรูปภาพ หรือ คลิกเพื่อเลือกไฟล์รูป</p>
+                        <p className="text-xs mt-1 text-green-600/80">รองรับไฟล์รูปภาพ สำหรับยืนยันการรับสินค้า</p>
+                        <input ref={receiveFileInputRef} type="file" multiple accept="image/*" className="hidden" onChange={e => handleReceiveFiles(e.target.files)} />
+                      </div>
+
+                      {form.receiveAttachments.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-3">
+                          {form.receiveAttachments.map(att => (
+                            <div key={att.id} className="relative border-2 border-green-200 rounded-lg p-1 w-24 h-24 flex items-center justify-center bg-white group">
+                              {att.preview ? (
+                                <img src={att.preview} alt={att.file.name} className="w-full h-full object-cover rounded" />
+                              ) : (
+                                <div className="text-center text-green-700">
+                                  <ImageIcon className="w-6 h-6 mx-auto mb-1 opacity-70" />
+                                  <p className="text-[10px] mt-1 truncate w-20 px-1">{att.file.name}</p>
+                                </div>
+                              )}
+                              <Button
+                                variant="destructive"
+                                size="icon"
+                                className="absolute -top-2 -right-2 h-5 w-5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                                onClick={() => removeReceiveAttachment(att.id)}
+                              >
+                                <X className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    viewData && viewData.receiveAttachments && viewData.receiveAttachments.length > 0 ? (
+                      <div className="bg-green-50/30 p-4 rounded-lg border border-green-100">
+                        <div className="flex flex-wrap gap-3">
+                          {viewData.receiveAttachments.map(att => (
+                            <div key={att.id} className="border-2 border-green-200 rounded-lg p-1 w-28 h-28 flex items-center justify-center bg-white shadow-sm">
+                              {att.preview ? (
+                                <a href={att.preview} target="_blank" rel="noopener noreferrer">
+                                  <img src={att.preview} alt={att.file.name} className="w-full h-full object-cover rounded hover:opacity-90" />
+                                </a>
+                              ) : (
+                                <div className="text-center text-green-700">
+                                  <ImageIcon className="w-6 h-6 mx-auto mb-1 opacity-70" />
+                                  <p className="text-[10px] mt-1 truncate w-24 px-1">{att.file.name}</p>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground italic bg-muted/30 p-4 rounded-lg text-center">ยังไม่มีการแนบรูปภาพยืนยันการรับของ</p>
+                    )
+                  )}
                 </div>
               )}
 

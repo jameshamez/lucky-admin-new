@@ -35,25 +35,25 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 // Helper to map API order to Component Order format
 const mapOrder = (o: any) => ({
-  id: o.order_number || `JOB-${o.id}`,
-  orderDate: o.created_at?.split(' ')[0] || "-",
-  lineName: o.customer_line_id || o.line_name || "-",
+  id: o.job_id || o.order_number || `JOB-${o.order_id || o.id || Math.random()}`,
+  orderDate: o.order_date?.split(' ')[0] || o.created_at?.split(' ')[0] || "-",
+  lineName: o.customer_line || o.customer_line_id || o.line_name || "-",
   customerName: o.customer_name || "-",
-  product: o.job_name || "งานสั่งผลิต",
+  product: o.job_name || o.product || "งานสั่งผลิต",
   deliveryDate: o.delivery_date || "-",
   status: o.order_status || "รอผลิต",
   statusOrder: 1,
-  quotation: o.quotation_number || "-",
-  responsiblePerson: o.sales_owner || "-",
-  graphicDesigner: o.graphic_owner || "-",
+  quotation: o.quotation_no || o.quotation_number || "-",
+  responsiblePerson: o.sales_owner || o.responsible_person || "-",
+  graphicDesigner: o.graphic_owner || o.graphic_designer || "-",
   assignedEmployee: o.production_owner || "-",
-  jobType: o.job_type || "งานสั่งผลิต",
-  quantity: parseInt(o.quantity) || 0,
-  isAccepted: o.production_status === 'accepted',
+  jobType: o.job_type || o.product_category || "งานสั่งผลิต",
+  quantity: parseInt(o.total_quantity || o.quantity) || 1,
+  isAccepted: o.production_status === 'accepted' || o.order_status !== 'สร้างคำสั่งซื้อใหม่',
   phone: o.customer_phone || "-",
-  address: o.shipping_address || "-",
+  address: o.customer_address || o.delivery_address || o.shipping_address || "-",
   paymentStatus: o.payment_status || "มัดจำ",
-  deliveryChannel: o.delivery_channel || "-",
+  deliveryChannel: o.delivery_method || o.delivery_channel || "-",
   hasEngravingTag: o.has_engraving === '1' || o.hasEngravingTag === true,
   hasRibbon: o.has_ribbon === '1' || o.hasRibbon === true,
   trackingNumber: o.tracking_number || "",
@@ -61,7 +61,7 @@ const mapOrder = (o: any) => ({
   issueDetail: o.issue_detail || "",
   productDetails: o.productDetails || [],
   paymentInfo: {
-    status: o.payment_status === 'Paid' ? 'full' : 'deposit',
+    status: o.payment_status === 'Paid' || o.payment_status === 'เต็มจำนวน' ? 'full' : 'deposit',
     amount: parseFloat(o.total_price ?? o.total_amount) || 0,
     proof: "#",
     bank: "-",
@@ -70,12 +70,12 @@ const mapOrder = (o: any) => ({
   },
   shippingInfo: {
     province: "-",
-    channel: o.delivery_channel || "-",
-    shippingFee: 0,
+    channel: o.delivery_method || o.delivery_channel || "-",
+    shippingFee: parseFloat(o.shipping_fee) || 0,
     usageDate: o.delivery_date || "-",
   },
   productionWorkflow: o.production_workflow || null,
-  dbId: o.id
+  dbId: o.order_id || o.id
 });
 
 // Mock data removed
@@ -90,8 +90,10 @@ export default function OrderManagement() {
     setLoading(true);
     try {
       const res = await productionService.getOrders();
-      if (res.status === 'success') {
-        const mapped = res.data.map(mapOrder);
+      if (res.status === 'success' && res.data) {
+        // บางครั้ง API อาจส่งคืนมาเป็น array หรือ object ที่มีข้อมูลซ้อนอีกที
+        const dataArr = Array.isArray(res.data) ? res.data : (res.data.data || []);
+        const mapped = dataArr.map(mapOrder);
         setOrders(mapped);
       }
     } catch (error) {

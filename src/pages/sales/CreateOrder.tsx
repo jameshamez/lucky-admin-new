@@ -119,6 +119,7 @@ export default function CreateOrder() {
           taxInvoice: Boolean(o.require_tax_invoice),
           taxCompanyName: o.tax_payer_name,
           taxId: o.tax_id,
+          invoiceType: o.invoice_type || (Boolean(o.require_tax_invoice) ? "tax-invoice" : "no-tax-invoice"),
           responsiblePerson: o.responsible_person,
           savedProducts: [],
         }));
@@ -361,6 +362,7 @@ export default function CreateOrder() {
 
         // ภาษี
         require_tax_invoice: data.requireTaxInvoice ? 1 : 0,
+        invoice_type: data.invoiceType ?? "no-tax-invoice",
         tax_payer_name: data.taxPayerName ?? null,
         tax_id: data.taxId ?? null,
         tax_address: data.taxAddress ?? null,
@@ -421,11 +423,21 @@ export default function CreateOrder() {
             ? deliveryInfo.preferredDeliveryDate.toISOString().split("T")[0]
             : deliveryInfo.preferredDeliveryDate)
           : null,
+        origin_branch: deliveryInfo.originBranch ?? null,
+        destination_branch: deliveryInfo.destinationBranch ?? null,
+        preferred_time_slot: deliveryInfo.preferredTimeSlot ?? null,
 
         // สถานะ
         order_status: data.orderStatus ?? "สร้างคำสั่งซื้อใหม่",
         job_created: data.jobCreated ? 1 : 0,
         notes: data.notes ?? null,
+
+        // ข้อมูลกราฟฟิก
+        graphics_notes: data.graphicsNotes ?? null,
+        design_files: data.designFiles ?? null,
+
+        // ไฟล์ใบเสนอราคา
+        quotation_url: data.quotationUrl ?? null,
 
         // รายการสินค้า (order_items)
         items: (data.savedProducts ?? data.items ?? []).map((item: any) => ({
@@ -454,6 +466,7 @@ export default function CreateOrder() {
               : p.transferDate)
             : null,
           slipUrl: p.slipUrl ?? null,
+          receivingBank: p.receivingBank ?? null,
           additionalDetails: p.additionalDetails ?? null,
         })),
       };
@@ -763,12 +776,22 @@ export default function CreateOrder() {
         )}
 
         <Card>
-          <CardHeader><CardTitle>ข้อมูลผู้เสียภาษี</CardTitle></CardHeader>
+          <CardHeader><CardTitle>ข้อมูลเอกสารและภาษี</CardTitle></CardHeader>
           <CardContent>
             <div className="space-y-4">
-              <div><p className="text-sm text-muted-foreground mb-1">ชื่อผู้เสียภาษี</p><p className="font-medium">{selectedOrder.taxCompanyName || selectedOrder.customerName || "ไม่ระบุ"}</p></div>
-              <div><p className="text-sm text-muted-foreground mb-1">เลขประจำตัวผู้เสียภาษี</p><p className="font-medium">{selectedOrder.taxId || "ไม่ระบุ"}</p></div>
-              <div><p className="text-sm text-muted-foreground mb-1">ที่อยู่ผู้เสียภาษี</p><p className="font-medium whitespace-pre-line">{selectedOrder.customerAddress || "ไม่ระบุ"}</p></div>
+              <div>
+                <p className="text-sm text-muted-foreground mb-1">ประเภทเอกสาร</p>
+                <Badge variant={selectedOrder.invoiceType === "tax-invoice" ? "default" : "outline"}>
+                  {selectedOrder.invoiceType === "tax-invoice" ? "ออกใบกำกับภาษี" : "ไม่ออกใบกำกับภาษี / บิลเงินสด"}
+                </Badge>
+              </div>
+              {selectedOrder.invoiceType === "tax-invoice" && (
+                <>
+                  <div><p className="text-sm text-muted-foreground mb-1">ชื่อผู้เสียภาษี</p><p className="font-medium">{selectedOrder.taxCompanyName || selectedOrder.customerName || "ไม่ระบุ"}</p></div>
+                  <div><p className="text-sm text-muted-foreground mb-1">เลขประจำตัวผู้เสียภาษี</p><p className="font-medium">{selectedOrder.taxId || "ไม่ระบุ"}</p></div>
+                  <div><p className="text-sm text-muted-foreground mb-1">ที่อยู่ผู้เสียภาษี</p><p className="font-medium whitespace-pre-line">{selectedOrder.customerAddress || "ไม่ระบุ"}</p></div>
+                </>
+              )}
             </div>
           </CardContent>
         </Card>

@@ -22,9 +22,8 @@ if ($conn->connect_error) {
     echo json_encode(["status" => "error", "message" => "Connection failed: " . $conn->connect_error]);
     exit();
 }
-$conn->select_db('finfinph_lcukycompany');
+$conn->select_db('nacresc1_1');
 $conn->set_charset("utf8mb4");
-
 $method = $_SERVER['REQUEST_METHOD'];
 $request_uri = $_SERVER['REQUEST_URI'];
 $path_parts = explode('/', trim(parse_url($request_uri, PHP_URL_PATH), '/'));
@@ -65,6 +64,27 @@ switch ($method) {
 
             if ($result->num_rows > 0) {
                 $material = $result->fetch_assoc();
+
+                // Get movement history
+                $history_sql = "SELECT id, DATE_FORMAT(created_at, '%Y-%m-%d %H:%i') as date, type, qty, note, created_by as by_user 
+                                FROM material_movements 
+                                WHERE material_id = ? 
+                                ORDER BY created_at DESC LIMIT 50";
+                $hist_stmt = $conn->prepare($history_sql);
+                if ($hist_stmt) {
+                    $hist_stmt->bind_param("i", $id);
+                    $hist_stmt->execute();
+                    $hist_result = $hist_stmt->get_result();
+                    $history = [];
+                    while ($hrow = $hist_result->fetch_assoc()) {
+                        // Map db column 'by_user' to 'by' to match frontend interface
+                        $hrow['by'] = $hrow['by_user'] ? $hrow['by_user'] : 'System';
+                        unset($hrow['by_user']);
+                        $history[] = $hrow;
+                    }
+                    $material['movementHistory'] = $history;
+                }
+
                 echo json_encode(["status" => "success", "data" => $material]);
             } else {
                 http_response_code(404);
@@ -134,6 +154,24 @@ switch ($method) {
 
             $materials = [];
             while ($row = $result->fetch_assoc()) {
+                // Fetch recent history for each material
+                $history_sql = "SELECT id, DATE_FORMAT(created_at, '%Y-%m-%d %H:%i') as date, type, qty, note, created_by as by_user 
+                                FROM material_movements 
+                                WHERE material_id = ? 
+                                ORDER BY created_at DESC LIMIT 5";
+                $hist_stmt = $conn->prepare($history_sql);
+                if ($hist_stmt) {
+                    $hist_stmt->bind_param("i", $row['id']);
+                    $hist_stmt->execute();
+                    $hist_result = $hist_stmt->get_result();
+                    $history = [];
+                    while ($hrow = $hist_result->fetch_assoc()) {
+                        $hrow['by'] = $hrow['by_user'] ? $hrow['by_user'] : 'System';
+                        unset($hrow['by_user']);
+                        $history[] = $hrow;
+                    }
+                    $row['movementHistory'] = $history;
+                }
                 $materials[] = $row;
             }
 
@@ -329,16 +367,24 @@ switch ($method) {
         switch ($data->adjustType) {
             case 'set':
                 $new_qty = $amount;
+                $movement_type = 'รับเข้า'; // Default or manual override
                 break;
             case 'add':
+            case 'รับเข้า':
                 $new_qty = $current_qty + $amount;
+                $movement_type = 'รับเข้า';
                 break;
             case 'reduce':
+            case 'จ่ายออก':
+            case 'เคลม':
+            case 'ชำรุด':
+            case 'เบิกภายใน':
                 $new_qty = $current_qty - $amount;
+                $movement_type = in_array($data->adjustType, ['reduce']) ? 'จ่ายออก' : $data->adjustType;
                 break;
             default:
                 http_response_code(400);
-                echo json_encode(["status" => "error", "message" => "Invalid adjustType. Must be: set, add, or reduce"]);
+                echo json_encode(["status" => "error", "message" => "Invalid adjustType. Must be: set, add, reduce, รับเข้า, จ่ายออก, เคลม, ชำรุด, or เบิกภายใน"]);
                 exit();
         }
 
@@ -351,6 +397,18 @@ switch ($method) {
         $update_stmt->bind_param("ii", $new_qty, $id);
 
         if ($update_stmt->execute()) {
+            // Log the movement
+            $note = isset($data->note) ? $data->note : null;
+            $created_by = isset($data->by) ? $data->by : 'System';
+
+            // Check if material_movements table exists and try to insert
+            $log_sql = "INSERT INTO material_movements (material_id, type, qty, note, created_by) VALUES (?, ?, ?, ?, ?)";
+            $log_stmt = $conn->prepare($log_sql);
+            if ($log_stmt) {
+                $log_stmt->bind_param("isiss", $id, $movement_type, $amount, $note, $created_by);
+                $log_stmt->execute();
+            }
+
             // Get updated material
             $get_stmt->execute();
             $result = $get_stmt->get_result();

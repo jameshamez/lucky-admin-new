@@ -4,6 +4,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
 import { CalendarIcon } from "lucide-react";
 import html2canvas from "html2canvas";
+import { jsPDF } from "jspdf";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -268,6 +269,42 @@ const Quotation = () => {
   const [actualShippingCost, setActualShippingCost] = useState<number>(0);
   const [activeWorkflowStep, setActiveWorkflowStep] = useState<string>("all");
 
+  // Production Order Forms States
+  const [prodOrderer, setProdOrderer] = useState("จัดซื้อสมชาย");
+  const [prodPo, setProdPo] = useState("");
+  const [prodShipDate, setProdShipDate] = useState("");
+  const [prodSplit, setProdSplit] = useState("");
+  const [prodTotalSales, setProdTotalSales] = useState("");
+  const [prodVat, setProdVat] = useState("7");
+  const [prodChannel, setProdChannel] = useState("SEA");
+  const [prodShipCostRMB, setProdShipCostRMB] = useState("");
+  const [prodExchange, setProdExchange] = useState("5.5");
+
+  const orderPrintRef = useRef<HTMLDivElement>(null);
+
+  const generateProductionOrderPDF = async () => {
+    if (!orderPrintRef.current || !selectedProductionItem) return;
+    try {
+      toast.info("กำลังสร้างใบสั่งงาน (PDF)... กรุณารอสักครู่");
+      // Make visible for print
+      orderPrintRef.current.style.display = "block";
+      const canvas = await html2canvas(orderPrintRef.current, { scale: 2 });
+      orderPrintRef.current.style.display = "none";
+      
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF("p", "mm", "a4");
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      
+      pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`Production_Order_${selectedProductionItem.jobCode}.pdf`);
+      toast.success("ดาวน์โหลดใบสั่งงานสำเร็จ!");
+    } catch (error) {
+      console.error(error);
+      toast.error("เกิดข้อผิดพลาดในการสร้าง PDF");
+    }
+  };
+
   // Workflow steps for production order
   const WORKFLOW_STEPS = [
     { key: "all", label: "ทั้งหมด" },
@@ -359,7 +396,18 @@ const Quotation = () => {
             factory: detailObj?.winnerFactoryValue || item.factory || "",
             factoryLabel: detailObj?.factoryLabel || item.factory_label || "-",
             productType: detailObj?.productType || "custom",
-            material: detailObj?.material || "-",
+            material: (() => {
+              const rawMat = detailObj?.material || "-";
+              const materialMap: Record<string, string> = {
+                "zinc-alloy": "ซิงค์อัลลอย (Zinc Alloy)",
+                "brass": "ทองเหลือง (Brass)",
+                "acrylic": "อะคริลิค",
+                "crystal": "คริสตัล",
+                "iron": "เหล็ก",
+                "polyscreen": "โพลีสกรีน",
+              };
+              return materialMap[rawMat] || rawMat;
+            })(),
             size: detailObj?.size || "-",
             thickness: detailObj?.thickness || "-",
             colors: Array.isArray(detailObj?.colors) ? detailObj.colors : (detailObj?.colors ? [detailObj.colors] : []),
@@ -383,6 +431,12 @@ const Quotation = () => {
             rawDetails: detailObj
           };
         });
+        // เรียงลำดับจากเก่าสุดไปล่าสุด (1 -> 18) ตามที่คุณลูกค้าแจ้ง
+        // อิงตาม ID (Auto Increment)
+        mappedData.sort((a: any, b: any) => {
+          return a.id - b.id; // Ascending order (น้อยสุด -> มากสุด)
+        });
+
         setMockQuotations(mappedData);
       }
     } catch (err) {
@@ -1486,9 +1540,19 @@ const Quotation = () => {
 
   // Deadline color-coding helper
   const getDeadlineDisplay = (eventDate: string) => {
+    if (!eventDate || eventDate === "-" || eventDate.trim() === "") {
+      return <span className="text-muted-foreground">-</span>;
+    }
+
+    const deadline = new Date(eventDate);
+    // Check if valid date
+    if (isNaN(deadline.getTime())) {
+      // Could be Thai localized or something non-standard, just return as-is
+      return <span className="text-foreground">{eventDate}</span>;
+    }
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const deadline = new Date(eventDate);
     deadline.setHours(0, 0, 0, 0);
     const diffTime = deadline.getTime() - today.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
@@ -2050,6 +2114,52 @@ const Quotation = () => {
     toast.success("บันทึกต้นทุนจริงสำเร็จ");
   };
 
+  // Copy Production Details
+  const handleCopyProductionDetails = (quotation: MockQuotation) => {
+    try {
+      let copyText = `📌 ข้อมูลสั่งผลิต: ${quotation.jobName} (${quotation.jobCode})\n`;
+      copyText += `👤 ลูกค้า: ${quotation.customerName}\n`;
+      copyText += `📅 วันส่งมอบ: ${quotation.eventDate}\n`;
+      copyText += `📋 จำนวน: ${quotation.quantity} ชิ้น\n`;
+      copyText += `------------------------\n`;
+      copyText += `🔸 วัสดุ: ${quotation.material}\n`;
+      copyText += `📏 ขนาด: ${quotation.size}\n`;
+      copyText += `↕️ ความหนา: ${quotation.thickness}\n`;
+      copyText += `✨ ชนิดการชุบ: ${(quotation as any).rawDetails?.finishTypeLabel || "-"}\n`;
+      copyText += `🎨 สีและจำนวน:\n`;
+
+      const colorRows = (quotation as any).rawDetails?.colorQuantityRows;
+      if (colorRows && Array.isArray(colorRows) && colorRows.some((r: any) => r.color)) {
+        colorRows.filter((r: any) => r.color).forEach((row: any) => {
+          const qty = Array.isArray(row.quantities) ? row.quantities.reduce((sum: number, q: number) => sum + (q || 0), 0) : 0;
+          copyText += `   - ${row.color} : ${qty} ชิ้น\n`;
+        });
+      } else if (quotation.colors.length > 0) {
+        quotation.colors.forEach((color) => {
+          const qty = Math.ceil(quotation.quantity / Math.max(quotation.colors.length, 1));
+          copyText += `   - ${color} : ${qty} ชิ้น\n`;
+        });
+      } else {
+        copyText += `   - ส่งคละสีตามจำนวน\n`;
+      }
+
+      copyText += `\n📄 ด้านหน้า: ${quotation.frontDetails !== "-" ? quotation.frontDetails : "ไม่มี"}\n`;
+      copyText += `📄 ด้านหลัง: ${quotation.backDetails !== "-" ? quotation.backDetails : "ไม่มี"}\n`;
+      copyText += `🔖 ขนาดสายห้อย: ${quotation.lanyardSize !== "-" ? quotation.lanyardSize : "ไม่มี"}\n`;
+      copyText += `👔 ลายสกรีนสายห้อย: ${quotation.lanyardPatterns || 0} ลาย\n`;
+      
+      if (quotation.notes && quotation.notes !== "-") {
+        copyText += `\n💡 หมายเหตุ: ${quotation.notes}\n`;
+      }
+
+      navigator.clipboard.writeText(copyText);
+      toast.success("คัดลอกข้อมูลสำหรับสั่งผลิตเรียบร้อยแล้ว");
+    } catch (err) {
+      console.error(err);
+      toast.error("ไม่สามารถคัดลอกข้อมูลได้");
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -2185,7 +2295,13 @@ const Quotation = () => {
 
                   {/* Product Specs Section */}
                   <div>
-                    <h4 className="font-semibold text-sm text-foreground mb-4">รายละเอียดสินค้า</h4>
+                    <div className="flex items-center justify-between mb-4">
+                      <h4 className="font-semibold text-sm text-foreground">รายละเอียดสินค้า</h4>
+                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleCopyProductionDetails(selectedQuotation)}>
+                        <Copy className="h-3 w-3 mr-1" />
+                        คัดลอกข้อมูลสั่งผลิต
+                      </Button>
+                    </div>
 
                     {/* Main Specs - 2 Column Grid */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
@@ -2203,7 +2319,7 @@ const Quotation = () => {
                       </div>
                       <div className="bg-muted/40 rounded-lg p-3">
                         <p className="text-xs text-muted-foreground mb-1">ชนิดการชุบ</p>
-                        <p className="font-medium text-sm">Shiny (เงา)</p>
+                        <p className="font-medium text-sm">{(selectedQuotation as any).rawDetails?.finishTypeLabel || "-"}</p>
                       </div>
                     </div>
 
@@ -2219,25 +2335,36 @@ const Quotation = () => {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {selectedQuotation.colors.map((color, idx) => {
-                              const colorQuantities: Record<string, number> = {
-                                "shinny gold (สีทองเงา)": Math.ceil(selectedQuotation.quantity * 0.22),
-                                "shinny silver (สีเงินเงา)": Math.ceil(selectedQuotation.quantity * 0.44),
-                                "shinny copper (สีทองแดงเงา)": Math.ceil(selectedQuotation.quantity * 0.34),
-                              };
-                              const colorDisplayMap: Record<string, string> = {
-                                "shinny gold (สีทองเงา)": "Gold (ทอง)",
-                                "shinny silver (สีเงินเงา)": "Silver (เงิน)",
-                                "shinny copper (สีทองแดงเงา)": "Copper (ทองแดง)",
-                              };
-                              const qty = colorQuantities[color] || Math.ceil(selectedQuotation.quantity / selectedQuotation.colors.length);
-                              return (
-                                <TableRow key={idx}>
-                                  <TableCell className="py-2 text-sm">{colorDisplayMap[color] || color}</TableCell>
-                                  <TableCell className="text-right py-2 text-sm">{qty.toLocaleString()} ชิ้น</TableCell>
-                                </TableRow>
-                              );
-                            })}
+                            {(() => {
+                              const rawDetails = (selectedQuotation as any).rawDetails;
+                              const colorQuantityRows = rawDetails?.colorQuantityRows;
+                              
+                              // Use actual colorQuantityRows data if available
+                              if (colorQuantityRows && Array.isArray(colorQuantityRows) && colorQuantityRows.some((r: any) => r.color)) {
+                                return colorQuantityRows.filter((r: any) => r.color).map((row: any, idx: number) => {
+                                  const totalQty = Array.isArray(row.quantities)
+                                    ? row.quantities.reduce((sum: number, q: number) => sum + (q || 0), 0)
+                                    : 0;
+                                  return (
+                                    <TableRow key={idx}>
+                                      <TableCell className="py-2 text-sm">{row.color}</TableCell>
+                                      <TableCell className="text-right py-2 text-sm">{totalQty.toLocaleString()} ชิ้น</TableCell>
+                                    </TableRow>
+                                  );
+                                });
+                              }
+                              
+                              // Fallback to colors array
+                              return selectedQuotation.colors.map((color, idx) => {
+                                const qty = Math.ceil(selectedQuotation.quantity / Math.max(selectedQuotation.colors.length, 1));
+                                return (
+                                  <TableRow key={idx}>
+                                    <TableCell className="py-2 text-sm">{color}</TableCell>
+                                    <TableCell className="text-right py-2 text-sm">{qty.toLocaleString()} ชิ้น</TableCell>
+                                  </TableRow>
+                                );
+                              });
+                            })()}
                             <TableRow className="bg-muted/30 font-medium">
                               <TableCell className="py-2 text-sm">รวม</TableCell>
                               <TableCell className="text-right py-2 text-sm font-semibold">{selectedQuotation.quantity.toLocaleString()} ชิ้น</TableCell>
@@ -4347,6 +4474,8 @@ Quantity: ${quantityFormatted}`;
                       <Input
                         id="prod-orderer"
                         placeholder="ระบุชื่อผู้สั่งงาน"
+                        value={prodOrderer}
+                        onChange={(e) => setProdOrderer(e.target.value)}
                       />
                     </div>
                     <div className="space-y-2">
@@ -4354,6 +4483,8 @@ Quantity: ${quantityFormatted}`;
                       <Input
                         id="prod-po"
                         placeholder="ระบุเลขที่ใบสั่งซื้อ"
+                        value={prodPo}
+                        onChange={(e) => setProdPo(e.target.value)}
                       />
                     </div>
                   </div>
@@ -4365,6 +4496,8 @@ Quantity: ${quantityFormatted}`;
                       <Input
                         id="prod-shipdate"
                         type="date"
+                        value={prodShipDate}
+                        onChange={(e) => setProdShipDate(e.target.value)}
                       />
                     </div>
                     <div className="space-y-2">
@@ -4372,6 +4505,8 @@ Quantity: ${quantityFormatted}`;
                       <Input
                         id="prod-split"
                         placeholder="ระบุจำนวนแยก เช่น 3 ล็อต"
+                        value={prodSplit}
+                        onChange={(e) => setProdSplit(e.target.value)}
                       />
                     </div>
                   </div>
@@ -4388,6 +4523,8 @@ Quantity: ${quantityFormatted}`;
                           id="prod-totalsales"
                           type="number"
                           placeholder="0"
+                          value={prodTotalSales}
+                          onChange={(e) => setProdTotalSales(e.target.value)}
                         />
                       </div>
                       <div className="space-y-2">
@@ -4395,7 +4532,8 @@ Quantity: ${quantityFormatted}`;
                         <Input
                           id="prod-vat"
                           type="number"
-                          defaultValue="7"
+                          value={prodVat}
+                          onChange={(e) => setProdVat(e.target.value)}
                         />
                       </div>
                     </div>
@@ -4409,7 +4547,7 @@ Quantity: ${quantityFormatted}`;
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label htmlFor="prod-channel">ช่องทางการจัดส่ง</Label>
-                        <Select>
+                        <Select value={prodChannel} onValueChange={setProdChannel}>
                           <SelectTrigger id="prod-channel">
                             <SelectValue placeholder="เลือกช่องทาง" />
                           </SelectTrigger>
@@ -4426,6 +4564,8 @@ Quantity: ${quantityFormatted}`;
                           id="prod-shipcost-rmb"
                           type="number"
                           placeholder="0.00"
+                          value={prodShipCostRMB}
+                          onChange={(e) => setProdShipCostRMB(e.target.value)}
                         />
                       </div>
                     </div>
@@ -4436,7 +4576,8 @@ Quantity: ${quantityFormatted}`;
                           id="prod-exchange"
                           type="number"
                           step="0.01"
-                          defaultValue="5.5"
+                          value={prodExchange}
+                          onChange={(e) => setProdExchange(e.target.value)}
                         />
                       </div>
                       <div className="space-y-2">
@@ -4447,6 +4588,7 @@ Quantity: ${quantityFormatted}`;
                             type="number"
                             placeholder="0.00"
                             readOnly
+                            value={(parseFloat(prodShipCostRMB || "0") * parseFloat(prodExchange || "5.5")).toFixed(2)}
                             className="bg-muted pr-24"
                           />
                           <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
@@ -4465,7 +4607,65 @@ Quantity: ${quantityFormatted}`;
             </div>
           )}
 
-          <SheetFooter>
+          {/* Hidden Printable PDF Section */}
+          {selectedProductionItem && (
+            <div
+              ref={orderPrintRef}
+              style={{ display: "none", width: "800px", padding: "40px", backgroundColor: "#fff", color: "#000" }}
+              className="font-sans absolute -z-50 box-border"
+            >
+              <div className="text-center mb-8 border-b-2 border-black pb-4">
+                <h1 className="text-2xl font-bold mb-2">ใบสั่งงาน (PRODUCTION ORDER)</h1>
+                <p className="text-gray-600">รหัสงาน (JOB ID): <strong>{selectedProductionItem.jobCode}</strong></p>
+                <p className="text-gray-600">ชื่องาน: <strong>{selectedProductionItem.jobName}</strong></p>
+              </div>
+
+              <div className="flex gap-4 mb-6 text-sm">
+                <div className="flex-1 p-4 border rounded-lg bg-gray-50">
+                  <h3 className="font-bold border-b pb-2 mb-2">ข้อมูลออเดอร์</h3>
+                  <p><strong>ผู้สั่งงาน:</strong> {prodOrderer || "-"}</p>
+                  <p><strong>PO Number:</strong> {prodPo || "-"}</p>
+                  <p><strong>วันจัดส่งสินค้า:</strong> {prodShipDate ? new Date(prodShipDate).toLocaleDateString('th-TH') : "-"}</p>
+                  <p><strong>ล็อต/แยก:</strong> {prodSplit || "-"}</p>
+                </div>
+                <div className="flex-1 p-4 border rounded-lg bg-gray-50">
+                  <h3 className="font-bold border-b pb-2 mb-2">ข้อมูลการเงิน & จัดส่ง</h3>
+                  <p><strong>ยอดขาย:</strong> {parseFloat(prodTotalSales || "0").toLocaleString()} บาท (VAT {prodVat}%)</p>
+                  <p><strong>ต้นทุนการผลิต:</strong> {selectedProductionItem.totalSellingPrice.toLocaleString()} บาท</p>
+                  <p><strong>ช่องทางจัดส่ง:</strong> {prodChannel}</p>
+                  <p><strong>ค่าขนส่งจีน:</strong> {prodShipCostRMB || "0"} RMB</p>
+                </div>
+              </div>
+
+              <div className="p-4 border rounded-lg mb-6 text-sm">
+                <h3 className="font-bold border-b pb-2 mb-4">สเปกสินค้า (Product Specs)</h3>
+                <div className="grid grid-cols-2 gap-y-2 gap-x-4">
+                  <p><strong>โรงงานผลิต:</strong> {selectedProductionItem.factoryLabel}</p>
+                  <p><strong>จำนวนสั่งผลิต:</strong> {selectedProductionItem.quantity.toLocaleString()} ชิ้น</p>
+                  <p><strong>วัสดุ:</strong> {selectedProductionItem.material}</p>
+                  <p><strong>ขนาด:</strong> {selectedProductionItem.size}</p>
+                  <p><strong>ความหนา:</strong> {selectedProductionItem.thickness}</p>
+                  <p><strong>สี/การชุบ:</strong> {selectedProductionItem.colors.join(", ")}</p>
+                  <p><strong>ด้านหน้า:</strong> {selectedProductionItem.frontDetails || "-"}</p>
+                  <p><strong>ด้านหลัง:</strong> {selectedProductionItem.backDetails || "-"}</p>
+                  <p><strong>สายคล้อง:</strong> {selectedProductionItem.lanyardSize} ({selectedProductionItem.lanyardPatterns} แบบ)</p>
+                </div>
+                {selectedProductionItem.notes && (
+                  <p className="mt-4 pt-2 border-t"><strong>หมายเหตุเพิ่มเติม:</strong> {selectedProductionItem.notes}</p>
+                )}
+              </div>
+
+              <div className="text-xs text-center text-gray-500 mt-12">
+                เอกสารสร้างเมื่อ: {new Date().toLocaleString("th-TH")}
+              </div>
+            </div>
+          )}
+
+          <SheetFooter className="flex justify-end gap-3 pb-8">
+            <Button variant="secondary" onClick={generateProductionOrderPDF} className="gap-2 bg-blue-600 hover:bg-blue-700 text-white">
+              <Download className="w-4 h-4" />
+              สร้างใบสั่งงาน (PDF)
+            </Button>
             <Button variant="outline" onClick={closeProductionModal}>
               ปิด
             </Button>

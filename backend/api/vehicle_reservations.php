@@ -16,7 +16,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
 
 require '../condb.php';
 /** @var mysqli $conn */
-$conn->select_db('finfinph_lcukycompany');
+$conn->select_db('nacresc1_1');
 // เช็คการเชื่อมต่อ
 if ($conn->connect_error) {
     http_response_code(500);
@@ -44,7 +44,8 @@ switch ($method) {
                     "status" => $row['status'],
                     "notes" => $row['notes'],
                     "customer_name" => $row['customer_name'],
-                    "product_detail" => $row['product_detail']
+                    "product_detail" => $row['product_detail'],
+                    "reject_reason" => $row['reject_reason'] ?? null
                 ];
             }
         }
@@ -109,9 +110,22 @@ switch ($method) {
             exit();
         }
 
-        $sql = "UPDATE vehicle_reservations SET status = ? WHERE id = ?";
+        $sql = "UPDATE vehicle_reservations SET status = ?";
+        $types = "s";
+        $params = [$data->status];
+
+        if (isset($data->reject_reason)) {
+            $sql .= ", reject_reason = ?";
+            $types .= "s";
+            $params[] = $data->reject_reason;
+        }
+
+        $sql .= " WHERE id = ?";
+        $types .= "i";
+        $params[] = $data->id;
+
         $stmt = $conn->prepare($sql);
-        $stmt->bind_param("si", $data->status, $data->id);
+        $stmt->bind_param($types, ...$params);
 
         if ($stmt->execute()) {
             echo json_encode(["status" => "success"]);

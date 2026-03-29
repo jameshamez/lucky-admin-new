@@ -45,7 +45,7 @@ interface BOMComponent {
 }
 
 interface MovementLog {
-  id: string; date: string; type: "รับเข้า" | "จ่ายออก"; qty: number; by: string; note: string;
+  id: string; date: string; type: "รับเข้า" | "จ่ายออก" | "เคลม" | "ชำรุด" | "เบิกภายใน"; qty: number; by: string; note: string;
 }
 
 interface ProcurementCost {
@@ -381,7 +381,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
   // Detail & adjust dialogs
   const [detailItem, setDetailItem] = useState<ProductItem | null>(null);
   const [adjustItem, setAdjustItem] = useState<ProductItem | null>(null);
-  const [adjustType, setAdjustType] = useState<"รับเข้า" | "จ่ายออก">("รับเข้า");
+  const [adjustType, setAdjustType] = useState<MovementLog["type"]>("รับเข้า");
   const [adjustQty, setAdjustQty] = useState("");
   const [adjustNote, setAdjustNote] = useState("");
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
@@ -1157,7 +1157,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
         movementHistory: [newLog, ...(item.movementHistory || [])].slice(0, 50),
       };
     }));
-    toast.success(adjustType === "รับเข้า" ? `รับเข้า ${qty} ${adjustItem.unit} เรียบร้อย` : `จ่ายออก ${qty} ${adjustItem.unit} เรียบร้อย`);
+    toast.success(adjustType === "รับเข้า" ? `รับเข้า ${qty} ${adjustItem.unit} เรียบร้อย` : `${adjustType} ${qty} ${adjustItem.unit} เรียบร้อย`);
     setAdjustItem(null); setAdjustQty(""); setAdjustNote(""); setAdjustType("รับเข้า");
   };
 
@@ -4982,19 +4982,28 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
               </div>
               <div className="space-y-2">
                 <Label className="text-sm font-semibold">ประเภท</Label>
-                <div className="flex gap-2">
-                  <Button variant={adjustType === "รับเข้า" ? "default" : "outline"} className={adjustType === "รับเข้า" ? "bg-green-600 hover:bg-green-700 flex-1" : "flex-1"} onClick={() => setAdjustType("รับเข้า")}>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  <Button variant={adjustType === "รับเข้า" ? "default" : "outline"} className={adjustType === "รับเข้า" ? "bg-green-600 hover:bg-green-700" : ""} onClick={() => setAdjustType("รับเข้า")}>
                     <ArrowDownCircle className="w-4 h-4 mr-1.5" /> รับเข้า
                   </Button>
-                  <Button variant={adjustType === "จ่ายออก" ? "destructive" : "outline"} className="flex-1" onClick={() => setAdjustType("จ่ายออก")}>
+                  <Button variant={adjustType === "จ่ายออก" ? "destructive" : "outline"} onClick={() => setAdjustType("จ่ายออก")}>
                     <ArrowUpCircle className="w-4 h-4 mr-1.5" /> จ่ายออก
+                  </Button>
+                  <Button variant={adjustType === "เคลม" ? "default" : "outline"} className={adjustType === "เคลม" ? "bg-orange-500 hover:bg-orange-600 border-none text-white" : ""} onClick={() => setAdjustType("เคลม")}>
+                    <AlertTriangle className="w-4 h-4 mr-1.5" /> เคลม
+                  </Button>
+                  <Button variant={adjustType === "ชำรุด" ? "default" : "outline"} className={adjustType === "ชำรุด" ? "bg-red-500 hover:bg-red-600 border-none text-white" : ""} onClick={() => setAdjustType("ชำรุด")}>
+                    <Trash2 className="w-4 h-4 mr-1.5" /> ชำรุด
+                  </Button>
+                  <Button variant={adjustType === "เบิกภายใน" ? "default" : "outline"} className={adjustType === "เบิกภายใน" ? "bg-blue-600 hover:bg-blue-700 border-none text-white" : ""} onClick={() => setAdjustType("เบิกภายใน")}>
+                    <User className="w-4 h-4 mr-1.5" /> เบิกภายใน
                   </Button>
                 </div>
               </div>
               <div className="space-y-2">
                 <Label className="text-sm font-semibold">จำนวน ({adjustItem.unit})</Label>
                 <Input type="number" min={1} placeholder="กรอกจำนวน" value={adjustQty} onChange={(e) => setAdjustQty(e.target.value)} />
-                {adjustType === "จ่ายออก" && parseInt(adjustQty) > adjustItem.currentStock && (
+                {adjustType !== "รับเข้า" && parseInt(adjustQty) > adjustItem.currentStock && (
                   <p className="text-xs text-destructive">⚠️ จำนวนเกินสต๊อกคงเหลือ ({adjustItem.currentStock} {adjustItem.unit})</p>
                 )}
               </div>
@@ -5007,7 +5016,11 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setAdjustItem(null)}>ยกเลิก</Button>
             <Button onClick={handleAdjustSubmit} className={adjustType === "รับเข้า" ? "bg-green-600 hover:bg-green-700" : ""} variant={adjustType === "จ่ายออก" ? "destructive" : "default"}>
-              {adjustType === "รับเข้า" ? <><ArrowDownCircle className="w-4 h-4 mr-1.5" />ยืนยันรับเข้า</> : <><ArrowUpCircle className="w-4 h-4 mr-1.5" />ยืนยันจ่ายออก</>}
+              {adjustType === "รับเข้า" ? <><ArrowDownCircle className="w-4 h-4 mr-1.5" />ยืนยันรับเข้า</> : 
+               adjustType === "จ่ายออก" ? <><ArrowUpCircle className="w-4 h-4 mr-1.5" />ยืนยันจ่ายออก</> :
+               adjustType === "เคลม" ? <><AlertTriangle className="w-4 h-4 mr-1.5" />ยืนยันการเคลม</> :
+               adjustType === "ชำรุด" ? <><Trash2 className="w-4 h-4 mr-1.5" />ยืนยันชำรุด</> :
+               <><User className="w-4 h-4 mr-1.5" />ยืนยันเบิกภายใน</>}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -5099,7 +5112,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                   <div className="space-y-2 max-h-60 overflow-y-auto">
                     {detailItem.movementHistory.slice(0, 10).map(log => (
                       <div key={log.id} className="flex items-start gap-3 p-2.5 rounded-lg border bg-muted/20 text-sm">
-                        <div className="mt-0.5">{log.type === "รับเข้า" ? <ArrowDownCircle className="w-4 h-4 text-green-600" /> : <ArrowUpCircle className="w-4 h-4 text-red-500" />}</div>
+                        <div className="mt-0.5">{log.type === "รับเข้า" ? <ArrowDownCircle className="w-4 h-4 text-green-600" /> : (log.type === "เคลม" || log.type === "ชำรุด") ? <AlertTriangle className="w-4 h-4 text-orange-500" /> : <ArrowUpCircle className="w-4 h-4 text-red-500" />}</div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <Badge className={log.type === "รับเข้า" ? "bg-green-100 text-green-700 text-[10px] py-0 px-1.5" : "bg-red-100 text-red-700 text-[10px] py-0 px-1.5"}>{log.type}</Badge>

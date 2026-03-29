@@ -8,13 +8,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { ArrowLeft, Upload, User, FileText, X, Search, XCircle, History, AlertCircle, Calendar, Package, Check, Copy, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Upload, User, FileText, X, Search, XCircle, History, AlertCircle, Calendar, Package, Check, Copy, Plus, Trash2, Calculator, Trophy, Factory } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useNavigate, useLocation, useParams } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { NestedProductSelect } from "@/components/sales/NestedProductSelect";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 interface Customer {
   id: string;
@@ -190,10 +191,33 @@ const mockPreviousEstimations: PreviousEstimation[] = [
   }
 ];
 
+const factoryOptions = [
+  { value: "china_bc", label: "China B&C" },
+  { value: "china_linda", label: "China LINDA" },
+  { value: "china_pn", label: "China PN" },
+  { value: "china_xiaoli", label: "China Xiaoli" },
+  { value: "china_zj", label: "China ZJ" },
+  { value: "china_benc", label: "China BENC" },
+  { value: "china_lanyard_a", label: "China Lanyard A" },
+  { value: "china_u", label: "China U" },
+  { value: "china_w", label: "China W" },
+  { value: "china_x", label: "China X" },
+  { value: "china_y", label: "China Y" },
+  { value: "china_z", label: "China Z" },
+  { value: "papermate", label: "Papermate" },
+  { value: "shinemaker", label: "Shinemaker" },
+  { value: "the101", label: "The101" },
+  { value: "premium_bangkok", label: "บริษัท พรีเมี่ยมแบงค์ค็อก จำกัด" },
+  { value: "thai_solid", label: "ไทย Solid" },
+  { value: "pv_pewter", label: "PV พิวเตอร์" },
+];
+
 export default function AddPriceEstimation({
-  redirectPath = "/sales/price-estimation"
+  redirectPath = "/sales/price-estimation",
+  mode = "sales"
 }: {
-  redirectPath?: string
+  redirectPath?: string;
+  mode?: "sales" | "procurement";
 }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -257,6 +281,11 @@ export default function AddPriceEstimation({
           setEstimateDate(item.estimation_date || "");
           setEstimateNote(item.notes || "");
 
+          // Load product extra details
+          setProductColor(item.product_color || "");
+          setProductSize(item.product_size || "");
+          setProductDetails(item.product_details || "");
+
           if (item.details) {
             const details = typeof item.details === 'string' ? JSON.parse(item.details) : item.details;
             setMaterial(details.material || "");
@@ -277,6 +306,18 @@ export default function AddPriceEstimation({
             setInscriptionPlate(details.inscriptionPlate || "");
             setInscriptionDetails(details.inscriptionDetails || "");
             setEventDate(details.usage_date || "");
+
+            // Load procurement specific data
+            if (details.supplierEntries) {
+              setSupplierEntries(details.supplierEntries);
+            }
+            if (details.globalHeader) {
+              setGlobalHeader(details.globalHeader);
+            }
+            if (details.winnerFactoryValue) {
+              const winner = details.supplierEntries?.find((e: any) => e.factoryValue === details.winnerFactoryValue);
+              if (winner) setSelectedWinner(winner.id);
+            }
           }
         }
       } catch (err) {
@@ -291,8 +332,7 @@ export default function AddPriceEstimation({
 
     fetchEstimationData();
   }, [id, toast]);
-
-  // Pre-fill customer data from navigation state (from approved price estimation)
+    // Pre-fill customer data from navigation state (from approved price estimation)
   useEffect(() => {
     if (location.state?.fromApprovedEstimation && location.state?.customerData) {
       const data = location.state.customerData;
@@ -323,8 +363,143 @@ export default function AddPriceEstimation({
   const [status] = useState("รอประเมินราคา"); // Default status - not shown in UI
   const [estimateNote, setEstimateNote] = useState("");
   const [eventDate, setEventDate] = useState("");
+
+  // Section C: Procurement (Supplier Quotes) State
+  const [selectedWinner, setSelectedWinner] = useState<string | null>(null);
+  const [supplierEntries, setSupplierEntries] = useState<any[]>([]);
+  const [globalHeader, setGlobalHeader] = useState({
+    shippingCostRMB: 0,
+    exchangeRate: 5.5,
+    vat: 7,
+    quantity: 0,
+    unitSellingPriceTHB: 0,
+    lanyardSellingPriceTHB: 0,
+  });
+
+  // Factory code mapping for job code generation
+  const getFactoryCode = (factoryValue: string): string => {
+    const factoryCodeMap: Record<string, string> = {
+      "china_bc": "BC",
+      "china_linda": "LIN",
+      "china_pn": "PN",
+      "china_xiaoli": "XL",
+      "china_zj": "ZJ",
+      "china_benc": "BEN",
+      "china_lanyard_a": "LA",
+      "china_u": "U",
+      "china_w": "W",
+      "china_x": "X",
+      "china_y": "Y",
+      "china_z": "Z",
+      "papermate": "PM",
+      "shinemaker": "SM",
+      "the101": "101",
+      "premium_bangkok": "PBK",
+      "thai_solid": "TS",
+      "pv_pewter": "PV",
+    };
+    return factoryCodeMap[factoryValue] || "XXX";
+  };
+
+  // Generate job code - aligned with Quotation page
+  const generateJobCodeFromFactory = (factoryValue: string, index: number): string => {
+    const now = new Date();
+    const yy = String(now.getFullYear()).slice(-2);
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    const factoryCode = getFactoryCode(factoryValue);
+    return `${yy}${mm}${dd}-${String(index + 1).padStart(2, '0')}-${factoryCode}`;
+  };
+
+  // Calculate costs - aligned with Quotation page
+  const calculateSupplierCosts = (entry: any, qty: number, globalVals: any) => {
+    const unitCost = entry.unitCost || 0;
+    const moldCost = entry.moldCost || 0;
+    const moldCostAdditionalTHB = entry.moldCostAdditionalTHB || 0;
+    const shippingCost = globalVals.shippingCostRMB || 0;
+    const exchangeRate = globalVals.exchangeRate || 5.5;
+    const vat = globalVals.vat || 7;
+    const unitSellingPrice = globalVals.unitSellingPriceTHB || 0;
+    const lanyardSellingPrice = globalVals.lanyardSellingPriceTHB || 0;
+
+    if (qty > 0) {
+      const baseCostPerUnit = ((unitCost + (moldCost / qty) + (shippingCost / qty)) * exchangeRate) * (1 + (vat / 100));
+      const totalCostPerUnit = baseCostPerUnit + (moldCostAdditionalTHB / qty);
+      const totalSellingPricePerUnit = unitSellingPrice + lanyardSellingPrice;
+      const totalProfit = (totalSellingPricePerUnit - totalCostPerUnit) * qty;
+
+      return {
+        ...entry,
+        totalCostPerUnit,
+        sellingPricePerUnit: unitSellingPrice,
+        sellingPriceLanyard: lanyardSellingPrice,
+        totalSellingPricePerUnit,
+        totalProfit
+      };
+    }
+    return entry;
+  };
+
+  const addSupplierEntry = (factoryValue?: string) => {
+    const factory = factoryOptions.find(f => f.value === factoryValue);
+    const newEntry = {
+      id: Date.now().toString() + Math.random().toString(36).substring(2, 9),
+      factoryValue: factoryValue || "",
+      factoryLabel: factory?.label || "",
+      unitCost: 0,
+      moldCost: 0,
+      moldCostAdditionalTHB: 0,
+      totalCostPerUnit: 0,
+      sellingPricePerUnit: globalHeader.unitSellingPriceTHB,
+      sellingPriceLanyard: globalHeader.lanyardSellingPriceTHB,
+      totalSellingPricePerUnit: 0,
+      totalProfit: 0,
+      isWinner: false,
+      uploadedFile: null
+    };
+    setSupplierEntries(prev => [...prev, newEntry]);
+  };
+
+  const removeSupplierEntry = (id: string) => {
+    setSupplierEntries(prev => prev.filter(e => e.id !== id));
+  };
+
+  const updateSupplierEntry = (id: string, field: string, value: any) => {
+    setSupplierEntries(prev => prev.map(entry => {
+      if (entry.id === id) {
+        const updatedEntry = { ...entry, [field]: value };
+        if (field === "factoryValue") {
+          const factory = factoryOptions.find(f => f.value === value);
+          updatedEntry.factoryLabel = factory?.label || "";
+        }
+        const qty = parseInt(quantity) || globalHeader.quantity || 0;
+        return calculateSupplierCosts(updatedEntry, qty, globalHeader);
+      }
+      return entry;
+    }));
+  };
+
+  const updateGlobalHeader = (field: string, value: any) => {
+    const newGlobalHeader = { ...globalHeader, [field]: value };
+    setGlobalHeader(newGlobalHeader);
+    const qty = parseInt(quantity) || newGlobalHeader.quantity || 0;
+    setSupplierEntries(prev => prev.map(entry => calculateSupplierCosts(entry, qty, newGlobalHeader)));
+  };
+
+  // Sync global header with manual quantity field
+  useEffect(() => {
+    const qty = parseInt(quantity) || 0;
+    if (qty !== globalHeader.quantity) {
+      updateGlobalHeader("quantity", qty);
+    }
+  }, [quantity]);
   const [material, setMaterial] = useState("");
   const [hasDesign, setHasDesign] = useState<string>("");
+
+  // Product extra details
+  const [productColor, setProductColor] = useState("");
+  const [productSize, setProductSize] = useState("");
+  const [productDetails, setProductDetails] = useState("");
 
   // โมเดลเดิม State
   const [usePreviousModel, setUsePreviousModel] = useState(false);
@@ -696,6 +871,10 @@ export default function AddPriceEstimation({
     setBackOtherText("");
     setSelectedMedalSizes([]);
     setSelectedMedalThicknesses([]);
+    // Reset product extra details
+    setProductColor("");
+    setProductSize("");
+    setProductDetails("");
   };
 
   // Add a new quantity set (ชุด B, C, etc.)
@@ -1136,6 +1315,21 @@ export default function AddPriceEstimation({
     setShowLanyardSummaryPopup(false);
 
     try {
+      let finalStatus = status === "รอประเมินราคา" ? "ยื่นคำขอประเมิน" : status;
+      let finalPrice = 0;
+      let finalFactoryLabel = "";
+      let winnerValue = "";
+
+      if (mode === "procurement" && selectedWinner) {
+        finalStatus = "เสนอราคา";
+        const winner = supplierEntries.find(e => e.id === selectedWinner);
+        if (winner) {
+          finalPrice = winner.totalSellingPricePerUnit * (parseInt(quantity) || globalHeader.quantity || 0);
+          finalFactoryLabel = winner.factoryLabel;
+          winnerValue = winner.factoryValue;
+        }
+      }
+
       const payload = {
         customer_id: selectedCustomerId,
         customer_name: customerName,
@@ -1146,14 +1340,22 @@ export default function AddPriceEstimation({
         job_name: jobName,
         product_category: productCategory,
         product_type: selectedProductType,
-        quantity: parseInt(quantity) || (colorQuantityRows.length > 0 ? getSetTotal(0) : 0),
+        quantity: parseInt(quantity) || globalHeader.quantity || (colorQuantityRows.length > 0 ? getSetTotal(0) : 0),
         budget: 0, // Not explicitly defined in this form
-        status: status === "รอประเมินราคา" ? "ยื่นคำขอประเมิน" : status, // API maps
+        status: finalStatus,
+        price: finalPrice || 0,
+        factory: winnerValue,
+        factory_label: finalFactoryLabel,
         notes: estimateNote || designDescription || customerNote,
         estimation_date: estimateDate,
         details: {
           productCategoryText: productsByCategory[productCategory]?.find(p => p.value === selectedProductType)?.label,
-          material: material,
+          material: (() => {
+            if (material === "other") return customMaterial || "อื่นๆ";
+            const allMaterials = Object.values(materialsByType).flat();
+            const found = allMaterials.find(m => m.value === material);
+            return found ? found.label : (material || customMaterial || "");
+          })(),
           colorQuantityRows,
           quantitySets,
           selectedMedalSizes,
@@ -1169,8 +1371,47 @@ export default function AddPriceEstimation({
           genericDesignDetails,
           designDescription,
           inscriptionPlate,
-          inscriptionDetails
-        }
+          inscriptionDetails,
+          // Mapped fields for Quotation.tsx display compatibility
+          size: selectedMedalSizes.length > 0
+            ? selectedMedalSizes.map(s => {
+                if (s === "other") return customMedalSize + " ซม.";
+                const found = medalSizes.find(ms => ms.value === s);
+                return found ? found.label : s;
+              }).join(", ")
+            : (productSize || "-"),
+          thickness: selectedMedalThicknesses.length > 0
+            ? selectedMedalThicknesses.map(t => {
+                if (t === "other") return customMedalThickness + " มิล";
+                const found = medalThicknessOptions.find(mt => mt.value === t);
+                return found ? found.label : t;
+              }).join(", ")
+            : (thickness || "-"),
+          finishType: finishType,
+          finishTypeLabel: (() => {
+            if (finishType === "other") return customFinishType || "อื่นๆ";
+            const found = finishTypes.find(ft => ft.value === finishType);
+            return found ? found.label : (finishType || "-");
+          })(),
+          colors: colorQuantityRows
+            .filter(r => r.color)
+            .map(r => {
+              const found = metalColors.find(c => c.value === r.color);
+              return found ? found.label : r.color;
+            }),
+          eventDate: eventDate || "-",
+          productType: selectedProductType || "custom",
+          usage_date: eventDate || "",
+          // Procurement specific data
+          supplierEntries: mode === "procurement" ? supplierEntries : undefined,
+          globalHeader: mode === "procurement" ? globalHeader : undefined,
+          winnerFactoryValue: winnerValue,
+          factoryLabel: finalFactoryLabel,
+          estimationStarted: mode === "procurement"
+        },
+        product_color: productColor,
+        product_size: productSize,
+        product_details: productDetails
       };
 
       const res = await fetch(`https://nacres.co.th/api-lucky/admin/price_estimations.php${isEditMode ? `/${id}` : ''}`, {
@@ -1277,7 +1518,7 @@ export default function AddPriceEstimation({
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <Button variant="outline" onClick={() => navigate("/sales/price-estimation")}>
+        <Button variant="outline" onClick={() => navigate(redirectPath)}>
           <ArrowLeft className="h-4 w-4" />
           ย้อนกลับ
         </Button>
@@ -1627,6 +1868,270 @@ export default function AddPriceEstimation({
               </div>
             )}
 
+            {/* รายละเอียดสินค้าเพิ่มเติม - Full form matching Quotation drawer */}
+            {selectedProductType && (
+              <div className="space-y-5 p-5 border-2 border-primary/15 rounded-xl bg-gradient-to-b from-primary/5 to-transparent">
+                <div className="flex items-center gap-2 mb-1">
+                  <Package className="h-5 w-5 text-primary" />
+                  <Label className="text-base font-bold text-foreground">รายละเอียดสินค้า</Label>
+                </div>
+
+                {/* Row 1: วัสดุ | ขนาด | ความหนา | ชนิดการชุบ */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">วัสดุ</Label>
+                    {getCurrentMaterials().length > 0 ? (
+                      <Select value={material} onValueChange={(val) => { setMaterial(val); if (val !== "other") setCustomMaterial(""); }}>
+                        <SelectTrigger className="h-9"><SelectValue placeholder="เลือกวัสดุ" /></SelectTrigger>
+                        <SelectContent>
+                          {getCurrentMaterials().map((mat) => (
+                            <SelectItem key={mat.value} value={mat.value}>{mat.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Input placeholder="ระบุวัสดุ" value={productColor} onChange={(e) => setProductColor(e.target.value)} className="h-9" />
+                    )}
+                    {material === "other" && (
+                      <Input placeholder="ระบุวัสดุ" value={customMaterial} onChange={(e) => setCustomMaterial(e.target.value)} className="h-9 mt-1" />
+                    )}
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">ขนาด</Label>
+                    <Input
+                      placeholder="เช่น 5 ซม., 10x15 ซม."
+                      value={productSize}
+                      onChange={(e) => setProductSize(e.target.value)}
+                      className="h-9"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">ความหนา</Label>
+                    <Input
+                      placeholder="เช่น 3 มิล, 5 มิล"
+                      value={thickness}
+                      onChange={(e) => setThickness(e.target.value)}
+                      className="h-9"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">ชนิดการชุบ</Label>
+                    <Select value={finishType} onValueChange={(val) => { setFinishType(val); if (val !== "other") setCustomFinishType(""); }}>
+                      <SelectTrigger className="h-9"><SelectValue placeholder="เลือกชนิดการชุบ" /></SelectTrigger>
+                      <SelectContent>
+                        {finishTypes.map((ft) => (
+                          <SelectItem key={ft.value} value={ft.value}>{ft.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {finishType === "other" && (
+                      <Input placeholder="ระบุชนิดการชุบ" value={customFinishType} onChange={(e) => setCustomFinishType(e.target.value)} className="h-9 mt-1" />
+                    )}
+                  </div>
+                </div>
+
+                {/* Row 2: สีและจำนวน - Dynamic Table */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs text-muted-foreground">สีและจำนวน</Label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs gap-1"
+                      onClick={() => setColorQuantityRows(prev => [...prev, { id: crypto.randomUUID(), color: "", quantities: quantitySets.map(() => 0), note: "" }])}
+                    >
+                      <Plus className="h-3 w-3" /> เพิ่มสี
+                    </Button>
+                  </div>
+                  <div className="border rounded-lg overflow-hidden bg-background">
+                    <Table>
+                      <TableHeader className="bg-muted/50">
+                        <TableRow>
+                          <TableHead className="text-xs py-2 w-[200px]">สี</TableHead>
+                          {quantitySets.map((setName, idx) => (
+                            <TableHead key={idx} className="text-center text-xs py-2 w-[100px]">
+                              จำนวน {quantitySets.length > 1 ? `ชุด ${setName}` : ""}
+                            </TableHead>
+                          ))}
+                          <TableHead className="text-xs py-2 w-[150px]">หมายเหตุ</TableHead>
+                          <TableHead className="w-[40px]"></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {colorQuantityRows.map((row, rowIdx) => (
+                          <TableRow key={row.id}>
+                            <TableCell className="py-1.5">
+                              <Select
+                                value={row.color}
+                                onValueChange={(val) => {
+                                  setColorQuantityRows(prev => prev.map(r => r.id === row.id ? { ...r, color: val } : r));
+                                }}
+                              >
+                                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="เลือกสี" /></SelectTrigger>
+                                <SelectContent>
+                                  {metalColors.map(c => (
+                                    <SelectItem key={c.value} value={c.value} className="text-xs">{c.label}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </TableCell>
+                            {quantitySets.map((_, setIdx) => (
+                              <TableCell key={setIdx} className="py-1.5">
+                                <Input
+                                  type="number"
+                                  className="h-8 text-center text-xs font-mono"
+                                  value={row.quantities[setIdx] || ""}
+                                  onChange={(e) => {
+                                    const val = parseInt(e.target.value) || 0;
+                                    setColorQuantityRows(prev => prev.map(r => {
+                                      if (r.id === row.id) {
+                                        const newQty = [...r.quantities];
+                                        newQty[setIdx] = val;
+                                        return { ...r, quantities: newQty };
+                                      }
+                                      return r;
+                                    }));
+                                  }}
+                                  placeholder="0"
+                                />
+                              </TableCell>
+                            ))}
+                            <TableCell className="py-1.5">
+                              <Input
+                                className="h-8 text-xs"
+                                value={row.note}
+                                onChange={(e) => {
+                                  setColorQuantityRows(prev => prev.map(r => r.id === row.id ? { ...r, note: e.target.value } : r));
+                                }}
+                                placeholder="หมายเหตุ"
+                              />
+                            </TableCell>
+                            <TableCell className="py-1.5">
+                              {colorQuantityRows.length > 1 && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 w-7 p-0 text-red-400 hover:text-red-600 hover:bg-red-50"
+                                  onClick={() => setColorQuantityRows(prev => prev.filter(r => r.id !== row.id))}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                        <TableRow className="bg-muted/30 font-medium">
+                          <TableCell className="py-2 text-xs font-semibold">รวม</TableCell>
+                          {quantitySets.map((_, setIdx) => (
+                            <TableCell key={setIdx} className="text-center py-2 text-xs font-bold text-primary">
+                              {getSetTotal(setIdx).toLocaleString()} ชิ้น
+                            </TableCell>
+                          ))}
+                          <TableCell colSpan={2}></TableCell>
+                        </TableRow>
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+
+                {/* Row 3: รายละเอียดด้านหน้า | ด้านหลัง - Chip Multi-Select */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">รายละเอียดด้านหน้า</Label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {detailOptions.map((opt) => (
+                        <div
+                          key={`front-${opt}`}
+                          onClick={() => toggleDetail(opt, 'front')}
+                          className={cn(
+                            "px-2.5 py-1 rounded-md border text-xs cursor-pointer transition-colors",
+                            frontDetails.includes(opt)
+                              ? "bg-primary text-primary-foreground border-primary"
+                              : "bg-background border-border hover:bg-muted"
+                          )}
+                        >
+                          {opt}
+                        </div>
+                      ))}
+                    </div>
+                    {frontDetails.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {frontDetails.map(d => <Badge key={d} variant="secondary" className="text-[10px]">{d}</Badge>)}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">รายละเอียดด้านหลัง</Label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {detailOptions.map((opt) => (
+                        <div
+                          key={`back-${opt}`}
+                          onClick={() => toggleDetail(opt, 'back')}
+                          className={cn(
+                            "px-2.5 py-1 rounded-md border text-xs cursor-pointer transition-colors",
+                            backDetails.includes(opt)
+                              ? "bg-primary text-primary-foreground border-primary"
+                              : "bg-background border-border hover:bg-muted"
+                          )}
+                        >
+                          {opt}
+                        </div>
+                      ))}
+                    </div>
+                    {backDetails.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {backDetails.map(d => <Badge key={d} variant="secondary" className="text-[10px]">{d}</Badge>)}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Row 4: ขนาดสายคล้องคอ | จำนวนลาย */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">ขนาดสายคล้องคอ</Label>
+                    <Select value={lanyardSize} onValueChange={setLanyardSize}>
+                      <SelectTrigger className="h-9"><SelectValue placeholder="เลือกขนาดสาย" /></SelectTrigger>
+                      <SelectContent>
+                        {lanyardSizes.map(s => (
+                          <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">จำนวนลาย</Label>
+                    <Input
+                      type="number"
+                      placeholder="กรอกจำนวนลาย"
+                      value={lanyardPatterns}
+                      onChange={(e) => setLanyardPatterns(e.target.value)}
+                      className="h-9"
+                    />
+                  </div>
+                </div>
+
+                {/* Row 5: หมายเหตุ / รายละเอียดเพิ่มเติม */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">รายละเอียดเพิ่มเติม</Label>
+                  <Textarea
+                    id="product-details-extra"
+                    placeholder="ระบุรายละเอียดเพิ่มเติมของสินค้า เช่น ลวดลาย, วัสดุพิเศษ, ข้อกำหนดเฉพาะ"
+                    value={productDetails}
+                    onChange={(e) => setProductDetails(e.target.value)}
+                    className="min-h-[70px]"
+                  />
+                </div>
+              </div>
+            )}
+
             {/* โมเดลเดิม Checkbox - แสดงเฉพาะ เหรียญสั่งผลิต เท่านั้น */}
             {selectedProductType === 'medal' && (
               <div className="space-y-3 p-4 border border-border rounded-lg bg-muted/30">
@@ -1844,6 +2349,214 @@ export default function AddPriceEstimation({
             </div>
           </CardContent>
         </Card>
+
+        {/* Section C: Procurement (Supplier Quotes) - ONLY for Procurement mode */}
+        {mode === "procurement" && (
+          <Card className="border-2 border-primary/20 shadow-sm overflow-hidden">
+            <CardHeader className="bg-primary/5 pb-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Calculator className="h-5 w-5 text-primary" />
+                  <CardTitle className="text-primary">ข้อมูลต้นทุนและการเสนอราคาโรงงาน</CardTitle>
+                </div>
+                <Button
+                  onClick={() => addSupplierEntry()}
+                  size="sm"
+                  className="bg-primary hover:bg-primary/90 gap-1.5"
+                >
+                  <Plus className="h-4 w-4" />
+                  เพิ่มโรงงาน
+                </Button>
+              </div>
+              <CardDescription>จัดการข้อมูลเสนอราคาจากหลายโรงงานและคำนวณกำไร</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6 pt-5">
+              {/* Global Costing Header */}
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4 bg-muted/30 p-4 rounded-lg border border-border">
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">อัตราแลกเปลี่ยน (ECR)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={globalHeader.exchangeRate}
+                    onChange={(e) => updateGlobalHeader("exchangeRate", parseFloat(e.target.value) || 0)}
+                    className="h-9 font-mono"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">ค่าขนส่ง (RMB)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={globalHeader.shippingCostRMB}
+                    onChange={(e) => updateGlobalHeader("shippingCostRMB", parseFloat(e.target.value) || 0)}
+                    className="h-9 font-mono"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">VAT (%)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={globalHeader.vat}
+                    onChange={(e) => updateGlobalHeader("vat", parseFloat(e.target.value) || 0)}
+                    className="h-9 font-mono"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground font-semibold text-blue-600">ราคาขาย/หน่วย (THB)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={globalHeader.unitSellingPriceTHB}
+                    onChange={(e) => updateGlobalHeader("unitSellingPriceTHB", parseFloat(e.target.value) || 0)}
+                    className="h-9 font-mono border-blue-200 focus-visible:ring-blue-500"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">ราคาขายสาย/ชิ้น (THB)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={globalHeader.lanyardSellingPriceTHB}
+                    onChange={(e) => updateGlobalHeader("lanyardSellingPriceTHB", parseFloat(e.target.value) || 0)}
+                    className="h-9 font-mono"
+                  />
+                </div>
+              </div>
+
+              {/* Suppliers Table */}
+              {supplierEntries.length > 0 ? (
+                <div className="border rounded-lg overflow-hidden shadow-inner bg-background">
+                  <Table>
+                    <TableHeader className="bg-muted/50">
+                      <TableRow>
+                        <TableHead className="w-[180px] text-xs font-bold">โรงงาน</TableHead>
+                        <TableHead className="w-[100px] text-center text-xs font-bold bg-orange-50/50">ทุน/หน่วย (RMB)</TableHead>
+                        <TableHead className="w-[100px] text-center text-xs font-bold bg-orange-50/50">ค่าโมล (RMB)</TableHead>
+                        <TableHead className="w-[100px] text-center text-xs font-bold bg-cyan-50/50">ทุนรวม/หน่วย (THB)</TableHead>
+                        <TableHead className="w-[100px] text-center text-xs font-bold bg-green-50/50">ราคาขายรวม (THB)</TableHead>
+                        <TableHead className="w-[120px] text-center text-xs font-bold bg-amber-50/50">กำไรรวม</TableHead>
+                        <TableHead className="w-[60px]"></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {supplierEntries.map((entry, index) => (
+                        <TableRow key={entry.id} className={entry.isWinner ? "bg-green-50/30" : ""}>
+                          <TableCell>
+                            <div className="space-y-1">
+                              <Select
+                                value={entry.factoryValue}
+                                onValueChange={(val) => updateSupplierEntry(entry.id, "factoryValue", val)}
+                              >
+                                <SelectTrigger className="h-8 text-xs font-medium border-slate-300">
+                                  <SelectValue placeholder="เลือกโรงงาน" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {factoryOptions.map(f => (
+                                    <SelectItem key={f.value} value={f.value} className="text-xs">
+                                      {f.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <div className="font-mono text-[10px] text-muted-foreground px-1">
+                                {entry.factoryValue ? generateJobCodeFromFactory(entry.factoryValue, index) : "YYMMDD-00-XXX"}
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell className="bg-orange-50/20">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              value={entry.unitCost || ""}
+                              onChange={(e) => updateSupplierEntry(entry.id, "unitCost", parseFloat(e.target.value) || 0)}
+                              className="h-8 text-center font-mono text-sm border-orange-200"
+                              placeholder="0.00"
+                            />
+                          </TableCell>
+                          <TableCell className="bg-orange-50/20">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              value={entry.moldCost || ""}
+                              onChange={(e) => updateSupplierEntry(entry.id, "moldCost", parseFloat(e.target.value) || 0)}
+                              className="h-8 text-center font-mono text-sm border-orange-200"
+                              placeholder="0.00"
+                            />
+                          </TableCell>
+                          <TableCell className="text-center bg-cyan-50/20">
+                            <span className="font-bold text-cyan-700">
+                              {entry.totalCostPerUnit?.toFixed(2) || "0.00"}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-center bg-green-50/20">
+                            <span className="font-bold text-green-700">
+                              {entry.totalSellingPricePerUnit?.toFixed(2) || "0.00"}
+                            </span>
+                          </TableCell>
+                          <TableCell className={`text-center ${(entry.totalProfit || 0) >= 0 ? 'bg-amber-50/20' : 'bg-red-50/20'}`}>
+                            <span className={`font-bold ${(entry.totalProfit || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {entry.totalProfit?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || "0.00"}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => removeSupplierEntry(entry.id)}
+                              className="text-red-400 hover:text-red-600 hover:bg-red-50 p-1 h-7 w-7"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <div className="text-center py-10 border-2 border-dashed border-slate-200 rounded-lg bg-slate-50/50">
+                  <Factory className="h-10 w-10 text-slate-300 mx-auto mb-3" />
+                  <p className="text-slate-500 font-medium">ยังไม่มีข้อมูลซัพพลายเออร์</p>
+                  <Button
+                    variant="link"
+                    onClick={() => addSupplierEntry()}
+                    className="text-primary mt-1"
+                  >
+                    เพิ่มรายการแรก
+                  </Button>
+                </div>
+              )}
+
+              {/* Winner factory selector */}
+              {supplierEntries.length > 0 && (
+                <div className="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-lg">
+                  <Trophy className="h-5 w-5 text-green-600" />
+                  <Label className="text-green-800 font-semibold mb-0 whitespace-nowrap">เลือกโรงงานที่ชนะ:</Label>
+                  <Select
+                    value={selectedWinner || ""}
+                    onValueChange={(val) => {
+                      setSelectedWinner(val);
+                      setSupplierEntries(prev => prev.map(e => ({ ...e, isWinner: e.id === val })));
+                    }}
+                  >
+                    <SelectTrigger className="h-9 border-green-300 bg-white">
+                      <SelectValue placeholder="เลือกโรงงานที่สรุปใช้" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {supplierEntries.map(e => (
+                        <SelectItem key={e.id} value={e.id}>
+                          {e.factoryLabel || "โรงงานใหม่"} - {e.totalSellingPricePerUnit?.toFixed(2)} บาท (กำไร {e.totalProfit?.toLocaleString()} บาท)
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Previous Order Modal - แสดงเมื่อคลิกที่รายการออเดอร์เดิม */}
@@ -2993,7 +3706,7 @@ export default function AddPriceEstimation({
               ยกเลิกโมเดลเดิม
             </Button>
           ) : (
-            <Button variant="outline" size="lg" onClick={() => navigate("/sales/price-estimation")}>
+            <Button variant="outline" size="lg" onClick={() => navigate(redirectPath)}>
               ยกเลิก
             </Button>
           )}
