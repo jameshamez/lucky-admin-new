@@ -52,6 +52,19 @@ if (!$id && isset($_GET['id'])) {
 // ==================== GET ====================
 if ($method === 'GET') {
 
+    if (isset($_GET['action']) && $_GET['action'] === 'next_id') {
+        $prefix = 'JB-' . date('Ym');
+        $like = $prefix . '%';
+        $sql = "SELECT COUNT(*) AS cnt FROM orders WHERE job_id LIKE ?";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param("s", $like);
+        $stmt->execute();
+        $count = $stmt->get_result()->fetch_assoc()['cnt'];
+        $next_id = $prefix . str_pad($count + 1, 3, '0', STR_PAD_LEFT);
+        echo json_encode(["status" => "success", "job_id" => $next_id]);
+        exit();
+    }
+
     if ($id) {
         // ดึงคำสั่งซื้อเดี่ยว พร้อม items และ payments
         $sql = "SELECT * FROM orders WHERE order_id = ?";

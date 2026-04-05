@@ -349,6 +349,20 @@ export default function AddPriceEstimation({
 
       // Clear the state to prevent re-triggering on refresh
       window.history.replaceState({}, document.title);
+    } else if (location.state?.customerData) {
+      // From Customer Management or Customer Profile
+      const data = location.state.customerData;
+      setCustomerName(data.name || data.company_name || "");
+      setCustomerPhone(Array.isArray(data.phone_numbers) ? data.phone_numbers[0] : (data.phone || ""));
+      setCustomerLineId(data.line_id || "");
+      setCustomerEmail(Array.isArray(data.emails) ? data.emails[0] : (data.email || ""));
+      
+      // toast({
+      //   title: "เตรียมข้อมูลลูกค้าสำหรับประเมินราคา",
+      //   description: `กรอกข้อมูลของ "${data.name || data.company_name}" เรียบร้อยแล้ว`,
+      // });
+      // Clear the state
+      window.history.replaceState({}, document.title);
     }
   }, [location.state, toast]);
 
@@ -1692,12 +1706,16 @@ export default function AddPriceEstimation({
 
               <div className="space-y-2">
                 <Label htmlFor="customer-tags">ประเภทลูกค้า / แท็ก</Label>
-                <Input
-                  id="customer-tags"
-                  placeholder="เช่น ลูกค้าประจำ, องค์กร"
-                  value={customerTags}
-                  onChange={(e) => setCustomerTags(e.target.value)}
-                />
+                <Select value={customerTags} onValueChange={setCustomerTags}>
+                  <SelectTrigger id="customer-tags">
+                    <SelectValue placeholder="เลือกประเภทลูกค้า / แท็ก" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="เจ้าของงาน">เจ้าของงาน</SelectItem>
+                    <SelectItem value="ตัวแทน">ตัวแทน</SelectItem>
+                    <SelectItem value="ออแกนไนเซอร์">ออแกนไนเซอร์</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
@@ -1736,7 +1754,8 @@ export default function AddPriceEstimation({
                   type="date"
                   id="estimate-date"
                   value={estimateDate}
-                  onChange={(e) => setEstimateDate(e.target.value)}
+                  disabled
+                  className="bg-muted text-muted-foreground"
                 />
               </div>
 

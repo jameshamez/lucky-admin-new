@@ -23,6 +23,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 require '../condb.php';
 $conn->select_db('finfinph_lcukycompany');
 $conn->set_charset("utf8mb4");
+require_once '../utils/customer_helpers.php';
 
 if ($conn->connect_error) {
     http_response_code(500);
@@ -50,7 +51,10 @@ if (!$id) {
 switch ($method) {
 
     case 'GET':
+        $recalculate = isset($_GET['recalculate']) ? (bool)$_GET['recalculate'] : false;
+        
         if ($id) {
+            if ($recalculate) recalculateCustomerStats($conn, $id);
             // ดึงข้อมูลลูกค้ารายบุคคล
             $sql = "SELECT c.*, GROUP_CONCAT(
                         JSON_OBJECT(
@@ -87,6 +91,12 @@ switch ($method) {
             }
         } else {
             // ดึงข้อมูลลูกค้าทั้งหมด
+            if ($recalculate) {
+                $all_ids_res = $conn->query("SELECT id FROM customers_admin");
+                while ($cid_row = $all_ids_res->fetch_assoc()) {
+                    recalculateCustomerStats($conn, $cid_row['id']);
+                }
+            }
             $search = isset($_GET['search']) ? $_GET['search'] : '';
             $status = isset($_GET['status']) ? $_GET['status'] : '';
             $sales_status = isset($_GET['sales_status']) ? $_GET['sales_status'] : '';
@@ -392,7 +402,22 @@ switch ($method) {
         $stmt->bind_param($types, ...$params);
 
         if ($stmt->execute()) {
-            $get_sql = "SELECT * FROM customers_admin WHERE id = ?";
+            // Trigger recalculation
+            recalculateCustomerStats($conn, $id);
+            
+            $get_sql = "SELECT c.*, GROUP_CONCAT(
+                        JSON_OBJECT(
+                            'id', cc.id,
+                            'contact_name', cc.contact_name,
+                            'line_id', cc.line_id,
+                            'phone_number', cc.phone_number,
+                            'email', cc.email
+                        )
+                    ) as additional_contacts
+                    FROM customers_admin c
+                    LEFT JOIN customer_contacts_admin cc ON c.id = cc.customer_id
+                    WHERE c.id = ?
+                    GROUP BY c.id";
             $get_stmt = $conn->prepare($get_sql);
             $get_stmt->bind_param("i", $id);
             $get_stmt->execute();

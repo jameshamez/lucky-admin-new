@@ -137,6 +137,7 @@ interface CreateOrderFormProps {
     price: number;
     status: string;
   } | null;
+  customerData?: any;
 }
 
 // Master Subcategories with their parent category (IDs match API subcategoryId)
@@ -169,7 +170,7 @@ const SUBCATEGORY_MAP: Record<string, { id: string; name: string }> = {
   "21": { id: "21", name: "เหรียญรางวัลอะคริลิก" },
 };
 
-export default function CreateOrderForm({ onSubmit, onCancel, initialData, estimationData }: CreateOrderFormProps) {
+export default function CreateOrderForm({ onSubmit, onCancel, initialData, estimationData, customerData }: CreateOrderFormProps) {
   const navigate = useNavigate();
   const [productItems, setProductItems] = useState<any[]>([]);
   const [savedProducts, setSavedProducts] = useState<any[]>([]);
@@ -199,6 +200,8 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
   const [wantsSticker, setWantsSticker] = useState<string>("");
   const [stickerDesignDetails, setStickerDesignDetails] = useState<string>("");
   const [stickerFiles, setStickerFiles] = useState<File[]>([]);
+  const [readyMadePriceType, setReadyMadePriceType] = useState<"retail" | "wholesale" | "clearance">("retail");
+  const [readyMadeUnitPrice, setReadyMadeUnitPrice] = useState<string>("");
 
   // Add color entry
   const addColorEntry = () => {
@@ -541,6 +544,7 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
     }
   };
 
+
   // Find category for a product type label
   const findCategoryForProduct = (productLabel: string): string | null => {
     const productValue = productLabelToValue[productLabel];
@@ -614,7 +618,7 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
       description: `นำข้อมูลจากรายการประเมินราคา #${estimation.id} มาใช้แล้ว`,
     });
   };
-
+  
   // Category-first product selection structure
   const productCategories = [
     { id: "readymade", name: "สินค้าสำเร็จรูป", icon: "🏆" },
@@ -712,6 +716,53 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
   const watchedDeliveryDate = form.watch("deliveryDate");
   const watchedCustomerSearch = form.watch("customerSearch");
 
+  // If navigated from Customer Profile / Management
+  useEffect(() => {
+    if (customerData) {
+      form.setValue("customerName", customerData.name || customerData.company_name || customerData.contact_name || "");
+      
+      const phoneArr = customerData.phone_numbers;
+      const phone = Array.isArray(phoneArr) ? (phoneArr[0] || "") : (customerData.phone || customerData.customerPhone || "");
+      form.setValue("customerPhone", phone);
+      
+      form.setValue("customerLine", customerData.line_id || customerData.customerLine || "");
+      
+      const emailArr = customerData.emails;
+      const email = Array.isArray(emailArr) ? (emailArr[0] || "") : (customerData.email || "");
+      form.setValue("customerEmail", email);
+      
+      // Auto-fill delivery address if available
+      form.setValue("deliveryInfo.recipientName", customerData.contact || customerData.contact_name || customerData.name || "");
+      form.setValue("deliveryInfo.recipientPhone", phone);
+      
+      const addr = customerData.shipping_address || customerData.billing_address || customerData.address || "";
+      if (addr) form.setValue("deliveryInfo.address", addr);
+      
+      const province = customerData.shipping_province || customerData.billing_province || customerData.province || "";
+      if (province) {
+        setSelectedProvinceName(province);
+        form.setValue("deliveryInfo.province", province);
+      }
+      
+      const district = customerData.shipping_district || customerData.billing_district || customerData.district || "";
+      if (district) {
+        setSelectedAmphureName(district);
+        form.setValue("deliveryInfo.district", district);
+      }
+      
+      const subdistrict = customerData.shipping_subdistrict || customerData.billing_subdistrict || customerData.subdistrict || "";
+      if (subdistrict) {
+        form.setValue("deliveryInfo.subdistrict", subdistrict);
+      }
+      
+      const postcode = customerData.shipping_postcode || customerData.billing_postcode || customerData.postalCode || "";
+      if (postcode) {
+        form.setValue("deliveryInfo.postalCode", postcode);
+      }
+    }
+  }, [customerData, form]);
+
+
   // If user navigated from PriceEstimation, merge that record into the list
   // (and replace same-id records to prevent mock ID collision)
   const priceEstimations = useMemo(() => {
@@ -758,6 +809,20 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
       getDistricts(selectedProvinceName, selectedAmphureName).then(setThaiTambons);
     }
   }, [selectedAmphureName, selectedProvinceName]);
+
+  // Fetch next Job ID on mount (only for new orders)
+  useEffect(() => {
+    if (!initialData) {
+      fetch(`${LOCAL_API}orders.php?action=next_id`)
+        .then(r => r.json())
+        .then(json => {
+          if (json.status === "success" && json.job_id) {
+            form.setValue("jobId", json.job_id);
+          }
+        })
+        .catch(err => console.warn("Failed to fetch next job ID:", err));
+    }
+  }, [initialData, form]);
 
   // API base URLs
   const CUSTOMERS_API = "https://nacres.co.th/api-lucky/admin/customers.php";
@@ -880,6 +945,61 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
       setSelectedPriceEstimationId(estimationData.id);
     }
   }, [estimationData, form]);
+
+  // Auto-fill form when customerData is provided
+  useEffect(() => {
+    if (customerData) {
+      // Basic Customer Info
+      form.setValue("customerName", customerData.contact_name || "");
+      form.setValue("customerPhone", Array.isArray(customerData.phone_numbers) ? (customerData.phone_numbers[0] || "") : "");
+      form.setValue("customerLine", customerData.line_id || "");
+      form.setValue("customerEmail", Array.isArray(customerData.emails) ? (customerData.emails[0] || "") : "");
+
+      // Tax Information
+      if (customerData.tax_id) {
+        form.setValue("taxId", customerData.tax_id || "");
+        form.setValue("taxPayerName", customerData.company_name || customerData.contact_name || "");
+        
+        // Build tax address
+        const taxAddr = [
+          customerData.billing_address,
+          customerData.billing_subdistrict,
+          customerData.billing_district,
+          customerData.billing_province,
+          customerData.billing_postcode,
+        ].filter(Boolean).join(" ");
+        
+        form.setValue("taxAddress", taxAddr);
+        form.setValue("requireTaxInvoice", true);
+        form.setValue("invoiceType", "tax-invoice");
+        setShowTaxFields(true);
+      }
+
+      // Delivery Information
+      const deliveryAddr = customerData.shipping_address || customerData.billing_address || "";
+      const sub = customerData.shipping_subdistrict || customerData.billing_subdistrict || "";
+      const dist = customerData.shipping_district || customerData.billing_district || "";
+      const prov = customerData.shipping_province || customerData.billing_province || "";
+      const post = customerData.shipping_postcode || customerData.billing_postcode || "";
+
+      form.setValue("deliveryInfo.recipientName", customerData.contact_name || "");
+      form.setValue("deliveryInfo.recipientPhone", Array.isArray(customerData.phone_numbers) ? (customerData.phone_numbers[0] || "") : "");
+      form.setValue("deliveryInfo.address", deliveryAddr);
+      form.setValue("deliveryInfo.subdistrict", sub);
+      form.setValue("deliveryInfo.district", dist);
+      form.setValue("deliveryInfo.province", prov);
+      form.setValue("deliveryInfo.postalCode", post);
+
+      // Trigger address cascading states
+      if (prov) {
+        // We need to set these manually to ensure they display correctly in the Select components
+        setSelectedProvinceName(prov);
+        if (dist) {
+          setSelectedAmphureName(dist);
+        }
+      }
+    }
+  }, [customerData, form]);
 
   // Search customers (local filter on loaded dataset, falls back to API search)
   useEffect(() => {
@@ -1704,9 +1824,9 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
           color: colorEntry.color,
           quantity: parseInt(colorEntry.quantity) || 0,
           displayName,
-          wantsSticker: wantsSticker,
-          stickerDesignDetails: wantsSticker === "receive" ? stickerDesignDetails : "",
           platingColor: selectedPlatingColor,
+          unitPrice: parseFloat(readyMadeUnitPrice) || 0,
+          priceType: readyMadePriceType,
           details: form.getValues("jobDetails"),
         };
       });
@@ -1723,6 +1843,8 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
       setNewColorEntry({ color: "", quantity: "" });
       setWantsSticker("");
       setStickerDesignDetails("");
+      setReadyMadePriceType("retail");
+      setReadyMadeUnitPrice("");
       return;
     }
 
@@ -1749,6 +1871,7 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
         size: sizeEntry.size,
         quantity: parseInt(sizeEntry.quantity) || 0,
         unitPrice: sizeEntry.price,
+        priceType: "custom", // Trophies use specific size pricing
         details: form.getValues("jobDetails"),
       }));
 
@@ -1793,6 +1916,8 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
         sizeLabel: `ไซส์ ${sizeEntry.size}`,
         size: sizeEntry.size,
         quantity: parseInt(sizeEntry.quantity) || 0,
+        unitPrice: parseFloat(readyMadeUnitPrice) || 0,
+        priceType: readyMadePriceType,
         details: {
           collar: shirtCollar,
           sleeve: shirtSleeve,
@@ -1832,6 +1957,9 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
       id: Date.now(),
       productType: watchedProductType,
       material: watchedMaterial,
+      quantity: parseInt(form.getValues("jobDetails.quantity")) || 1,
+      unitPrice: parseFloat(readyMadeUnitPrice) || 0,
+      priceType: readyMadePriceType,
       details: form.getValues("jobDetails"),
     };
     setSavedProducts([...savedProducts, currentProduct]);
@@ -1872,18 +2000,18 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
     savedProducts.forEach(p => {
       allItems.push({
         item_type: "custom",
-        product_name: p.productType || p.label || "",
+        product_name: p.displayName || productValueToLabel[p.productType] || p.productType || p.label || "",
         material: p.material || null,
         size: p.size || null,
         color: p.color || null,
         quantity: parseInt(p.quantity) || 1,
         unit_price: parseFloat(p.unitPrice || p.price || 0),
         total_price: (parseInt(p.quantity) || 1) * parseFloat(p.unitPrice || p.price || 0),
+        product_price_type: p.priceType || null,
         details: p.details || null,
       });
     });
 
-    // 2. Trophy sizes
     if (data.productType === "Trophy" && trophySizes.length > 0) {
       trophySizes.filter(s => s.quantity).forEach(s => {
         allItems.push({
@@ -1893,36 +2021,39 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
           quantity: parseInt(s.quantity) || 0,
           unit_price: s.price,
           total_price: (parseInt(s.quantity) || 0) * s.price,
+          product_price_type: "custom",
           details: { height: s.height, opening: s.opening },
         });
       });
     }
 
-    // 3. Shirt sizes
     if ((data.productType === "Shirt" || data.productType === "Fabric") && shirtSizes.length > 0) {
       shirtSizes.filter(s => s.quantity).forEach(s => {
+        const uPrice = parseFloat(readyMadeUnitPrice) || 0;
         allItems.push({
           item_type: "custom",
           product_name: `เสื้อ ${data.material || ""} ไซส์ ${s.size}`,
           size: s.size,
           quantity: parseInt(s.quantity) || 0,
-          unit_price: 0,
-          total_price: 0,
+          unit_price: uPrice,
+          total_price: (parseInt(s.quantity) || 0) * uPrice,
+          product_price_type: readyMadePriceType,
           details: { chest: s.chest, length: s.length, shoulder: s.shoulder, sleeve: s.sleeve },
         });
       });
     }
 
-    // 4. ReadyMedal color entries
     if (data.productType === "ReadyMedal" && readyMedalColorEntries.length > 0) {
       readyMedalColorEntries.forEach(entry => {
+        const uPrice = parseFloat(readyMadeUnitPrice) || 0;
         allItems.push({
           item_type: "readymade",
           product_name: `เหรียญสำเร็จรูป ${selectedProductModel || data.material || ""}`,
           color: entry.color,
           quantity: parseInt(entry.quantity) || 0,
-          unit_price: 0,
-          total_price: 0,
+          unit_price: uPrice,
+          total_price: (parseInt(entry.quantity) || 0) * uPrice,
+          product_price_type: readyMadePriceType,
           details: {
             model: selectedProductModel,
             plating: selectedPlatingColor,
@@ -2432,7 +2563,7 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                     size="sm"
                     onClick={() => {
                       setShowPaymentForm(false);
-                      setNewPayment({ type: '', amount: '', transferDate: undefined, slipFile: null, slipPreview: '', additionalDetails: '', receivingBank: '' });
+                      setNewPayment({ type: '', amount: '', transferDate: undefined, slipFile: null, slipPreview: '', slipUrl: '', additionalDetails: '', receivingBank: '' });
                     }}
                   >
                     ยกเลิก
@@ -2676,7 +2807,7 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                   <FormItem>
                     <FormLabel>JOB ID</FormLabel>
                     <FormControl>
-                      <Input {...field} placeholder="JOB-2025-XXX" />
+                      <Input {...field} placeholder="JB-YYYYMMXXX" readOnly className="bg-muted cursor-not-allowed" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -2771,94 +2902,56 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
               control={form.control}
               name="eventLocation"
               render={({ field }) => (
-                <FormItem>
+                <FormItem className="flex flex-col">
                   <FormLabel>สถานที่จัดงาน (จังหวัด)</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
-                    <FormControl>
-                      <SelectTrigger className="bg-background">
-                        <SelectValue placeholder="เลือกจังหวัด" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent className="bg-background z-50 max-h-[300px]">
-                      <SelectItem value="กรุงเทพมหานคร">กรุงเทพมหานคร</SelectItem>
-                      <SelectItem value="กระบี่">กระบี่</SelectItem>
-                      <SelectItem value="กาญจนบุรี">กาญจนบุรี</SelectItem>
-                      <SelectItem value="กาฬสินธุ์">กาฬสินธุ์</SelectItem>
-                      <SelectItem value="กำแพงเพชร">กำแพงเพชร</SelectItem>
-                      <SelectItem value="ขอนแก่น">ขอนแก่น</SelectItem>
-                      <SelectItem value="จันทบุรี">จันทบุรี</SelectItem>
-                      <SelectItem value="ฉะเชิงเทรา">ฉะเชิงเทรา</SelectItem>
-                      <SelectItem value="ชลบุรี">ชลบุรี</SelectItem>
-                      <SelectItem value="ชัยนาท">ชัยนาท</SelectItem>
-                      <SelectItem value="ชัยภูมิ">ชัยภูมิ</SelectItem>
-                      <SelectItem value="ชุมพร">ชุมพร</SelectItem>
-                      <SelectItem value="เชียงราย">เชียงราย</SelectItem>
-                      <SelectItem value="เชียงใหม่">เชียงใหม่</SelectItem>
-                      <SelectItem value="ตรัง">ตรัง</SelectItem>
-                      <SelectItem value="ตราด">ตราด</SelectItem>
-                      <SelectItem value="ตาก">ตาก</SelectItem>
-                      <SelectItem value="นครนายก">นครนายก</SelectItem>
-                      <SelectItem value="นครปฐม">นครปฐม</SelectItem>
-                      <SelectItem value="นครพนม">นครพนม</SelectItem>
-                      <SelectItem value="นครราชสีมา">นครราชสีมา</SelectItem>
-                      <SelectItem value="นครศรีธรรมราช">นครศรีธรรมราช</SelectItem>
-                      <SelectItem value="นครสวรรค์">นครสวรรค์</SelectItem>
-                      <SelectItem value="นนทบุรี">นนทบุรี</SelectItem>
-                      <SelectItem value="นราธิวาส">นราธิวาส</SelectItem>
-                      <SelectItem value="น่าน">น่าน</SelectItem>
-                      <SelectItem value="บึงกาฬ">บึงกาฬ</SelectItem>
-                      <SelectItem value="บุรีรัมย์">บุรีรัมย์</SelectItem>
-                      <SelectItem value="ปทุมธานี">ปทุมธานี</SelectItem>
-                      <SelectItem value="ประจวบคีรีขันธ์">ประจวบคีรีขันธ์</SelectItem>
-                      <SelectItem value="ปราจีนบุรี">ปราจีนบุรี</SelectItem>
-                      <SelectItem value="ปัตตานี">ปัตตานี</SelectItem>
-                      <SelectItem value="พระนครศรีอยุธยา">พระนครศรีอยุธยา</SelectItem>
-                      <SelectItem value="พังงา">พังงา</SelectItem>
-                      <SelectItem value="พัทลุง">พัทลุง</SelectItem>
-                      <SelectItem value="พิจิตร">พิจิตร</SelectItem>
-                      <SelectItem value="พิษณุโลก">พิษณุโลก</SelectItem>
-                      <SelectItem value="เพชรบุรี">เพชรบุรี</SelectItem>
-                      <SelectItem value="เพชรบูรณ์">เพชรบูรณ์</SelectItem>
-                      <SelectItem value="แพร่">แพร่</SelectItem>
-                      <SelectItem value="พะเยา">พะเยา</SelectItem>
-                      <SelectItem value="ภูเก็ต">ภูเก็ต</SelectItem>
-                      <SelectItem value="มหาสารคาม">มหาสารคาม</SelectItem>
-                      <SelectItem value="มุกดาหาร">มุกดาหาร</SelectItem>
-                      <SelectItem value="แม่ฮ่องสอน">แม่ฮ่องสอน</SelectItem>
-                      <SelectItem value="ยโสธร">ยโสธร</SelectItem>
-                      <SelectItem value="ยะลา">ยะลา</SelectItem>
-                      <SelectItem value="ร้อยเอ็ด">ร้อยเอ็ด</SelectItem>
-                      <SelectItem value="ระนอง">ระนอง</SelectItem>
-                      <SelectItem value="ระยอง">ระยอง</SelectItem>
-                      <SelectItem value="ราชบุรี">ราชบุรี</SelectItem>
-                      <SelectItem value="ลพบุรี">ลพบุรี</SelectItem>
-                      <SelectItem value="ลำปาง">ลำปาง</SelectItem>
-                      <SelectItem value="ลำพูน">ลำพูน</SelectItem>
-                      <SelectItem value="เลย">เลย</SelectItem>
-                      <SelectItem value="ศรีสะเกษ">ศรีสะเกษ</SelectItem>
-                      <SelectItem value="สกลนคร">สกลนคร</SelectItem>
-                      <SelectItem value="สงขลา">สงขลา</SelectItem>
-                      <SelectItem value="สตูล">สตูล</SelectItem>
-                      <SelectItem value="สมุทรปราการ">สมุทรปราการ</SelectItem>
-                      <SelectItem value="สมุทรสงคราม">สมุทรสงคราม</SelectItem>
-                      <SelectItem value="สมุทรสาคร">สมุทรสาคร</SelectItem>
-                      <SelectItem value="สระแก้ว">สระแก้ว</SelectItem>
-                      <SelectItem value="สระบุรี">สระบุรี</SelectItem>
-                      <SelectItem value="สิงห์บุรี">สิงห์บุรี</SelectItem>
-                      <SelectItem value="สุโขทัย">สุโขทัย</SelectItem>
-                      <SelectItem value="สุพรรณบุรี">สุพรรณบุรี</SelectItem>
-                      <SelectItem value="สุราษฎร์ธานี">สุราษฎร์ธานี</SelectItem>
-                      <SelectItem value="สุรินทร์">สุรินทร์</SelectItem>
-                      <SelectItem value="หนองคาย">หนองคาย</SelectItem>
-                      <SelectItem value="หนองบัวลำภู">หนองบัวลำภู</SelectItem>
-                      <SelectItem value="อ่างทอง">อ่างทอง</SelectItem>
-                      <SelectItem value="อำนาจเจริญ">อำนาจเจริญ</SelectItem>
-                      <SelectItem value="อุดรธานี">อุดรธานี</SelectItem>
-                      <SelectItem value="อุตรดิตถ์">อุตรดิตถ์</SelectItem>
-                      <SelectItem value="อุทัยธานี">อุทัยธานี</SelectItem>
-                      <SelectItem value="อุบลราชธานี">อุบลราชธานี</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <FormControl>
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          className={cn(
+                            "w-full justify-between font-normal",
+                            !field.value && "text-muted-foreground"
+                          )}
+                        >
+                          {field.value
+                            ? thaiProvinces.find((p) => p === field.value) || field.value
+                            : "เลือกจังหวัด"}
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </FormControl>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="ค้นหาจังหวัด..." />
+                        <CommandList>
+                          <CommandEmpty>ไม่พบข้อมูลจังหวัด</CommandEmpty>
+                          <CommandGroup>
+                            {thaiProvinces.map((province) => (
+                              <CommandItem
+                                key={province}
+                                value={province}
+                                onSelect={() => {
+                                  form.setValue("eventLocation", province);
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4",
+                                    province === field.value
+                                      ? "opacity-100"
+                                      : "opacity-0"
+                                  )}
+                                />
+                                {province}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                   <FormMessage />
                 </FormItem>
               )}
@@ -3557,13 +3650,15 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                                         )}
                                       </div>
                                     </div>
-                                  )}
-                                </div>
-                              )}
-                            </>
-                          )}
-                        </>
-                      )}
+                                )}
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </>
+                    )}
+                      {/* Pricing Selection for ReadyMedal */}
+                      {getProductFlow(watchedProductType) === "catalog"}
                     </div>
                   ) : watchedProductType === "Trophy" ? (
                     /* For Trophy: วัสดุ + รายละเอียดถ้วยรางวัล in same box */
@@ -3592,6 +3687,8 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                           </FormItem>
                         )}
                       />
+                      {/* Pricing Selection for Trophy */}
+                      {getProductFlow(watchedProductType) === "catalog"}
 
                       {/* รายละเอียดถ้วยรางวัล - in same box as product details */}
                       {watchedMaterial && (
@@ -3927,6 +4024,8 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                           </FormItem>
                         )}
                       />
+                      {/* Pricing Selection for Shirt */}
+                      {getProductFlow(watchedProductType) === "catalog"}
 
                       {/* รายละเอียดเสื้อ - in same box as product details */}
                       {watchedMaterial && (
@@ -4097,37 +4196,41 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                           />
                         </div>
                       )}
+                      {/* Pricing Selection for Shirt */}
+                      {getProductFlow(watchedProductType) === "catalog"}
                     </div>
                   ) : (
-                    /* For other products: keep original วัสดุ field */
-                    <FormField
-                      control={form.control}
-                      name="material"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>วัสดุ</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value}>
-                            <FormControl>
-                              <SelectTrigger className="bg-background">
-                                <SelectValue placeholder="เลือกวัสดุ" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent className="bg-background">
-                              {getMaterialOptions(watchedProductType).map((material) => (
-                                <SelectItem key={material} value={material}>
-                                  {material}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  )}
-                </>
-              )}
-            </div>
+                  <FormField
+                    control={form.control}
+                    name="material"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>วัสดุ</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <FormControl>
+                            <SelectTrigger className="bg-background">
+                              <SelectValue placeholder="เลือกวัสดุ" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent className="bg-background">
+                            {getMaterialOptions(watchedProductType).map((material) => (
+                              <SelectItem key={material} value={material}>
+                                {material}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
+
+                {/* Pricing Selection for Other Catalog Items */}
+                {getProductFlow(watchedProductType) === "catalog"}
+              </>
+            )}
+          </div>
 
             {/* Save Product Button */}
             {watchedProductType && watchedMaterial && (
@@ -4342,13 +4445,18 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                       const quantity = product.quantity || parseInt(product.details?.quantity) || 1;
                       const unitPrice = product.unitPrice || null;
                       const totalPrice = unitPrice ? unitPrice * quantity : null;
+                      const priceTypeLabel = product.priceType === 'retail' ? '(ปลีก)' : (product.priceType === 'wholesale' ? '(ส่ง)' : (product.priceType === 'clearance' ? '(โล๊ะ)' : ''));
+                      
                       return (
-                        <TableRow key={`saved-${product.id}`}>
+                        <TableRow key={`saved-${product.id}`} className="hover:bg-muted/30">
                           <TableCell className="text-xs py-3 text-center font-medium">
                             {selectedEstimations.length + index + 1}
                           </TableCell>
                           <TableCell className="text-xs py-3">
-                            <div className="font-medium">{productLabel}</div>
+                            <div className="font-medium flex items-center gap-1">
+                              {productLabel}
+                              {priceTypeLabel && <span className="text-[10px] text-muted-foreground font-normal">{priceTypeLabel}</span>}
+                            </div>
                           </TableCell>
                           <TableCell className="text-xs py-3 text-muted-foreground">
                             {productDetails}

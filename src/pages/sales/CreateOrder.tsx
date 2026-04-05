@@ -27,6 +27,7 @@ export default function CreateOrder() {
   const [showOrderDetails, setShowOrderDetails] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [estimationData, setEstimationData] = useState<any>(null);
+  const [customerData, setCustomerData] = useState<any>(null);
 
   // --- API state ---
   const [orders, setOrders] = useState<any[]>([]);
@@ -77,6 +78,10 @@ export default function CreateOrder() {
   useEffect(() => {
     if (location.state?.fromEstimation && location.state?.estimationData) {
       setEstimationData(location.state.estimationData);
+      setShowCreateForm(true);
+      window.history.replaceState({}, document.title);
+    } else if (location.state?.fromCustomer && location.state?.customerData) {
+      setCustomerData(location.state.customerData);
       setShowCreateForm(true);
       window.history.replaceState({}, document.title);
     }
@@ -494,6 +499,8 @@ export default function CreateOrder() {
     setShowCreateForm(false);
     setIsEditing(false);
     setSelectedOrder(null);
+    setEstimationData(null);
+    setCustomerData(null);
   };
 
   const handleFormCancel = () => {
@@ -501,6 +508,7 @@ export default function CreateOrder() {
     setIsEditing(false);
     setSelectedOrder(null);
     setEstimationData(null);
+    setCustomerData(null);
   };
 
   const handleViewOrder = (order: any) => {
@@ -707,7 +715,16 @@ export default function CreateOrder() {
             <h1 className="text-3xl font-bold text-foreground">รายละเอียดคำสั่งซื้อ #{selectedOrder.id}</h1>
             <p className="text-muted-foreground">ข้อมูลคำสั่งซื้อทั้งหมด</p>
           </div>
-          <Button variant="outline" onClick={handleBackToList}>กลับไปรายการคำสั่งซื้อ</Button>
+          <div className="flex gap-2">
+            <Button variant="default" onClick={() => {
+              const link = `${window.location.origin}/payment/${selectedOrder?.jobId || selectedOrder?.id}`;
+              navigator.clipboard.writeText(link);
+              toast({ title: "คัดลอกลิ๊งสำเร็จ", description: "คัดลอกลิ๊งสั่งซื้อลงคลิปบอร์ดแล้ว" });
+            }}>
+              ส่งลิ๊งสั่งซื้อ
+            </Button>
+            <Button variant="outline" onClick={handleBackToList}>กลับไปรายการคำสั่งซื้อ</Button>
+          </div>
         </div>
 
         <Card>
@@ -823,7 +840,7 @@ export default function CreateOrder() {
           </div>
           <Button variant="outline" onClick={handleFormCancel}>กลับไปรายการคำสั่งซื้อ</Button>
         </div>
-        <CreateOrderForm onSubmit={handleFormSubmit} onCancel={handleFormCancel} initialData={isEditing ? selectedOrder : undefined} estimationData={estimationData} />
+        <CreateOrderForm onSubmit={handleFormSubmit} onCancel={handleFormCancel} initialData={isEditing ? selectedOrder : undefined} estimationData={estimationData} customerData={customerData} />
       </div>
     );
   }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -36,6 +36,30 @@ export function ActivityForm({ customerId, onSave, onCancel, activityData }: Act
     status: activityData?.status || "รอดำเนินการ",
     priority: activityData?.priority || "ปานกลาง"
   });
+
+  const [salesEmployees, setSalesEmployees] = useState<{ value: string; label: string }[]>([]);
+
+  useEffect(() => {
+    const fetchSalesEmployees = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/employees.php`);
+        if (!res.ok) throw new Error('Failed to fetch employees');
+        const json = await res.json();
+        if (json.status === 'success' && json.data) {
+          const sales = json.data
+            .filter((emp: any) => emp.department === "ฝ่ายขาย")
+            .map((emp: any) => ({
+              value: emp.full_name,
+              label: `${emp.full_name}${emp.nickname ? ` (${emp.nickname})` : ''}`
+            }));
+          setSalesEmployees(sales);
+        }
+      } catch (err) {
+        console.error('Error fetching employees:', err);
+      }
+    };
+    fetchSalesEmployees();
+  }, []);
 
   const handleSave = async () => {
     if (!formData.title.trim()) {
@@ -283,13 +307,28 @@ export function ActivityForm({ customerId, onSave, onCancel, activityData }: Act
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="responsiblePerson">ผู้รับผิดชอบ</Label>
-          <Input
-            id="responsiblePerson"
-            value={formData.responsiblePerson}
-            onChange={(e) => setFormData({ ...formData, responsiblePerson: e.target.value })}
-            placeholder="ชื่อผู้รับผิดชอบ"
-          />
+          <Label htmlFor="responsiblePerson">ชื่อพนักงานขาย</Label>
+          <Select 
+            value={formData.responsiblePerson} 
+            onValueChange={(value) => setFormData({ ...formData, responsiblePerson: value })}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="เลือกพนักงานขาย" />
+            </SelectTrigger>
+            <SelectContent>
+              {salesEmployees.length > 0 ? (
+                salesEmployees.map((emp) => (
+                  <SelectItem key={emp.value} value={emp.value}>
+                    {emp.label}
+                  </SelectItem>
+                ))
+              ) : (
+                <SelectItem value="loading" disabled>
+                  กำลังโหลดข้อมูล...
+                </SelectItem>
+              )}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 

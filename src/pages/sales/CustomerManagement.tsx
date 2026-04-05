@@ -132,9 +132,6 @@ const productTags = [
   "ที่เปิดขวด", "แม่เหล็ก", "ที่ทับกระดาษ"
 ];
 
-// Sales owners list for filter
-const salesOwners = ['สมชาย', 'สมหญิง', 'วิภา', 'ธนา', 'กมล'];
-
 interface Customer {
   id: string;
   name: string;
@@ -151,7 +148,7 @@ interface Customer {
   salesStatus: 'ใหม่' | 'เสนอราคา' | 'ผลิต' | 'ปิดงาน';
   nextAction: string;
   nextActionDate: string;
-  salesOwner: string;
+  responsiblePerson: string;
   interestedProducts: string[];
   contactCount: number;
 }
@@ -198,7 +195,7 @@ export default function CustomerManagement() {
   const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
   const [businessTypeFilter, setBusinessTypeFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [salesOwnerFilter, setSalesOwnerFilter] = useState<string>("all");
+  const [responsiblePersonFilter, setResponsiblePersonFilter] = useState<string>("all");
   const [productFilter, setProductFilter] = useState<string>("all");
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const [isAddCustomerOpen, setIsAddCustomerOpen] = useState(false);
@@ -216,6 +213,7 @@ export default function CustomerManagement() {
     setSortConfig({ key, direction });
   };
   const [isQuotationOpen, setIsQuotationOpen] = useState(false);
+  const [isOrderOpen, setIsOrderOpen] = useState(false);
   const [provinceOpen, setProvinceOpen] = useState(false);
   const [districtOpen, setDistrictOpen] = useState(false);
   const [subdistrictOpen, setSubdistrictOpen] = useState(false);
@@ -238,6 +236,7 @@ export default function CustomerManagement() {
   const [shippingDistricts, setShippingDistricts] = useState<GeoAmphure[]>([]);
   const [shippingSubdistricts, setShippingSubdistricts] = useState<GeoTambon[]>([]);
   const [geoLoading, setGeoLoading] = useState(false);
+  const [salesEmployees, setSalesEmployees] = useState<{ value: string; label: string }[]>([]);
 
   // Column filters
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
@@ -362,7 +361,7 @@ export default function CustomerManagement() {
   const fetchCustomers = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_BASE_URL}/customers.php`);
+      const response = await fetch(`${API_BASE_URL}/customers.php?recalculate=1`);
       const json = await response.json();
 
       if (!response.ok || json.status === 'error') {
@@ -391,7 +390,7 @@ export default function CustomerManagement() {
         salesStatus: (customer.sales_status || 'ใหม่') as 'ใหม่' | 'เสนอราคา' | 'ผลิต' | 'ปิดงาน',
         nextAction: customer.next_action || '',
         nextActionDate: customer.next_action_date || '',
-        salesOwner: customer.sales_owner || '',
+        responsiblePerson: customer.responsible_person || '',
         interestedProducts: Array.isArray(customer.interested_products) ? customer.interested_products : [],
         contactCount: customer.contact_count ?? 0,
       }));
@@ -411,6 +410,25 @@ export default function CustomerManagement() {
 
   useEffect(() => {
     fetchCustomers();
+    // Fetch sales employees
+    const fetchSalesEmployees = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/employees.php`);
+        const json = await res.json();
+        if (json.status === 'success' && json.data) {
+          const sales = json.data
+            .filter((emp: any) => emp.department === "ฝ่ายขาย")
+            .map((emp: any) => ({
+              value: emp.full_name,
+              label: `${emp.full_name}${emp.nickname ? ` (${emp.nickname})` : ''}`
+            }));
+          setSalesEmployees(sales);
+        }
+      } catch (err) {
+        console.error('Error fetching employees:', err);
+      }
+    };
+    fetchSalesEmployees();
   }, []);
 
   const addPhoneNumber = () => {
@@ -709,12 +727,31 @@ export default function CustomerManagement() {
       return;
     }
 
-    console.log("Creating quotation for:", selectedCustomer);
-    toast({
-      title: "สร้างใบเสนอราคา",
-      description: `กำลังสร้างใบเสนอราคาสำหรับ ${selectedCustomer.name}`,
+    navigate('/sales/price-estimation/add', { 
+      state: { 
+        customerData: selectedCustomer 
+      } 
     });
     setIsQuotationOpen(false);
+  };
+
+  const handleCreateOrder = () => {
+    if (!selectedCustomer) {
+      toast({
+        title: "กรุณาเลือกลูกค้า",
+        description: "โปรดเลือกลูกค้าก่อนสร้างคำสั่งซื้อ",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    navigate('/sales/create-order', { 
+      state: { 
+        fromCustomer: true,
+        customerData: selectedCustomer 
+      } 
+    });
+    setIsOrderOpen(false);
   };
 
   // Deep search - search all fields in customer object
@@ -736,7 +773,7 @@ export default function CustomerManagement() {
     if (email && !customer.email.toLowerCase().includes(email.toLowerCase())) return false;
     if (address && !customer.address.toLowerCase().includes(address.toLowerCase())) return false;
     if (status !== "all" && customer.status !== status) return false;
-    if (responsiblePerson !== "all" && customer.salesOwner !== responsiblePerson) return false;
+    if (responsiblePerson !== "all" && customer.responsiblePerson !== responsiblePerson) return false;
     return true;
   }, [advancedSearch]);
 
@@ -773,7 +810,7 @@ export default function CustomerManagement() {
       const matchesSearch = deepSearch(customer, searchTerm);
       const matchesBusinessType = businessTypeFilter === "all" || customer.businessType === businessTypeFilter;
       const matchesStatus = statusFilter === "all" || customer.status === statusFilter;
-      const matchesSalesOwner = salesOwnerFilter === "all" || customer.salesOwner === salesOwnerFilter;
+      const matchesSalesOwner = responsiblePersonFilter === "all" || customer.responsiblePerson === responsiblePersonFilter;
       const matchesProduct = productFilter === "all" || customer.interestedProducts.includes(productFilter);
       const matchesCard = matchesCardFilter(customer);
 
@@ -783,7 +820,7 @@ export default function CustomerManagement() {
         switch (key) {
           case "name": return customer.name.toLowerCase().includes(value.toLowerCase());
           case "salesStatus": return customer.salesStatus === value;
-          case "salesOwner": return customer.salesOwner === value;
+          case "responsiblePerson": return customer.responsiblePerson === value;
           case "status": return customer.status === value;
           case "lastContact": return customer.lastContact.includes(value);
           default: return true;
@@ -820,7 +857,7 @@ export default function CustomerManagement() {
       }
       return 0;
     });
-  }, [customers, searchTerm, businessTypeFilter, statusFilter, salesOwnerFilter, productFilter, dateRange, columnFilters, advancedSearch, deepSearch, matchesAdvancedSearch, matchesCardFilter, sortConfig]);
+  }, [customers, searchTerm, businessTypeFilter, statusFilter, responsiblePersonFilter, productFilter, dateRange, columnFilters, advancedSearch, deepSearch, matchesAdvancedSearch, matchesCardFilter, sortConfig]);
 
   // Pagination Logic
   const totalPages = Math.ceil(filteredCustomers.length / itemsPerPage);
@@ -832,7 +869,7 @@ export default function CustomerManagement() {
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, businessTypeFilter, statusFilter, salesOwnerFilter, productFilter, dateRange, columnFilters, advancedSearch, cardFilter]);
+  }, [searchTerm, businessTypeFilter, statusFilter, responsiblePersonFilter, productFilter, dateRange, columnFilters, advancedSearch, cardFilter]);
 
   // Scroll and highlight newly added customer
   useEffect(() => {
@@ -905,7 +942,7 @@ export default function CustomerManagement() {
   const clearAllFilters = () => {
     setBusinessTypeFilter("all");
     setStatusFilter("all");
-    setSalesOwnerFilter("all");
+    setResponsiblePersonFilter("all");
     setProductFilter("all");
     setDateRange(undefined);
     setSearchTerm("");
@@ -916,7 +953,7 @@ export default function CustomerManagement() {
     });
   };
 
-  const hasActiveFilters = businessTypeFilter !== "all" || statusFilter !== "all" || salesOwnerFilter !== "all" || productFilter !== "all" || dateRange || cardFilter !== null || Object.values(columnFilters).some(v => v && v !== "all") || Object.values(advancedSearch).some(v => v && v !== "all" && v !== "");
+  const hasActiveFilters = businessTypeFilter !== "all" || statusFilter !== "all" || responsiblePersonFilter !== "all" || productFilter !== "all" || dateRange || cardFilter !== null || Object.values(columnFilters).some(v => v && v !== "all") || Object.values(advancedSearch).some(v => v && v !== "all" && v !== "");
 
   // Column filter dropdown helper
   const ColumnFilterDropdown = ({ columnKey, label, options }: { columnKey: string; label: string; options?: string[] }) => (
@@ -1487,7 +1524,7 @@ export default function CustomerManagement() {
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent className="bg-background">
-                              {salesOwners.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                              {salesEmployees.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
                             </SelectContent>
                           </Select>
                         </div>
@@ -1694,14 +1731,14 @@ export default function CustomerManagement() {
                 </div>
 
                 <div className="flex flex-wrap gap-3">
-                  <Select value={salesOwnerFilter} onValueChange={setSalesOwnerFilter}>
+                  <Select value={responsiblePersonFilter} onValueChange={setResponsiblePersonFilter}>
                     <SelectTrigger className="w-40">
                       <SelectValue placeholder="เซลล์ที่รับผิดชอบ" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">ทุกเซลล์</SelectItem>
-                      {salesOwners.map(owner => (
-                        <SelectItem key={owner} value={owner}>{owner}</SelectItem>
+                      {salesEmployees.map(emp => (
+                        <SelectItem key={emp.value} value={emp.value}>{emp.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -1824,15 +1861,15 @@ export default function CustomerManagement() {
                       </div>
                     </TableHead>
                     <TableHead className="w-[200px]">Next Action</TableHead>
-                    <TableHead className="w-[120px] cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => handleSort('salesOwner')}>
+                    <TableHead className="w-[120px] cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => handleSort('responsiblePerson')}>
                       <div className="flex items-center gap-1 group">
                         เซลล์เจ้าของ
-                        {sortConfig.key === 'salesOwner' ? (
+                        {sortConfig.key === 'responsiblePerson' ? (
                           <ChevronDown className={cn("h-4 w-4 text-primary transition-transform", sortConfig.direction === 'desc' && "rotate-180")} />
                         ) : (
                           <ChevronDown className="h-4 w-4 text-muted-foreground/30 opacity-0 group-hover:opacity-100 transition-opacity" />
                         )}
-                        <div onClick={(e) => e.stopPropagation()}><ColumnFilterDropdown columnKey="salesOwner" label="เซลล์" options={salesOwners} /></div>
+                        <div onClick={(e) => e.stopPropagation()}><ColumnFilterDropdown columnKey="responsiblePerson" label="เซลล์" options={salesEmployees.map(e => e.value)} /></div>
                       </div>
                     </TableHead>
                     <TableHead className="w-[130px] cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => handleSort('status')}>
@@ -1944,7 +1981,7 @@ export default function CustomerManagement() {
                             <div className="w-6 h-6 bg-primary/10 rounded-full flex items-center justify-center">
                               <User className="w-3 h-3 text-primary" />
                             </div>
-                            <span className="text-sm">{highlightText(customer.salesOwner, activeSearchTerm)}</span>
+                            <span className="text-sm">{highlightText(customer.responsiblePerson, activeSearchTerm)}</span>
                           </div>
                         </TableCell>
                         <TableCell>
@@ -2111,7 +2148,9 @@ export default function CustomerManagement() {
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">ทั้งหมด</SelectItem>
-                  {salesOwners.map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+                  {salesEmployees.map(emp => (
+                    <SelectItem key={emp.value} value={emp.value}>{emp.label}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

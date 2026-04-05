@@ -16,6 +16,7 @@ require '../condb.php';
 /** @var mysqli $conn */
 $conn->select_db('finfinph_lcukycompany');
 $conn->set_charset("utf8mb4");
+require_once '../utils/customer_helpers.php';
 
 $method = $_SERVER['REQUEST_METHOD'];
 $customer_id = isset($_GET['customer_id']) ? intval($_GET['customer_id']) : null;
@@ -61,6 +62,7 @@ switch ($method) {
         $stmt = $conn->prepare($sql);
         $stmt->bind_param("issddssi", $cid, $order_code, $data['title'], $amount, $paid_amount, $status, $items, $order_date);
         if ($stmt->execute()) {
+            recalculateCustomerStats($conn, $cid);
             http_response_code(201);
             echo json_encode(["status" => "success", "message" => "Order created", "id" => $conn->insert_id, "order_code" => $order_code]);
         } else {

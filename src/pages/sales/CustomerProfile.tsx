@@ -11,7 +11,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "@/components/ui/command";
 import { ActivityForm } from "@/components/sales/ActivityForm";
 import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -49,10 +51,70 @@ import {
   Video,
   Presentation,
   X,
-  Loader2
+  Loader2,
+  ChevronDown,
+  Search as SearchIcon
 } from "lucide-react";
 
+// ===================================================
+// Thai Geo — จาก jsdelivr GitHub CDN (โหลดครั้งเดียว cache module)
+// ===================================================
+interface GeoProvince { id: number; name_th: string; }
+interface GeoAmphure { id: number; name_th: string; province_id: number; }
+interface GeoTambon { id: number; name_th: string; zip_code: number; amphure_id: number; }
+
+// ไฟล์จริงอยู่ใน /api/latest/ (verified จาก GitHub API)
+const GEO_URL = 'https://raw.githubusercontent.com/kongvut/thai-province-data/master/api/latest/province_with_district_and_sub_district.json';
+
+let _geoProvinces: GeoProvince[] = [];
+let _geoAmphures: GeoAmphure[] = [];
+let _geoTambons: GeoTambon[] = [];
+let _geoReady = false;
+let _geoPromise: Promise<void> | null = null;
+
+function loadGeo(): Promise<void> {
+  if (_geoReady) return Promise.resolve();
+  if (_geoPromise) return _geoPromise;
+  console.log('[Geo] Loading combined geo data...');
+  _geoPromise = fetch(GEO_URL)
+    .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+    .then((provinces: any[]) => {
+      _geoProvinces = provinces.map((p: any) => ({ id: p.id, name_th: p.name_th }));
+      _geoAmphures = provinces.flatMap((p: any) =>
+        (p.districts || []).map((d: any) => ({ id: d.id, name_th: d.name_th, province_id: p.id }))
+      );
+      _geoTambons = provinces.flatMap((p: any) =>
+        (p.districts || []).flatMap((d: any) =>
+          (d.sub_districts || []).map((s: any) => ({ id: s.id, name_th: s.name_th, zip_code: s.zip_code, amphure_id: d.id }))
+        )
+      );
+      _geoReady = true;
+      console.log(`[Geo] ✅ ${_geoProvinces.length} จังหวัด, ${_geoAmphures.length} อำเภอ, ${_geoTambons.length} ตำบล`);
+    })
+    .catch(e => {
+      _geoPromise = null;
+      console.error('[Geo] ❌ Load failed:', e);
+    });
+  return _geoPromise!;
+}
+
+function geoDistricts(provinceName: string): GeoAmphure[] {
+  const prov = _geoProvinces.find(p => p.name_th === provinceName)
+    || _geoProvinces.find(p => p.name_th.includes(provinceName) || provinceName.includes(p.name_th));
+  if (!prov) return [];
+  return _geoAmphures.filter(a => a.province_id === prov.id);
+}
+
+function geoSubdistricts(amphureId: number): GeoTambon[] {
+  return _geoTambons.filter(t => t.amphure_id === amphureId);
+}
+
 const API_BASE_URL = "https://nacres.co.th/api-lucky/admin";
+const productTags = [
+  "เหรียญ", "ถ้วยรางวัล", "โล่", "เสื้อ", "สายคล้อง",
+  "แก้ว", "หมวก", "กระเป๋า", "ป้ายพรีเมียม", "พวงกุญแจ",
+  "ที่เปิดขวด", "แม่เหล็ก", "ที่ทับกระดาษ"
+];
 
 // VIP status helper
 const customerImportance = (totalValue: number): { level: 'VIP' | 'General'; color: string } => {
@@ -93,9 +155,28 @@ export default function CustomerProfile() {
   const [uploadDept, setUploadDept] = useState("sales");
   const [isUploading, setIsUploading] = useState(false);
 
+  // Address Dropdown states
+  const [provinceOpen, setProvinceOpen] = useState(false);
+  const [districtOpen, setDistrictOpen] = useState(false);
+  const [subdistrictOpen, setSubdistrictOpen] = useState(false);
+  const [billingDistricts, setBillingDistricts] = useState<GeoAmphure[]>([]);
+  const [billingSubdistricts, setBillingSubdistricts] = useState<GeoTambon[]>([]);
+  const [geoLoading, setGeoLoading] = useState(false);
+  const [salesEmployees, setSalesEmployees] = useState<{ value: string; label: string }[]>([]);
+
   // Refs for validation scrolling
   const companyNameRef = useRef<HTMLDivElement>(null);
   const contactNameRef = useRef<HTMLDivElement>(null);
+
+  const toggleEditProductTag = (tag: string) => {
+    setEditForm((prev: any) => {
+      const currentTags = (prev.interested_products || "").split(",").map((t: string) => t.trim()).filter(Boolean);
+      const nextTags = currentTags.includes(tag)
+        ? currentTags.filter((t: string) => t !== tag)
+        : [...currentTags, tag];
+      return { ...prev, interested_products: nextTags.join(", ") };
+    });
+  };
 
   // Fetch activities from PHP API
   const fetchActivities = async () => {
@@ -109,6 +190,32 @@ export default function CustomerProfile() {
       console.error('Error fetching activities:', error);
     }
   };
+
+  // Geo Data Loading and Cascading Effects
+  useEffect(() => { loadGeo(); }, []);
+
+  useEffect(() => {
+    if (!editForm.billing_province) { 
+      setBillingDistricts([]); 
+      setBillingSubdistricts([]); 
+      return; 
+    }
+    setGeoLoading(true);
+    loadGeo().then(() => {
+      setBillingDistricts(geoDistricts(editForm.billing_province));
+      setBillingSubdistricts([]);
+      setGeoLoading(false);
+    });
+  }, [editForm.billing_province]);
+
+  useEffect(() => {
+    const amp = billingDistricts.find(a => a.name_th === editForm.billing_district);
+    if (!amp) { 
+      setBillingSubdistricts([]); 
+      return; 
+    }
+    setBillingSubdistricts(geoSubdistricts(amp.id));
+  }, [editForm.billing_district, billingDistricts]);
 
   // Fetch orders
   const fetchOrders = async () => {
@@ -163,49 +270,53 @@ export default function CustomerProfile() {
     }
     setIsUploading(true);
     try {
-      // --- Try multipart upload (new PHP required on server) ---
-      const formData = new FormData();
-      formData.append('file', uploadFile);
-      formData.append('customer_id', id);
-      formData.append('name', uploadName.trim());
-      formData.append('version', uploadVersion);
-      formData.append('department', uploadDept);
-      formData.append('uploaded_by', 'AdminSale');
+      // 1. Upload the file first to the upload endpoint
+      const uploadFormData = new FormData();
+      uploadFormData.append('file', uploadFile);
+      uploadFormData.append('category', 'customer_design');
 
-      let res = await fetch(`${API_BASE_URL}/customer_design_files.php`, {
+      const uploadRes = await fetch(`${API_BASE_URL}/order_upload.php`, {
         method: 'POST',
-        body: formData,
+        body: uploadFormData,
       });
 
-      // --- Fallback: if server has old PHP (400), send JSON without file ---
-      if (res.status === 400) {
-        const fallbackRes = await fetch(`${API_BASE_URL}/customer_design_files.php`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            customer_id: parseInt(id),
-            name: uploadName.trim(),
-            version: uploadVersion,
-            department: uploadDept,
-            uploaded_by: 'AdminSale',
-            file_url: null,
-          }),
-        });
-        res = fallbackRes;
+      const uploadJson = await uploadRes.json();
+      if (uploadJson.status !== 'success') {
+        throw new Error(uploadJson.message || 'อัปโหลดไฟล์ไม่สำเร็จ');
       }
 
-      const json = await res.json();
+      const fileUrl = uploadJson.data.fileUrl;
+
+      // 2. Save metadata and file URL to the database
+      const saveRes = await fetch(`${API_BASE_URL}/customer_design_files.php`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customer_id: parseInt(id),
+          name: uploadName.trim(),
+          version: uploadVersion,
+          department: uploadDept,
+          uploaded_by: 'AdminSale',
+          file_url: fileUrl,
+        }),
+      });
+
+      const json = await saveRes.json();
       if (json.status === 'success') {
-        toast({ title: 'บันทึกสำเร็จ', description: `บันทึกไฟล์ "${uploadName}" แล้ว` });
+        toast({ title: 'บันทึกสำเร็จ', description: `อัปโหลดไฟล์ "${uploadName}" เรียบร้อยแล้ว` });
         setIsUploadOpen(false);
-        setUploadFile(null); setUploadPreview(null); setUploadName(''); setUploadVersion('V1'); setUploadDept('sales');
+        setUploadFile(null);
+        setUploadPreview(null);
+        setUploadName('');
+        setUploadVersion('V1');
+        setUploadDept('sales');
         fetchDesignFiles();
       } else {
-        toast({ title: 'เกิดข้อผิดพลาด', description: json.message || 'ไม่สามารถบันทึกได้', variant: 'destructive' });
+        toast({ title: 'เกิดข้อผิดพลาด', description: json.message || 'ไม่สามารถบันทึกข้อมูลลงฐานข้อมูลได้', variant: 'destructive' });
       }
-    } catch {
-
-      toast({ title: 'เกิดข้อผิดพลาด', description: 'เชื่อมต่อ API ไม่ได้', variant: 'destructive' });
+    } catch (error: any) {
+      console.error('Upload error:', error);
+      toast({ title: 'เกิดข้อผิดพลาด', description: error.message || 'เชื่อมต่อ API ไม่ได้', variant: 'destructive' });
     } finally {
       setIsUploading(false);
     }
@@ -307,6 +418,26 @@ export default function CustomerProfile() {
     fetchOrders();
     fetchDesignFiles();
     fetchNotes();
+
+    const fetchSalesEmployees = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/employees.php`);
+        if (!res.ok) throw new Error("Failed to fetch employees");
+        const json = await res.json();
+        if (json.status === "success" && json.data) {
+          const sales = json.data
+            .filter((emp: any) => emp.department === "ฝ่ายขาย")
+            .map((emp: any) => ({
+              value: emp.full_name,
+              label: `${emp.full_name}${emp.nickname ? ` (${emp.nickname})` : ""}`,
+            }));
+          setSalesEmployees(sales);
+        }
+      } catch (err) {
+        console.error("Error fetching employees:", err);
+      }
+    };
+    fetchSalesEmployees();
   }, [id]);
 
   const openEdit = () => {
@@ -333,11 +464,10 @@ export default function CustomerProfile() {
       presentation_status: customer.presentation_status || '',
       sales_status: customer.sales_status || '',
       sales_status_id: customer.sales_status_id || '',
-      sales_owner: customer.sales_owner || '',
+      responsible_person: customer.responsible_person || '',
       customer_status: customer.customer_status || '',
       how_found_us: customer.how_found_us || '',
       notes: customer.notes || '',
-      responsible_person: customer.responsible_person || '',
       interested_products: Array.isArray(customer.interested_products)
         ? customer.interested_products.join(', ')
         : (customer.interested_products || ''),
@@ -395,6 +525,8 @@ export default function CustomerProfile() {
       const json = await res.json();
       if (!res.ok || json.status === 'error') throw new Error(json.message);
       setCustomer(json.data);
+      fetchActivities();
+      fetchOrders();
       setIsEditOpen(false);
       toast({ title: 'สำเร็จ', description: 'อัปเดตข้อมูลลูกค้าเรียบร้อยแล้ว' });
     } catch (error: any) {
@@ -715,12 +847,14 @@ export default function CustomerProfile() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => navigate('/sales/price-estimation')}
+                          onClick={() => navigate('/sales/price-estimation/add', {
+                            state: { customerData: customer }
+                          })}
                           disabled={!hasCompleteData}
                           className={!hasCompleteData ? 'opacity-50 cursor-not-allowed' : ''}
                         >
                           <FileText className="w-3 h-3 mr-1" />
-                          ใบเสนอราคา
+                          ประเมิณราคา
                         </Button>
                       </span>
                     </TooltipTrigger>
@@ -737,12 +871,14 @@ export default function CustomerProfile() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => navigate('/sales/create-order')}
+                          onClick={() => navigate('/sales/create-order', {
+                            state: { fromCustomer: true, customerData: customer }
+                          })}
                           disabled={!hasCompleteData || !hasAddress}
                           className={(!hasCompleteData || !hasAddress) ? 'opacity-50 cursor-not-allowed' : ''}
                         >
                           <ShoppingCart className="w-3 h-3 mr-1" />
-                          สั่งผลิต
+                          คำสั่งซื้อ
                         </Button>
                       </span>
                     </TooltipTrigger>
@@ -835,7 +971,7 @@ export default function CustomerProfile() {
                       <div className="w-6 h-6 bg-primary/10 rounded-full flex items-center justify-center">
                         <User className="w-3 h-3 text-primary" />
                       </div>
-                      <p className="text-sm font-medium">{customer.sales_owner || 'ไม่ระบุ'}</p>
+                      <p className="text-sm font-medium">{customer.responsible_person || 'ไม่ระบุ'}</p>
                     </div>
                   </div>
                   <div>
@@ -904,7 +1040,7 @@ export default function CustomerProfile() {
                     </div>
                     <div className="flex justify-between text-sm">
                       <span>จำนวนการติดต่อ:</span>
-                      <span className="font-medium">{customer.contact_count} ครั้ง</span>
+                      <span className="font-medium">{activities.length} ครั้ง</span>
                     </div>
                   </div>
                 </CardContent>
@@ -995,7 +1131,9 @@ export default function CustomerProfile() {
                   <Package className="w-5 h-5" />
                   ประวัติคำสั่งซื้อ
                 </CardTitle>
-                <Button onClick={() => navigate('/sales/create-order')} className="bg-primary hover:bg-primary/90">
+                <Button onClick={() => navigate('/sales/create-order', {
+                  state: { fromCustomer: true, customerData: customer }
+                })} className="bg-primary hover:bg-primary/90">
                   <Plus className="w-4 h-4 mr-2" />
                   สร้างคำสั่งซื้อใหม่
                 </Button>
@@ -1114,7 +1252,7 @@ export default function CustomerProfile() {
                   <Image className="w-16 h-16 mx-auto mb-4 opacity-50" />
                   <p className="font-medium">ยังไม่มีไฟล์ออกแบบ</p>
                   <p className="text-sm">อัพโหลดไฟล์ Mockup เพื่อแชร์กับลูกค้า</p>
-                  <Button variant="outline" size="sm" className="mt-4">
+                  <Button variant="outline" size="sm" className="mt-4" onClick={() => setIsUploadOpen(true)}>
                     <Upload className="w-4 h-4 mr-2" />
                     อัพโหลดไฟล์แรก
                   </Button>
@@ -1324,12 +1462,19 @@ export default function CustomerProfile() {
 
                   <div className="space-y-2">
                     <Label className="text-sm">ประเภทธุรกิจ/หมวดหมู่</Label>
-                    <Input
-                      value={editForm.business_type || ''}
-                      onChange={e => setEditForm((f: any) => ({ ...f, business_type: e.target.value }))}
-                      placeholder="เช่น หน่วยงานราชการ, บริษัทเอกชน"
-                      className="h-10"
-                    />
+                    <Select 
+                      value={editForm.business_type || ''} 
+                      onValueChange={value => setEditForm((f: any) => ({ ...f, business_type: value }))}
+                    >
+                      <SelectTrigger className="h-10 bg-background">
+                        <SelectValue placeholder="เลือกประเภทธุรกิจ" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-background">
+                        <SelectItem value="เจ้าของงาน">เจ้าของงาน</SelectItem>
+                        <SelectItem value="ตัวแทน">ตัวแทน</SelectItem>
+                        <SelectItem value="ออแกนไนเซอร์">ออแกนไนเซอร์</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
               </div>
@@ -1377,12 +1522,28 @@ export default function CustomerProfile() {
                     <Label className="text-sm flex items-center gap-1.5">
                       สินค้าที่ลูกค้าสนใจ
                     </Label>
-                    <Input
-                      value={editForm.interested_products || ''}
-                      onChange={e => setEditForm((f: any) => ({ ...f, interested_products: e.target.value }))}
-                      placeholder="เช่น เหรียญ, โล่ไม้, ยูนิฟอร์ม"
-                      className="h-10 border-amber-200 bg-amber-50/20"
-                    />
+                    <div className="flex flex-wrap gap-2 p-3 border rounded-lg bg-amber-50/20 border-amber-200">
+                      {productTags.map(tag => {
+                        const currentTags = (editForm.interested_products || "").split(",").map((t: string) => t.trim()).filter(Boolean);
+                        const isSelected = currentTags.includes(tag);
+                        return (
+                          <Badge 
+                            key={tag}
+                            variant={isSelected ? "default" : "outline"}
+                            className={cn(
+                              "cursor-pointer select-none py-1.5 px-3 transition-all",
+                              isSelected 
+                                ? "bg-amber-600 hover:bg-amber-700 text-white border-amber-600 shadow-sm" 
+                                : "bg-white hover:border-amber-400 text-amber-800 border-amber-200"
+                            )}
+                            onClick={() => toggleEditProductTag(tag)}
+                          >
+                            {tag}
+                            {isSelected && <CheckCircle2 className="ml-1.5 w-3 h-3" />}
+                          </Badge>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1408,34 +1569,111 @@ export default function CustomerProfile() {
 
                   <div className="grid grid-cols-2 gap-x-6 gap-y-4">
                     <div className="space-y-2">
-                      <Label className="text-sm text-muted-foreground">แขวง / ตำบล</Label>
-                      <Input
-                        value={editForm.billing_subdistrict || ''}
-                        onChange={e => setEditForm((f: any) => ({ ...f, billing_subdistrict: e.target.value }))}
-                        className="h-10"
-                      />
+                      <Label className="text-sm text-muted-foreground">จังหวัด</Label>
+                      <Popover open={provinceOpen} onOpenChange={setProvinceOpen}>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" className="w-full justify-between h-10 border-primary/30 shadow-inner">
+                            <span className="truncate">{editForm.billing_province || "เลือกจังหวัด"}</span>
+                            <ChevronDown className="h-4 w-4 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[200px] p-0 shadow-lg border-primary/20">
+                          <Command>
+                            <CommandInput placeholder="ค้นหาจังหวัด..." />
+                            <CommandEmpty>ไม่พบข้อมูล</CommandEmpty>
+                            <CommandGroup className="max-h-60 overflow-y-auto">
+                              {_geoProvinces.map(p => (
+                                <CommandItem key={p.id} onSelect={() => {
+                                  setEditForm((f: any) => ({ 
+                                    ...f, 
+                                    billing_province: p.name_th,
+                                    billing_district: "",
+                                    billing_subdistrict: "",
+                                    billing_postcode: ""
+                                  }));
+                                  setProvinceOpen(false);
+                                }}>
+                                  {p.name_th}
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
                     </div>
+
                     <div className="space-y-2">
-                      <Label className="text-sm text-muted-foreground">เขต / อำเภอ</Label>
-                      <Input
-                        value={editForm.billing_district || ''}
-                        onChange={e => setEditForm((f: any) => ({ ...f, billing_district: e.target.value }))}
-                        className="h-10"
-                      />
+                      <Label className="text-sm text-muted-foreground">อำเภอ / เขต</Label>
+                      <Popover open={districtOpen} onOpenChange={setDistrictOpen}>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" className="w-full justify-between h-10" disabled={!editForm.billing_province}>
+                            <span className="truncate">{editForm.billing_district || "เลือกอำเภอ"}</span>
+                            <ChevronDown className="h-4 w-4 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[200px] p-0 shadow-lg border-primary/20">
+                          <Command>
+                            <CommandInput placeholder="ค้นหาอำเภอ..." />
+                            <CommandEmpty>ไม่พบข้อมูล</CommandEmpty>
+                            <CommandGroup className="max-h-60 overflow-y-auto">
+                              {billingDistricts.map(d => (
+                                <CommandItem key={d.id} onSelect={() => {
+                                  setEditForm((f: any) => ({ 
+                                    ...f, 
+                                    billing_district: d.name_th,
+                                    billing_subdistrict: "",
+                                    billing_postcode: ""
+                                  }));
+                                  setDistrictOpen(false);
+                                }}>
+                                  {d.name_th}
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
                     </div>
+
                     <div className="space-y-2">
-                      <Label className="text-sm text-muted-foreground font-semibold">จังหวัด</Label>
-                      <Input
-                        value={editForm.billing_province || ''}
-                        onChange={e => setEditForm((f: any) => ({ ...f, billing_province: e.target.value }))}
-                        className="h-10 border-primary/30 shadow-inner"
-                      />
+                      <Label className="text-sm text-muted-foreground">ตำบล / แขวง</Label>
+                      <Popover open={subdistrictOpen} onOpenChange={setSubdistrictOpen}>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" className="w-full justify-between h-10" disabled={!editForm.billing_district}>
+                            <span className="truncate">{editForm.billing_subdistrict || "เลือกตำบล"}</span>
+                            <ChevronDown className="h-4 w-4 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[200px] p-0 shadow-lg border-primary/20">
+                          <Command>
+                            <CommandInput placeholder="ค้นหาตำบล..." />
+                            <CommandEmpty>ไม่พบข้อมูล</CommandEmpty>
+                            <CommandGroup className="max-h-60 overflow-y-auto">
+                              {billingSubdistricts.map(s => (
+                                <CommandItem key={s.id} onSelect={() => {
+                                  setEditForm((f: any) => ({ 
+                                    ...f, 
+                                    billing_subdistrict: s.name_th,
+                                    billing_postcode: String(s.zip_code || "")
+                                  }));
+                                  setSubdistrictOpen(false);
+                                }}>
+                                  {s.name_th}
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
                     </div>
+
                     <div className="space-y-2">
                       <Label className="text-sm text-muted-foreground">รหัสไปรษณีย์</Label>
                       <Input
                         value={editForm.billing_postcode || ''}
-                        onChange={e => setEditForm((f: any) => ({ ...f, billing_postcode: e.target.value }))}
+                        onChange={e => setEditForm((f: any) => ({ ...f, billing_postcode: e.target.value.replace(/\D/g, '').slice(0, 5) }))}
+                        placeholder="XXXXX"
+                        maxLength={5}
                         className="h-10"
                       />
                     </div>
@@ -1480,11 +1718,27 @@ export default function CustomerProfile() {
                   </div>
                   <div className="space-y-2">
                     <Label className="text-sm">เซลล์ที่รับผิดชอบ</Label>
-                    <Input
-                      value={editForm.sales_owner || ''}
-                      onChange={e => setEditForm((f: any) => ({ ...f, sales_owner: e.target.value }))}
-                      className="h-10 border-blue-200"
-                    />
+                    <Select 
+                      value={editForm.responsible_person || ''} 
+                      onValueChange={val => setEditForm((f: any) => ({ ...f, responsible_person: val }))}
+                    >
+                      <SelectTrigger className="h-10 border-blue-200">
+                        <SelectValue placeholder="เลือกพนักงานขาย" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-background">
+                        {salesEmployees.length > 0 ? (
+                          salesEmployees.map((emp) => (
+                            <SelectItem key={emp.value} value={emp.value}>
+                              {emp.label}
+                            </SelectItem>
+                          ))
+                        ) : (
+                          <SelectItem value="loading" disabled>
+                            กำลังโหลดข้อมูล...
+                          </SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-2">
                     <Label className="text-sm">ช่องทางรู้จักเรา</Label>

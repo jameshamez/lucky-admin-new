@@ -41,6 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 require '../condb.php';
 $conn->select_db('finfinph_lcukycompany');
 $conn->set_charset("utf8mb4");
+require_once '../utils/customer_helpers.php';
 
 if ($conn->connect_error) {
     http_response_code(500);
@@ -149,6 +150,9 @@ switch ($method) {
             $get->execute();
             $new_activity = formatRow($get->get_result()->fetch_assoc());
 
+            // Recalculate stats for customer
+            recalculateCustomerStats($conn, $cid);
+
             http_response_code(201);
             echo json_encode([
                 "status" => "success",
@@ -242,6 +246,13 @@ switch ($method) {
         $stmt->bind_param("i", $id);
 
         if ($stmt->execute()) {
+            // Recalculate stats for customer (need customer_id for this)
+            $id_stmt = $conn->prepare("SELECT customer_id FROM customer_activities WHERE id = ?");
+            $id_stmt->bind_param("i", $id);
+            $id_stmt->execute();
+            $cid = $id_stmt->get_result()->fetch_assoc()['customer_id'] ?? null;
+            if ($cid) recalculateCustomerStats($conn, $cid);
+
             echo json_encode(["status" => "success", "message" => "ลบกิจกรรมสำเร็จ"]);
         } else {
             http_response_code(500);
