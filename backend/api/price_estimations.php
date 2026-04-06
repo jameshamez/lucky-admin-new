@@ -145,8 +145,15 @@ if ($method === 'POST') {
     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
 
     $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        http_response_code(500);
+        $errorMsg = $conn->error ?: mysqli_error($conn);
+        echo json_encode(["status" => "error", "message" => "Database prepare error: " . $errorMsg, "sql" => $sql]);
+        exit();
+    }
+    
     $stmt->bind_param(
-        "ssissssssssidddsssss",
+        "ssissssssssiddssssss",
         $estimate_id,
         $estimation_date,
         $customer_id,
@@ -253,6 +260,12 @@ if ($method === 'PUT' || $method === 'PATCH') {
 
     $sql = "UPDATE price_estimations_sales SET " . implode(", ", $fields) . " WHERE id = ?";
     $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        http_response_code(500);
+        $errorMsg = $conn->error ?: mysqli_error($conn);
+        echo json_encode(["status" => "error", "message" => "Database error on update: " . $errorMsg, "sql" => $sql]);
+        exit();
+    }
     $stmt->bind_param($types, ...$params);
 
     if (!$stmt->execute()) {

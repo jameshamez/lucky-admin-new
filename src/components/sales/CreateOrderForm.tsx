@@ -179,6 +179,126 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
 
+  const [addressAutoFill, setAddressAutoFill] = useState("");
+
+  const handleAutoFillAddress = async (pastedText?: string | React.MouseEvent | any) => {
+    let text = (typeof pastedText === 'string' ? pastedText : addressAutoFill).trim();
+    if (!text) return;
+
+    // extract zipcode (last sequence of 5 digits)
+    const zipMatch = text.match(/\b\d{5}\b/g);
+    let zipcode = "";
+    if (zipMatch) {
+      zipcode = zipMatch[zipMatch.length - 1];
+    }
+    
+    // Normalize "กทม" to "กรุงเทพมหานคร"
+    if (text.includes("กทม.") || text.includes("กทม")) {
+      text = text.replace(/กทม\./g, "กรุงเทพมหานคร").replace(/\bกทม\b/g, "กรุงเทพมหานคร");
+    }
+
+    let foundProvince = "";
+    let foundAmphure = "";
+    let foundTambon = "";
+
+    // Load full dataset to parse smartly
+    const { loadAddressData } = await import('@/utils/thaiAddress');
+    const allData = await loadAddressData();
+
+    // 1. If we have zipcode, it can drastically narrow down the search
+    if (zipcode) {
+      const possibleLocations = allData.filter(d => d.zipcode.toString() === zipcode);
+      
+      // match text against possible locations
+      for (const loc of possibleLocations) {
+        if (text.includes(loc.province) && text.includes(loc.amphoe) && text.includes(loc.district)) {
+          foundProvince = loc.province;
+          foundAmphure = loc.amphoe;
+          foundTambon = loc.district;
+          break;
+        }
+      }
+      // fallback partial match inside the zip code radius
+      if (!foundProvince) {
+        for (const loc of possibleLocations) {
+          if (text.includes(loc.province) && text.includes(loc.amphoe)) {
+            foundProvince = loc.province;
+            foundAmphure = loc.amphoe;
+            foundTambon = loc.district; // Default to this tambon
+            break;
+          }
+        }
+      }
+      if (!foundProvince && possibleLocations.length > 0) {
+        // Just take the first one
+        foundProvince = possibleLocations[0].province;
+        foundAmphure = possibleLocations[0].amphoe;
+        foundTambon = possibleLocations[0].district;
+      }
+    } else {
+      // No zip code, brute force scan
+      for (const loc of allData) {
+        if (text.includes(loc.province) && text.includes(loc.amphoe) && text.includes(loc.district)) {
+          foundProvince = loc.province;
+          foundAmphure = loc.amphoe;
+          foundTambon = loc.district;
+          break;
+        }
+      }
+      // If full exact match not found, at least try Province
+      if (!foundProvince) {
+        for (const p of thaiProvinces) {
+          if (text.includes(p)) {
+            foundProvince = p;
+            break;
+          }
+        }
+      }
+    }
+
+    if (zipcode) {
+      form.setValue("deliveryInfo.postalCode", zipcode, { shouldValidate: true, shouldDirty: true });
+    }
+    
+    if (foundProvince) {
+      form.setValue("deliveryInfo.province", foundProvince, { shouldValidate: true, shouldDirty: true });
+      setSelectedProvinceName(foundProvince);
+      
+      if (foundAmphure) {
+        setTimeout(() => {
+          form.setValue("deliveryInfo.district", foundAmphure, { shouldValidate: true, shouldDirty: true });
+          setSelectedAmphureName(foundAmphure);
+          if (foundTambon) {
+             setTimeout(() => {
+                form.setValue("deliveryInfo.subdistrict", foundTambon, { shouldValidate: true, shouldDirty: true });
+             }, 50);
+          }
+        }, 50);
+      }
+    }
+
+    // Clean text by removing detected province, district, subdistrict and zipcode
+    let cleanAddress = text;
+    if (zipcode) cleanAddress = cleanAddress.replace(zipcode, "");
+    if (foundProvince) cleanAddress = cleanAddress.replace(foundProvince, "");
+    if (foundAmphure) cleanAddress = cleanAddress.replace(foundAmphure, "");
+    if (foundTambon) cleanAddress = cleanAddress.replace(foundTambon, "");
+    
+    // Remove prefixes mapping
+    cleanAddress = cleanAddress.replace(/จังหวัด|จ\.|อำเภอ|อ\.|เขต|ตำบล|ต\.|แขวง|รหัสไปรษณีย์/g, " ");
+    
+    // cleanup spaces and trailing commas
+    cleanAddress = cleanAddress.replace(/\s+/g, ' ').trim();
+    cleanAddress = cleanAddress.replace(/,$/, '').trim();
+
+    form.setValue("deliveryInfo.address", cleanAddress, { shouldValidate: true, shouldDirty: true });
+
+    toast({
+      title: "กระจายข้อมูลเรียบร้อย",
+      description: "ระบบได้ทำการแยกที่อยู่ จังหวัด และรหัสไปรษณีย์ให้แล้ว กรุณาตรวจสอบความถูกต้อง",
+    });
+  };
+
   // Thai address cascade states
   const [thaiProvinces, setThaiProvinces] = useState<string[]>([]);
   const [thaiAmphures, setThaiAmphures] = useState<string[]>([]);
@@ -2381,9 +2501,10 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                 variant="outline"
                 size="sm"
                 onClick={() => setShowPaymentForm(true)}
+                disabled={paymentItems.length > 0}
               >
                 <Plus className="w-4 h-4 mr-2" />
-                เพิ่มรายการชำระเงิน
+                {paymentItems.length > 0 ? "เพิ่มสลิปแล้ว" : "เพิ่มรายการชำระเงิน"}
               </Button>
             </CardTitle>
           </CardHeader>
@@ -3226,7 +3347,7 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                       >
                         {product.label}
                         {product.flow === "catalog" && (
-                          <span className="ml-1 text-[10px] text-muted-foreground">(สต็อก)</span>
+                          <span className="ml-1 text-[10px] text-muted-foreground"></span>
                         )}
                       </Button>
                     ))}
@@ -4767,7 +4888,31 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
 
                   {/* 5.2 Delivery Address */}
                   <div>
-                    <h4 className="font-semibold mb-4">5.2 ที่อยู่สำหรับจัดส่ง</h4>
+                    <div className="flex items-center justify-between mb-4">
+                      <h4 className="font-semibold">5.2 ที่อยู่สำหรับจัดส่ง</h4>
+                    </div>
+                    
+                    <div className="mb-4 p-4 border border-blue-200 bg-blue-50/50 rounded-lg dark:bg-blue-900/10 dark:border-blue-800">
+                      <label className="text-sm font-medium mb-2 block text-blue-800 dark:text-blue-300">
+                        วางที่อยู่แบบเต็มเพื่อแยกกล่องอัตโนมัติ (Auto-fill)
+                      </label>
+                      <div className="flex gap-2">
+                        <Input 
+                          placeholder="เช่น 123/45 หมู่บ้านอรวรรณ ซ.สยาม เขตดอนเมือง จ.กรุงเทพมหานคร 10210"
+                          value={addressAutoFill}
+                          onChange={(e) => setAddressAutoFill(e.target.value)}
+                          onPaste={(e) => {
+                            const text = e.clipboardData.getData('text');
+                            if (text && text.length > 5) {
+                              setAddressAutoFill(text);
+                              setTimeout(() => handleAutoFillAddress(text), 50);
+                            }
+                          }}
+                          className="bg-white dark:bg-background w-full"
+                        />
+                      </div>
+                    </div>
+
                     <div className="space-y-4">
                       <FormField
                         control={form.control}
