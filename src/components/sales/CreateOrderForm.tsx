@@ -18,7 +18,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { CalendarIcon, Plus, X, Upload, Eye, Trash2, ExternalLink, FileText, Check, ChevronsUpDown } from "lucide-react";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { format } from "date-fns";
+import { format, isValid } from "date-fns";
 import { th } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
@@ -2426,13 +2426,82 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                           onChange={async (e) => {
                             const file = e.target.files?.[0];
                             if (file) {
+                              // แจ้งเตือนผู้ใช้ว่ากำลังอัพโหลดและเตรียมตรวจด้วย SlipOK
+                              toast({ title: "กำลังอัพโหลดสลิป...", description: "กรุณารอสักครู่ ระบบกำลังนำข้อมูลไปตรวจสอบ" });
                               const url = await uploadFile(file, 'slip');
+                              
                               if (url) {
+                                let verifiedAmount = newPayment.amount;
+                                let verifiedDate = newPayment.transferDate;
+                                let verifiedDetails = newPayment.additionalDetails;
+
+                                try {
+                                  // เริ่มกระบวนการตรวจสอบ SlipOK
+                                  toast({ title: "กำลังตรวจสอบสลิป...", description: "ระบบอ่านข้อมูลจากตรายาง SlipOK" });
+                                  
+                                  const formData = new FormData();
+                                  formData.append('files', file);
+
+                                  // ดึง Branch ID และ API Key จาก .env (ต้องเพิ่ม VITE_SLIPOK_BRANCH_ID / VITE_SLIPOK_API_KEY)
+                                  const slipOkBranchId = import.meta.env.VITE_SLIPOK_BRANCH_ID;
+                                  const slipOkApiKey = import.meta.env.VITE_SLIPOK_API_KEY;
+
+                                  if (slipOkBranchId && slipOkApiKey) {
+                                    // เลี่ยง CORS Block ในฝั่ง Browser โดยเรียกผ่าน Proxy 
+                                    // (อ้างอิงจาก vite.config.ts หรือ Backend API)
+                                    const slipOkRes = await fetch(`/slipok-proxy/${slipOkBranchId}`, {
+                                      method: 'POST',
+                                      headers: {
+                                        'x-authorization': slipOkApiKey
+                                      },
+                                      body: formData
+                                    });
+
+                                    const slipOkData = await slipOkRes.json();
+                                    if (slipOkData.success) {
+                                      const { amount, transTimestamp, transDate, transTime, receiver } = slipOkData.data;
+                                      
+                                      verifiedAmount = amount.toString();
+                                      // ใช้ transTimestamp สำหรับวันที่ที่ถูกต้อง (เช่น 2026-04-05T04:10:27.000Z)
+                                      const dateObj = transTimestamp ? new Date(transTimestamp) : new Date();
+                                      if (isValid(dateObj)) verifiedDate = dateObj;
+                                      
+                                      if (receiver) {
+                                        // account ซ้อนอยู่ข้างใน object receiver.account
+                                        const recAccount = receiver.account?.value || "";
+                                        verifiedDetails = `โอนเข้าระบบ: ${receiver.displayName} ${recAccount ? `(${recAccount})` : ''}`;
+                                      }
+                                      
+                                      toast({ 
+                                        title: "ตรวจสอบสลิปถูกต้อง ✅", 
+                                        description: `ยอดเงิน ${amount} บาท โอนเมื่อ ${isValid(dateObj) ? format(dateObj, 'dd/MM/yyyy HH:mm') : `${transDate} ${transTime}`}` 
+                                      });
+                                    } else {
+                                      toast({ 
+                                        title: "ตรวจสอบสลิปไม่ผ่าน ❌", 
+                                        description: slipOkData.message || "กรุณาตรวจสอบสลิปอีกครั้ง", 
+                                        variant: "destructive" 
+                                      });
+                                    }
+                                  } else {
+                                    console.warn("SlipOK credentials not found. Please add VITE_SLIPOK_BRANCH_ID and VITE_SLIPOK_API_KEY in .env");
+                                    // หากไม่มี ENV จะข้ามไปแต่ยังคงเซฟสลิปให้
+                                    toast({ title: "อัพโหลดสำเร็จ", description: "แนบสลิปเรียบร้อยแล้ว แต่อาจไม่ได้เช็คผ่าน SlipOK" });
+                                  }
+                                } catch (error) {
+                                  console.error("SlipOK error:", error);
+                                  toast({ title: "ระบบขัดข้อง", description: "เกิดข้อผิดพลาดในการตรวจสอบสลิปด้วย SlipOK", variant: "destructive" });
+                                }
+
+                                // นำข้อมูลมาอัปเดตใส่ State (ถ้าตรวจผ่านจะดึงจำนวนเงิน/วันที่ให้อัตโนมัติ)
                                 setNewPayment({
                                   ...newPayment,
                                   slipFile: file,
                                   slipPreview: URL.createObjectURL(file),
-                                  slipUrl: url
+                                  slipUrl: url,
+                                  amount: verifiedAmount,
+                                  transferDate: verifiedDate,
+                                  additionalDetails: verifiedDetails
                                 });
                               }
                             }
@@ -2517,6 +2586,8 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                       value={newPayment.amount}
                       onChange={(e) => setNewPayment({ ...newPayment, amount: e.target.value })}
                       placeholder="0.00"
+                      disabled
+                      className="bg-muted text-muted-foreground"
                     />
                   </div>
 
@@ -2526,13 +2597,14 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                       <PopoverTrigger asChild>
                         <Button
                           variant="outline"
+                          disabled
                           className={cn(
-                            "w-full pl-3 text-left font-normal",
+                            "w-full pl-3 text-left font-normal bg-muted text-muted-foreground",
                             !newPayment.transferDate && "text-muted-foreground"
                           )}
                         >
                           {newPayment.transferDate ? (
-                            format(newPayment.transferDate, "PPP", { locale: undefined })
+                            format(newPayment.transferDate, "PPP", { locale: th })
                           ) : (
                             <span>เลือกวันที่</span>
                           )}
@@ -2553,7 +2625,7 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                 </div>
 
                 <p className="text-xs text-muted-foreground mb-4">
-                  ข้อมูลจำนวนเงินและวันที่โอน ระบบจะพยายามอ่านจากสลิปอัตโนมัติ กรุณาตรวจสอบความถูกต้องก่อนบันทึก
+                  ข้อมูลจำนวนเงินและวันที่โอน ระบบอ่านจากสลิปอัตโนมัติ
                 </p>
 
                 <div className="flex gap-2 justify-end">

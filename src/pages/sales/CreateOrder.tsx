@@ -56,6 +56,11 @@ export default function CreateOrder() {
   // Summary period filter
   const [summaryPeriod, setSummaryPeriod] = useState("all");
 
+  // Export states
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportStartDate, setExportStartDate] = useState<string>("");
+  const [exportEndDate, setExportEndDate] = useState<string>("");
+
   // Card filter (clickable summary cards)
   const [cardFilter, setCardFilter] = useState<string | null>(null);
 
@@ -657,8 +662,29 @@ export default function CreateOrder() {
 
   // --- Export to CSV ---
   const handleExport = () => {
+    let ordersToExport = filteredOrders;
+    
+    if (exportStartDate || exportEndDate) {
+      ordersToExport = ordersToExport.filter(o => {
+        const orderDateStr = o.orderDate?.split(' ')[0];
+        if (!orderDateStr) return false;
+        
+        let isValid = true;
+        if (exportStartDate && orderDateStr < exportStartDate) isValid = false;
+        if (exportEndDate && orderDateStr > exportEndDate) isValid = false;
+        
+        return isValid;
+      });
+    }
+
+    if (ordersToExport.length === 0) {
+      toast({ title: "ไม่พบข้อมูล", description: "ไม่มีคำสั่งซื้อในช่วงเวลาที่เลือก", variant: "destructive" });
+      setShowExportModal(false);
+      return;
+    }
+
     const headers = ["JOB ID", "วันที่สั่งซื้อ", "ช่องทาง", "ชื่อลูกค้า", "ประเภทสินค้า", "สถานะคำสั่งซื้อ", "สถานะชำระเงิน", "ยอดรวม", "วิธีชำระเงิน", "วิธีจัดส่ง", "วันจัดส่ง", "เบอร์โทร", "อีเมล"];
-    const rows = filteredOrders.map(o => [
+    const rows = ordersToExport.map(o => [
       o.jobId, o.orderDate, o.salesChannel, o.customerName, o.productCategory, o.orderStatus, o.paymentStatus, o.totalAmount, o.paymentMethod, o.deliveryMethod, o.deliveryDate, o.customerPhone, o.customerEmail
     ]);
     const bom = "\uFEFF";
@@ -673,7 +699,11 @@ export default function CreateOrder() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    toast({ title: "ส่งออกข้อมูลสำเร็จ", description: `ส่งออก ${filteredOrders.length} รายการเป็นไฟล์ CSV แล้ว` });
+    toast({ title: "ส่งออกข้อมูลสำเร็จ", description: `ส่งออก ${ordersToExport.length} รายการเป็นไฟล์ CSV แล้ว` });
+    
+    setShowExportModal(false);
+    setExportStartDate("");
+    setExportEndDate("");
   };
 
   // --- Highlight helper ---
@@ -953,7 +983,7 @@ export default function CreateOrder() {
                 className="pl-10"
               />
             </div>
-            <Button variant="outline" onClick={handleExport} className="gap-2">
+            <Button variant="outline" onClick={() => setShowExportModal(true)} className="gap-2">
               <FileSpreadsheet className="w-4 h-4" />
               Export
             </Button>
@@ -973,6 +1003,35 @@ export default function CreateOrder() {
               </Button>
             )}
           </div>
+
+          {/* Export Dialog */}
+          <Dialog open={showExportModal} onOpenChange={setShowExportModal}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <FileSpreadsheet className="w-5 h-5" />
+                  ส่งออกข้อมูล (Export CSV)
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <p className="text-sm text-muted-foreground">เลือกช่วงวันที่สั่งซื้อที่ต้องการส่งออก (หากไม่ระบุจะส่งออกตามรายการที่ค้นหาและกรองไว้ทั้งหมด)</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">ตั้งแต่วันที่</label>
+                    <Input type="date" value={exportStartDate} onChange={e => setExportStartDate(e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">ถึงวันที่</label>
+                    <Input type="date" value={exportEndDate} onChange={e => setExportEndDate(e.target.value)} />
+                  </div>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowExportModal(false)}>ยกเลิก</Button>
+                <Button onClick={handleExport} className="gap-2"><FileSpreadsheet className="w-4 h-4" /> ยืนยันส่งออก</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           {/* Advanced Search Filter Dialog */}
           <Dialog open={showAdvancedFilter} onOpenChange={setShowAdvancedFilter}>
