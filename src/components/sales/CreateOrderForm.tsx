@@ -16,13 +16,14 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { CalendarIcon, Plus, X, Upload, Eye, Trash2, ExternalLink, FileText, Check, ChevronsUpDown } from "lucide-react";
+import { CalendarIcon, Plus, X, Upload, Eye, Trash2, ExternalLink, FileText, Check, ChevronsUpDown, CreditCard, LayoutGrid, Box, RefreshCw } from "lucide-react";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { format, isValid } from "date-fns";
 import { th } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import InventoryProductModal from "./InventoryProductModal";
 import { useNavigate } from "react-router-dom";
 import { EstimationDetailDialog } from "./EstimationDetailDialog";
 import {
@@ -93,6 +94,7 @@ const createOrderSchema = z.object({
     notes: z.string().optional(),
     model: z.string().optional(),
     engraving: z.string().optional(),
+    plateColor: z.string().optional(),
     engravingFiles: z.any().optional(),
     attachedFiles: z.any().optional(),
     customType: z.string().optional(),
@@ -183,6 +185,95 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
 
   const [addressAutoFill, setAddressAutoFill] = useState("");
+
+  const renderCatalogPriceFields = () => {
+    if (getProductFlow(watchedProductType) !== "catalog") return null;
+
+    return (
+      <div className="space-y-4 p-4 border rounded-lg bg-muted/20 mt-4">
+        <h4 className="text-sm font-semibold flex items-center gap-2">
+          <CreditCard className="w-4 h-4 text-primary" />
+          ระบุราคาต่อหน่วย (มี 3 ระดับ)
+        </h4>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="space-y-2">
+            <Label className="text-xs flex items-center justify-between">
+              <span>ราคาปลีก</span>
+              {readyMadePriceType === "retail" && <Badge variant="secondary" className="text-[10px] h-4 bg-primary text-primary-foreground">เลือกอยู่</Badge>}
+            </Label>
+            <div className="relative">
+              <Input
+                type="number"
+                placeholder="0.00"
+                value={retailPrice}
+                onChange={(e) => {
+                  setRetailPrice(e.target.value);
+                  if (readyMadePriceType === "retail") setReadyMadeUnitPrice(e.target.value);
+                }}
+                onFocus={() => {
+                  setReadyMadePriceType("retail");
+                  setReadyMadeUnitPrice(retailPrice);
+                }}
+                className={cn("pr-8", readyMadePriceType === "retail" && "ring-2 ring-primary border-primary")}
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground font-medium">บาท</span>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs flex items-center justify-between">
+              <span>ราคาส่ง</span>
+              {readyMadePriceType === "wholesale" && <Badge variant="secondary" className="text-[10px] h-4 bg-primary text-primary-foreground">เลือกอยู่</Badge>}
+            </Label>
+            <div className="relative">
+              <Input
+                type="number"
+                placeholder="0.00"
+                value={wholesalePrice}
+                onChange={(e) => {
+                  setWholesalePrice(e.target.value);
+                  if (readyMadePriceType === "wholesale") setReadyMadeUnitPrice(e.target.value);
+                }}
+                onFocus={() => {
+                  setReadyMadePriceType("wholesale");
+                  setReadyMadeUnitPrice(wholesalePrice);
+                }}
+                className={cn("pr-8", readyMadePriceType === "wholesale" && "ring-2 ring-primary border-primary")}
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground font-medium">บาท</span>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs flex items-center justify-between">
+              <span>ราคาโล๊ะ</span>
+              {readyMadePriceType === "clearance" && <Badge variant="secondary" className="text-[10px] h-4 bg-primary text-primary-foreground">เลือกอยู่</Badge>}
+            </Label>
+            <div className="relative">
+              <Input
+                type="number"
+                placeholder="0.00"
+                value={clearancePrice}
+                onChange={(e) => {
+                  setClearancePrice(e.target.value);
+                  if (readyMadePriceType === "clearance") setReadyMadeUnitPrice(e.target.value);
+                }}
+                onFocus={() => {
+                  setReadyMadePriceType("clearance");
+                  setReadyMadeUnitPrice(clearancePrice);
+                }}
+                className={cn("pr-8", readyMadePriceType === "clearance" && "ring-2 ring-primary border-primary")}
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground font-medium">บาท</span>
+            </div>
+          </div>
+        </div>
+        <p className="text-[10px] text-muted-foreground italic">
+          * ระบบจะใช้ราคาในช่องที่คุณเลือก (มีขอบสีม่วง / ป้าย "เลือกอยู่") ในการคำนวณเงิน
+        </p>
+      </div>
+    );
+  };
 
   const handleAutoFillAddress = async (pastedText?: string | React.MouseEvent | any) => {
     let text = (typeof pastedText === 'string' ? pastedText : addressAutoFill).trim();
@@ -324,7 +415,78 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
   const [stickerDesignDetails, setStickerDesignDetails] = useState<string>("");
   const [stickerFiles, setStickerFiles] = useState<File[]>([]);
   const [readyMadePriceType, setReadyMadePriceType] = useState<"retail" | "wholesale" | "clearance">("retail");
+  const [retailPrice, setRetailPrice] = useState<string>("");
+  const [wholesalePrice, setWholesalePrice] = useState<string>("");
+  const [clearancePrice, setClearancePrice] = useState<string>("");
+
+  const [isInventoryModalOpen, setIsInventoryModalOpen] = useState(false);
+  const [selectedCatalogProduct, setSelectedCatalogProduct] = useState<any>(null);
   const [readyMadeUnitPrice, setReadyMadeUnitPrice] = useState<string>("");
+
+  const handleSelectFromInventory = (product: any) => {
+    // Determine the correct subcategory ID field (API sometimes uses snake_case)
+    const subId = parseInt(product.subcategoryId || product.subcategory_id || "0");
+    let mappedType = "";
+    let mappedCategory = "";
+
+    // Mapping logic
+    if (subId >= 1 && subId <= 6) { mappedType = "Trophy"; mappedCategory = "readymade"; }
+    else if (subId >= 7 && subId <= 10) { mappedType = "ReadyMedal"; mappedCategory = "readymade"; }
+    else if (subId >= 11 && subId <= 15) { mappedType = "Award"; mappedCategory = "readymade"; }
+    else if (subId >= 16 && subId <= 18) { mappedType = "Shirt"; mappedCategory = "textile"; }
+    else { mappedType = "OtherReadymade"; mappedCategory = "readymade"; }
+
+    // 1. Update Section Visibility
+    setSelectedCategory(mappedCategory);
+    form.setValue("productType", mappedType);
+    
+    // 2. Set Model/Material Details
+    const productIdentifier = product.modelName || product.name || "";
+    
+    if (mappedType === "ReadyMedal") {
+      setSelectedProductModel(productIdentifier);
+      form.setValue("material", productIdentifier);
+    } else if (mappedType === "Trophy") {
+      // For Trophies, the details box requires "material" to be set
+      // We'll set a default material based on subcategory if not provided
+      const defaultMtl = SUBCATEGORY_MAP[String(subId)]?.name || "ถ้วยรางวัลสำเร็จ";
+      form.setValue("material", defaultMtl);
+      form.setValue("jobDetails.model", productIdentifier);
+    } else {
+      form.setValue("material", productIdentifier);
+      form.setValue("jobDetails.model", productIdentifier);
+    }
+    
+    // 3. Price Synchronisation
+    let r = "";
+    let w = "";
+    let c = "";
+
+    if (product.prices && product.prices.length > 0) {
+      const p = product.prices[0];
+      r = String(p.retail_price || p.retailPrice || "");
+      w = String(p.wholesale_price || p.wholesalePrice || p.moldCost || "");
+      c = String(p.special_price || p.specialPrice || "");
+    } else if (product.price) {
+      r = String(product.price);
+    }
+
+    setRetailPrice(r);
+    setWholesalePrice(w);
+    setClearancePrice(c);
+
+    // Default active tier to Retail
+    setReadyMadePriceType("retail");
+    setReadyMadeUnitPrice(r);
+    
+    // Store the raw product for display
+    setSelectedCatalogProduct(product);
+
+    toast({
+      title: "ดึงข้อมูลจากคลังสำเร็จ",
+      description: `เลือก: ${product.name} ${product.modelName ? `(${product.modelName})` : ""}`,
+    });
+  };
 
   // Add color entry
   const addColorEntry = () => {
@@ -354,7 +516,8 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
     setReadyMedalColorEntries(prev => prev.filter((_, i) => i !== index));
   };
   // Trophy sizes state
-  const [trophySizes, setTrophySizes] = useState<{ size: string; height: number; opening: number; price: number; quantity: string }[]>([]);
+  const [trophySizes, setTrophySizes] = useState<{ size: string; height: number; opening: number; price: number; quantity: string; discount: string }[]>([]);
+  const [trophyTotalDiscount, setTrophyTotalDiscount] = useState<string>("");
 
   // Shirt form state
   const [shirtCollar, setShirtCollar] = useState<string>("");
@@ -1968,6 +2131,9 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
       setWantsSticker("");
       setStickerDesignDetails("");
       setReadyMadePriceType("retail");
+      setRetailPrice("");
+      setWholesalePrice("");
+      setClearancePrice("");
       setReadyMadeUnitPrice("");
       return;
     }
@@ -1994,9 +2160,14 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
         sizeLabel: `ขนาด ${sizeEntry.size}`,
         size: sizeEntry.size,
         quantity: parseInt(sizeEntry.quantity) || 0,
-        unitPrice: sizeEntry.price,
+        unitPrice: sizeEntry.price - (parseFloat(sizeEntry.discount) || 0),
         priceType: "custom", // Trophies use specific size pricing
-        details: form.getValues("jobDetails"),
+        details: {
+          ...form.getValues("jobDetails"),
+          originalPrice: sizeEntry.price,
+          unitDiscount: parseFloat(sizeEntry.discount) || 0,
+          totalTrophyDiscount: index === 0 ? parseFloat(trophyTotalDiscount) || 0 : 0, // Apply total discount only to the first item or store separately
+        },
       }));
 
       setSavedProducts([...savedProducts, ...newProducts]);
@@ -2006,6 +2177,7 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
       form.setValue("material", "");
       form.setValue("jobDetails", {});
       setTrophySizes([]);
+      setTrophyTotalDiscount("");
       return;
     }
 
@@ -2073,6 +2245,11 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
       ]);
       setShowCustomShirtSize(false);
       setCustomShirtSize({ size: "", chest: "", length: "", shoulder: "", sleeve: "", quantity: "" });
+      setReadyMadePriceType("retail");
+      setRetailPrice("");
+      setWholesalePrice("");
+      setClearancePrice("");
+      setReadyMadeUnitPrice("");
       return;
     }
 
@@ -2089,9 +2266,12 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
     setSavedProducts([...savedProducts, currentProduct]);
 
     // Reset product type and material to allow adding new product
-    form.setValue("productType", "");
-    form.setValue("material", "");
     form.setValue("jobDetails", {});
+    setReadyMadePriceType("retail");
+    setRetailPrice("");
+    setWholesalePrice("");
+    setClearancePrice("");
+    setReadyMadeUnitPrice("");
   };
 
   const removeProductItem = (id: number) => {
@@ -3334,32 +3514,128 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
 
               {/* Categories that show product selection: readymade, textile */}
               {selectedCategory && ["readymade", "textile"].includes(selectedCategory) && (
-                <div className="space-y-3">
-                  <Label className="text-sm font-medium block">เลือกสินค้า</Label>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                    {productsByCategory[selectedCategory]?.map((product) => (
-                      <Button
-                        key={product.value}
-                        type="button"
-                        variant={watchedProductType === product.value ? "default" : "outline"}
-                        size="sm"
-                        className={cn(
-                          "h-auto py-2 px-3 text-xs",
-                          watchedProductType === product.value && "ring-2 ring-primary ring-offset-1"
+                <div className="space-y-4 px-1">
+                  
+                  {/* Selected Item Info Card (Show after catalog select) */}
+                  {selectedCatalogProduct && (
+                    <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 flex flex-col md:flex-row gap-4 shadow-sm animate-in fade-in slide-in-from-top-2 duration-300">
+                      <div className="w-full md:w-32 h-32 bg-white rounded-lg border flex-shrink-0 p-2 relative overflow-hidden">
+                        {selectedCatalogProduct.image ? (
+                          <img 
+                            src={`https://nacres.co.th/api-lucky/${selectedCatalogProduct.image}`} 
+                            alt={selectedCatalogProduct.name}
+                            className="w-full h-full object-contain"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+                            <Box className="w-10 h-10 opacity-10" />
+                          </div>
                         )}
-                        onClick={() => {
-                          form.setValue("productType", product.value);
-                          form.setValue("material", "");
-                          setSelectedPriceEstimationId(null);
-                        }}
-                      >
-                        {product.label}
-                        {product.flow === "catalog" && (
-                          <span className="ml-1 text-[10px] text-muted-foreground"></span>
-                        )}
-                      </Button>
-                    ))}
-                  </div>
+                        <Badge className="absolute top-1 right-1 text-[10px] h-4" variant="secondary">
+                          {SUBCATEGORY_MAP[selectedCatalogProduct.subcategoryId || selectedCatalogProduct.subcategory_id]?.name || selectedCatalogProduct.category}
+                        </Badge>
+                      </div>
+                      
+                      <div className="flex-1 min-w-0">
+                        <div className="flex flex-col md:flex-row md:items-center gap-2 mb-2">
+                          <p className="text-[10px] font-bold text-primary px-2 py-0.5 bg-primary/10 rounded-full w-fit">
+                            SKU: {selectedCatalogProduct.modelName || selectedCatalogProduct.model || `ID-${selectedCatalogProduct.id}`}
+                          </p>
+                          <Badge variant={parseInt(selectedCatalogProduct.inventory) > 0 ? "outline" : "destructive"} className="w-fit text-[10px]">
+                            {parseInt(selectedCatalogProduct.inventory) > 0 ? `สต็อก: ${selectedCatalogProduct.inventory} ชิ้น` : "สินค้าหมด"}
+                          </Badge>
+                        </div>
+                        
+                        <h4 className="font-bold text-lg leading-tight mb-2 truncate" title={selectedCatalogProduct.name}>
+                          {selectedCatalogProduct.name}
+                        </h4>
+                        
+                        <div className="flex flex-wrap gap-2">
+                          <Button 
+                            type="button" 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={() => setIsInventoryModalOpen(true)}
+                            className="h-8 text-xs border-primary/30 hover:bg-primary/10"
+                          >
+                            <RefreshCw className="w-3 h-3 mr-2" />
+                            เปลี่ยนสินค้า
+                          </Button>
+                          <Button 
+                            type="button" 
+                            variant="ghost" 
+                            size="sm" 
+                            onClick={() => {
+                              setSelectedCatalogProduct(null);
+                              form.setValue("productType", "");
+                              form.setValue("material", "");
+                            }}
+                            className="h-8 text-xs text-destructive hover:bg-destructive/10"
+                          >
+                            <Trash2 className="w-3 h-3 mr-2" />
+                            ยกเลิก
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {!selectedCatalogProduct && (
+                    <>
+                      {/* Open Inventory Catalog Button */}
+                      <div className="flex flex-col gap-2 p-4 bg-primary/5 rounded-xl border border-primary/20 mb-6 shadow-sm">
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                          <div className="flex items-center gap-2">
+                            <div className="p-2 bg-primary/10 rounded-lg">
+                              <Box className="w-5 h-5 text-primary" />
+                            </div>
+                            <div>
+                              <span className="font-bold text-primary block">เลือกสินค้าจากคลัง (Catalog)</span>
+                              <span className="text-[10px] text-muted-foreground">ดึงข้อมูลสต็อก รูปภาพ และราคาโดยอัตโนมัติ</span>
+                            </div>
+                          </div>
+                          <Button 
+                            type="button" 
+                            size="default" 
+                            onClick={() => setIsInventoryModalOpen(true)}
+                            className="bg-primary hover:bg-primary/90 text-white shadow-lg shadow-primary/20 flex items-center gap-2 px-6"
+                          >
+                            <LayoutGrid className="w-4 h-4" />
+                            เปิดแคตตาล็อกสินค้า
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 mb-4">
+                        <div className="h-px flex-1 bg-border/50"></div>
+                        <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">หรือเลือกแบบรวดเร็ว</span>
+                        <div className="h-px flex-1 bg-border/50"></div>
+                      </div>
+                      
+                      <Label className="text-sm font-medium block mb-2">เลือกสินค้า</Label>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                        {productsByCategory[selectedCategory]?.map((product) => (
+                          <Button
+                            key={`${selectedCategory}-${product.value}`}
+                            type="button"
+                            variant={watchedProductType === product.value ? "default" : "outline"}
+                            size="sm"
+                            className={cn(
+                              "h-auto py-2 px-3 text-xs",
+                              watchedProductType === product.value && "ring-2 ring-primary ring-offset-1"
+                            )}
+                            onClick={() => {
+                              form.setValue("productType", product.value);
+                              form.setValue("material", "");
+                              setSelectedPriceEstimationId(null);
+                            }}
+                          >
+                            {product.label}
+                          </Button>
+                        ))}
+                      </div>
+                    </>
+                  )}
 
                   {watchedProductType && (
                     <div className="flex items-center gap-2 p-2 rounded-md bg-muted/50 text-sm">
@@ -3403,9 +3679,9 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                                 </SelectTrigger>
                               </FormControl>
                               <SelectContent className="bg-background">
-                                {getMaterialOptions(watchedProductType).map((model) => (
-                                  <SelectItem key={model} value={model}>
-                                    {model}
+                                {["7", "8", "9", "10", "21"].map((id) => (
+                                  <SelectItem key={id} value={SUBCATEGORY_MAP[id].name}>
+                                    {SUBCATEGORY_MAP[id].name}
                                   </SelectItem>
                                 ))}
                               </SelectContent>
@@ -3858,8 +4134,6 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                           )}
                         </>
                       )}
-                      {/* Pricing Selection for ReadyMedal */}
-                      {getProductFlow(watchedProductType) === "catalog"}
                     </div>
                   ) : watchedProductType === "Trophy" ? (
                     /* For Trophy: วัสดุ + รายละเอียดถ้วยรางวัล in same box */
@@ -3888,8 +4162,6 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                           </FormItem>
                         )}
                       />
-                      {/* Pricing Selection for Trophy */}
-                      {getProductFlow(watchedProductType) === "catalog"}
 
                       {/* รายละเอียดถ้วยรางวัล - in same box as product details */}
                       {watchedMaterial && (
@@ -3995,6 +4267,7 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                                         <th className="px-3 py-2 text-center font-medium">สูง (ซม.)</th>
                                         <th className="px-3 py-2 text-center font-medium">ปาก (ซม.)</th>
                                         <th className="px-3 py-2 text-center font-medium">ราคา (บาท)</th>
+                                        <th className="px-3 py-2 text-center font-medium">ส่วนลด/ชิ้น</th>
                                         <th className="px-3 py-2 text-center font-medium">จำนวน</th>
                                       </tr>
                                     </thead>
@@ -4017,20 +4290,64 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                                               <Input
                                                 type="number"
                                                 min="0"
+                                                placeholder="0"
+                                                className="w-20 mx-auto text-center h-8"
+                                                value={currentSize?.discount || ""}
+                                                onChange={(e) => {
+                                                  const newDiscount = e.target.value;
+                                                  setTrophySizes(prev => {
+                                                    const existing = prev.find(s => s.size === sizeOption.size);
+                                                    if (existing) {
+                                                      return prev.map(s => s.size === sizeOption.size ? { ...s, discount: newDiscount } : s);
+                                                    } else {
+                                                      // If quantity isn't set yet, still allow pre-setting discount
+                                                      return [...prev, {
+                                                        size: sizeOption.size,
+                                                        height: sizeOption.height,
+                                                        opening: sizeOption.opening,
+                                                        price: sizeOption.price,
+                                                        quantity: "",
+                                                        discount: newDiscount
+                                                      }];
+                                                    }
+                                                  });
+                                                }}
+                                              />
+                                            </td>
+                                            <td className="px-3 py-3 text-center">
+                                              <Input
+                                                type="number"
+                                                min="0"
                                                 placeholder="ระบุ"
                                                 className="w-20 mx-auto text-center"
                                                 value={quantity}
                                                 onChange={(e) => {
                                                   const newQuantity = e.target.value;
-                                                  const otherSizes = trophySizes.filter((s) => s.size !== sizeOption.size);
+                                                  const currentDiscount = currentSize?.discount || "";
 
                                                   if (newQuantity && parseInt(newQuantity) > 0) {
-                                                    setTrophySizes([
-                                                      ...otherSizes,
-                                                      { size: sizeOption.size, height: sizeOption.height, opening: sizeOption.opening, price: sizeOption.price, quantity: newQuantity }
-                                                    ]);
+                                                    setTrophySizes(prev => {
+                                                      const exists = prev.find(s => s.size === sizeOption.size);
+                                                      if (exists) {
+                                                        return prev.map(s => s.size === sizeOption.size ? { ...s, quantity: newQuantity } : s);
+                                                      }
+                                                      return [...prev, {
+                                                        size: sizeOption.size,
+                                                        height: sizeOption.height,
+                                                        opening: sizeOption.opening,
+                                                        price: sizeOption.price,
+                                                        quantity: newQuantity,
+                                                        discount: currentDiscount
+                                                      }];
+                                                    });
                                                   } else {
-                                                    setTrophySizes(otherSizes);
+                                                    // Only keep if something else is set (e.g. discount)
+                                                    setTrophySizes(prev => {
+                                                      if (currentDiscount) {
+                                                        return prev.map(s => s.size === sizeOption.size ? { ...s, quantity: "" } : s);
+                                                      }
+                                                      return prev.filter((s) => s.size !== sizeOption.size);
+                                                    });
                                                   }
                                                 }}
                                               />
@@ -4043,9 +4360,53 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                                 </div>
                               </div>
                               {trophySizes.length > 0 && (
-                                <div className="text-sm text-muted-foreground">
-                                  รวม: {trophySizes.reduce((sum, s) => sum + (parseInt(s.quantity) || 0), 0)} ชิ้น |
-                                  มูลค่า: {trophySizes.reduce((sum, s) => sum + ((parseInt(s.quantity) || 0) * s.price), 0).toLocaleString()} บาท
+                                <div className="p-4 bg-muted/40 rounded-lg space-y-3">
+                                  <div className="flex justify-between items-center text-sm font-medium">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-muted-foreground">สรุปรวมถ้วยรางวัล:</span>
+                                      <Badge variant="outline" className="bg-background">
+                                        {trophySizes.reduce((sum, s) => sum + (parseInt(s.quantity) || 0), 0)} ชิ้น
+                                      </Badge>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-muted-foreground">ยอดรวม:</span>
+                                      <span className="text-primary font-bold">
+                                        {trophySizes.reduce((sum, s) => {
+                                          const qty = parseInt(s.quantity) || 0;
+                                          const unitPrice = s.price;
+                                          const unitDiscount = parseFloat(s.discount) || 0;
+                                          return sum + (qty * (unitPrice - unitDiscount));
+                                        }, 0).toLocaleString()} บาท
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center justify-end gap-3 pt-2 border-t border-border/50">
+                                    <Label className="text-xs text-muted-foreground">ส่วนลดรวม (บาท):</Label>
+                                    <Input
+                                      type="number"
+                                      placeholder="ใส่ส่วนลดเพิ่ม"
+                                      className="w-32 h-8 text-right font-bold text-destructive"
+                                      value={trophyTotalDiscount}
+                                      onChange={(e) => setTrophyTotalDiscount(e.target.value)}
+                                    />
+                                  </div>
+
+                                  <div className="flex justify-between items-center p-2 bg-primary/5 rounded border border-primary/10">
+                                    <span className="text-sm font-bold">ยอดเงินสุทธิเฉพาะถ้วยรางวัล:</span>
+                                    <span className="text-lg font-black text-primary">
+                                      {(() => {
+                                        const subtotal = trophySizes.reduce((sum, s) => {
+                                          const qty = parseInt(s.quantity) || 0;
+                                          const unitPrice = s.price;
+                                          const unitDiscount = parseFloat(s.discount) || 0;
+                                          return sum + (qty * (unitPrice - unitDiscount));
+                                        }, 0);
+                                        const totalDiscount = parseFloat(trophyTotalDiscount) || 0;
+                                        return (subtotal - totalDiscount).toLocaleString();
+                                      })()} บาท
+                                    </span>
+                                  </div>
                                 </div>
                               )}
                             </div>
@@ -4114,6 +4475,52 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                               />
                             </>
                           )}
+
+                          {/* สีป้าย - Added after engraving */}
+                          <div className="space-y-3 pb-2">
+                            <Label className="text-sm font-medium">สีป้าย</Label>
+                            <FormField
+                              control={form.control}
+                              name="jobDetails.plateColor"
+                              render={({ field }) => (
+                                <FormItem className="space-y-3">
+                                  <FormControl>
+                                    <RadioGroup
+                                      onValueChange={field.onChange}
+                                      defaultValue={field.value}
+                                      className="flex flex-wrap gap-4"
+                                    >
+                                      <FormItem className="flex items-center space-x-2 space-y-0">
+                                        <FormControl>
+                                          <RadioGroupItem value="ทอง" />
+                                        </FormControl>
+                                        <FormLabel className="font-normal cursor-pointer">ทอง</FormLabel>
+                                      </FormItem>
+                                      <FormItem className="flex items-center space-x-2 space-y-0">
+                                        <FormControl>
+                                          <RadioGroupItem value="เงิน" />
+                                        </FormControl>
+                                        <FormLabel className="font-normal cursor-pointer">เงิน</FormLabel>
+                                      </FormItem>
+                                      <FormItem className="flex items-center space-x-2 space-y-0">
+                                        <FormControl>
+                                          <RadioGroupItem value="ทองแดง" />
+                                        </FormControl>
+                                        <FormLabel className="font-normal cursor-pointer">ทองแดง</FormLabel>
+                                      </FormItem>
+                                      <FormItem className="flex items-center space-x-2 space-y-0">
+                                        <FormControl>
+                                          <RadioGroupItem value="อื่นๆ" />
+                                        </FormControl>
+                                        <FormLabel className="font-normal cursor-pointer">อื่นๆ</FormLabel>
+                                      </FormItem>
+                                    </RadioGroup>
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          </div>
 
                           {/* โบว์ - checkbox style */}
                           <div className="space-y-3">
@@ -4271,8 +4678,6 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                           </FormItem>
                         )}
                       />
-                      {/* Pricing Selection for Shirt */}
-                      {getProductFlow(watchedProductType) === "catalog"}
 
                       {/* รายละเอียดเสื้อ - in same box as product details */}
                       {watchedMaterial && (
@@ -4443,8 +4848,6 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                           />
                         </div>
                       )}
-                      {/* Pricing Selection for Shirt */}
-                      {getProductFlow(watchedProductType) === "catalog"}
                     </div>
                   ) : (
                     <FormField
@@ -4474,7 +4877,7 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                   )}
 
                   {/* Pricing Selection for Other Catalog Items */}
-                  {getProductFlow(watchedProductType) === "catalog"}
+                  {renderCatalogPriceFields()}
                 </>
               )}
             </div>
@@ -4628,17 +5031,26 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="border border-border rounded-lg overflow-hidden">
+              <div className="border border-border rounded-lg overflow-hidden shadow-sm">
+                <div className="bg-slate-50 dark:bg-slate-900 border-b p-6 flex justify-between items-start">
+                  <div>
+                    <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100">ใบเสนอราคา / Quotation Summary</h3>
+                    <p className="text-sm text-slate-500">บริษัท บราโว่ มีเดีย แอนด์ พริ้นติ้ง จำกัด</p>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-sm font-medium">QT NO: {form.watch("quotationNumber") || "JB-NEW"}</div>
+                    <div className="text-xs text-slate-500">วันที่: {format(new Date(), "PP", { locale: th })}</div>
+                  </div>
+                </div>
                 <Table>
                   <TableHeader>
-                    <TableRow className="bg-muted/50">
-                      <TableHead className="text-xs w-16 text-center">ลำดับ</TableHead>
-                      <TableHead className="text-xs">รายการ</TableHead>
-                      <TableHead className="text-xs">รายละเอียดงาน</TableHead>
-                      <TableHead className="text-xs text-right">จำนวน</TableHead>
-                      <TableHead className="text-xs text-right">ราคาต่อหน่วย</TableHead>
-                      <TableHead className="text-xs text-right">ราคา</TableHead>
-                      <TableHead className="text-xs w-16 text-center">ลบ</TableHead>
+                    <TableRow className="bg-slate-100/50 dark:bg-slate-800/50 border-y">
+                      <TableHead className="text-xs w-16 text-center font-bold text-slate-700 dark:text-slate-200">ลำดับ</TableHead>
+                      <TableHead className="text-xs font-bold text-slate-700 dark:text-slate-200">รายการสินค้าและรายละเอียด</TableHead>
+                      <TableHead className="text-xs text-right font-bold text-slate-700 dark:text-slate-200">จำนวน</TableHead>
+                      <TableHead className="text-xs text-right font-bold text-slate-700 dark:text-slate-200">ราคาต่อหน่วย</TableHead>
+                      <TableHead className="text-xs text-right font-bold text-slate-700 dark:text-slate-200">จำนวนเงิน</TableHead>
+                      <TableHead className="text-xs w-16 text-center font-bold text-slate-700 dark:text-slate-200">ลบ</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -4646,26 +5058,26 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                     {selectedEstimations.map((estimation, index) => {
                       const unitPrice = estimation.quantity > 0 ? estimation.price / estimation.quantity : estimation.price;
                       return (
-                        <TableRow key={`estimation-${estimation.id}`}>
-                          <TableCell className="text-xs py-3 text-center font-medium">
+                        <TableRow key={`estimation-${estimation.id}`} className="border-b transition-colors hover:bg-slate-50/50 dark:hover:bg-slate-800/50">
+                          <TableCell className="text-xs py-4 text-center font-medium">
                             {index + 1}
                           </TableCell>
-                          <TableCell className="text-xs py-3">
-                            <div className="font-medium">{estimation.productType}</div>
+                          <TableCell className="text-xs py-4">
+                            <div className="font-bold text-slate-900 dark:text-slate-100">{estimation.productType}</div>
+                            <div className="text-[10px] text-slate-500 mt-1 line-clamp-2 max-w-[300px]">
+                              {estimation.jobDescription || estimation.material || "-"}
+                            </div>
                           </TableCell>
-                          <TableCell className="text-xs py-3 text-muted-foreground">
-                            {estimation.jobDescription || estimation.material || "-"}
-                          </TableCell>
-                          <TableCell className="text-xs py-3 text-right">
+                          <TableCell className="text-xs py-4 text-right">
                             {estimation.quantity.toLocaleString()}
                           </TableCell>
-                          <TableCell className="text-xs py-3 text-right">
+                          <TableCell className="text-xs py-4 text-right">
                             {unitPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </TableCell>
-                          <TableCell className="text-xs py-3 text-right font-medium">
+                          <TableCell className="text-xs py-4 text-right font-bold">
                             {estimation.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </TableCell>
-                          <TableCell className="text-xs py-3 text-center">
+                          <TableCell className="text-xs py-4 text-center">
                             <Button
                               type="button"
                               variant="ghost"
@@ -4688,36 +5100,40 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                         ? product.sizeLabel
                         : (product.wantsSticker === "receive"
                           ? "รับสติ๊กเกอร์"
-                          : (product.displayName ? "-" : (product.material && !product.displayName ? product.material : (product.color ? "" : product.material || "-"))));
+                          : (product.displayName ? (product.material ? product.material : "-") : (product.material && !product.displayName ? product.material : (product.color ? "" : product.material || "-"))));
                       const quantity = product.quantity || parseInt(product.details?.quantity) || 1;
                       const unitPrice = product.unitPrice || null;
                       const totalPrice = unitPrice ? unitPrice * quantity : null;
                       const priceTypeLabel = product.priceType === 'retail' ? '(ปลีก)' : (product.priceType === 'wholesale' ? '(ส่ง)' : (product.priceType === 'clearance' ? '(โล๊ะ)' : ''));
 
                       return (
-                        <TableRow key={`saved-${product.id}`} className="hover:bg-muted/30">
-                          <TableCell className="text-xs py-3 text-center font-medium">
+                        <TableRow key={`saved-${product.id}`} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 border-b">
+                          <TableCell className="text-xs py-4 text-center font-medium">
                             {selectedEstimations.length + index + 1}
                           </TableCell>
-                          <TableCell className="text-xs py-3">
-                            <div className="font-medium flex items-center gap-1">
+                          <TableCell className="text-xs py-4">
+                            <div className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
                               {productLabel}
-                              {priceTypeLabel && <span className="text-[10px] text-muted-foreground font-normal">{priceTypeLabel}</span>}
+                              {priceTypeLabel && (
+                                <Badge variant="outline" className="text-[9px] h-3.5 px-1 bg-slate-100 font-normal border-slate-300 text-slate-600">
+                                  {priceTypeLabel.replace(/[()]/g, '')}
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-slate-500 mt-1">
+                              {productDetails}
                             </div>
                           </TableCell>
-                          <TableCell className="text-xs py-3 text-muted-foreground">
-                            {productDetails}
-                          </TableCell>
-                          <TableCell className="text-xs py-3 text-right">
+                          <TableCell className="text-xs py-4 text-right">
                             {quantity.toLocaleString()}
                           </TableCell>
-                          <TableCell className="text-xs py-3 text-right">
+                          <TableCell className="text-xs py-4 text-right">
                             {unitPrice ? unitPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-"}
                           </TableCell>
-                          <TableCell className="text-xs py-3 text-right font-medium">
+                          <TableCell className="text-xs py-4 text-right font-bold text-slate-900 dark:text-slate-100">
                             {totalPrice ? totalPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-"}
                           </TableCell>
-                          <TableCell className="text-xs py-3 text-center">
+                          <TableCell className="text-xs py-4 text-center">
                             <Button
                               type="button"
                               variant="ghost"
@@ -4733,12 +5149,24 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                     })}
                   </TableBody>
                 </Table>
-                {/* Total Row */}
-                <div className="border-t border-border bg-muted/30 px-4 py-3 flex justify-between items-center">
-                  <span className="text-sm font-medium">รวมทั้งหมด</span>
-                  <span className="text-lg font-bold text-primary">
-                    {orderTotalPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท
-                  </span>
+                {/* Quotation Footer */}
+                <div className="bg-slate-50 dark:bg-slate-900 border-t flex justify-end">
+                  <div className="w-full md:w-1/3 p-6 space-y-2">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-500">ราคารวม / Subtotal</span>
+                      <span className="font-medium">{(orderTotalPrice / 1.07).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-500">ภาษีมูลค่าเพิ่ม / VAT 7%</span>
+                      <span className="font-medium">{(orderTotalPrice - (orderTotalPrice / 1.07)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท</span>
+                    </div>
+                    <div className="flex justify-between items-center border-t border-slate-300 pt-2 mt-2">
+                      <span className="text-base font-bold text-slate-800 dark:text-slate-200">ยอดรวมสุทธิ / Total</span>
+                      <span className="text-xl font-bold text-primary">
+                        {orderTotalPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </CardContent>
@@ -5413,6 +5841,12 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
         open={estimationDetailOpen}
         onOpenChange={setEstimationDetailOpen}
         estimation={viewingEstimation}
+      />
+      {/* Render Product Selection Modal */}
+      <InventoryProductModal 
+        isOpen={isInventoryModalOpen}
+        onClose={() => setIsInventoryModalOpen(false)}
+        onSelect={handleSelectFromInventory}
       />
     </Form>
   );
