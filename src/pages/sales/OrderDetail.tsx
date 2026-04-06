@@ -772,8 +772,8 @@ export default function OrderDetail() {
               {order.quotationUrl && (
                 <div>
                   <p className="text-sm text-muted-foreground">ใบเสนอราคา</p>
-                  <Button 
-                    variant="link" 
+                  <Button
+                    variant="link"
                     className="p-0 h-auto text-primary"
                     onClick={() => window.open(order.quotationUrl, '_blank')}
                   >
@@ -1598,7 +1598,7 @@ export default function OrderDetail() {
               <History className="w-5 h-5 text-primary" />
               ประวัติการชำระเงิน
             </h2>
-            
+
             <div className="space-y-4">
               {order.payments && order.payments.length > 0 ? (
                 <div className="rounded-lg border overflow-hidden">
@@ -1634,9 +1634,9 @@ export default function OrderDetail() {
                           </TableCell>
                           <TableCell className="text-center">
                             {p.slip_url ? (
-                              <Button 
-                                variant="ghost" 
-                                size="sm" 
+                              <Button
+                                variant="ghost"
+                                size="sm"
                                 className="h-8 w-8 p-0"
                                 onClick={() => window.open(p.slip_url, '_blank')}
                                 title="ดูสลิป"

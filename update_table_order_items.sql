@@ -1,0 +1,3 @@
+ALTER TABLE `order_items`
+ADD COLUMN `bow_type` VARCHAR(50) NULL DEFAULT NULL AFTER `color`,
+ADD COLUMN `bow_colors` JSON NULL DEFAULT NULL AFTER `bow_type`;

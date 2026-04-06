@@ -371,8 +371,8 @@ export function OrderReferenceCard({ order, onShippingFeeChange }: OrderReferenc
                 <div className="space-y-2 pl-6">
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-muted-foreground">สีโบว์: </span>
-                    <div 
-                      className="w-6 h-6 rounded-full border shadow-sm" 
+                    <div
+                      className="w-6 h-6 rounded-full border shadow-sm"
                       style={{ backgroundColor: order.ribbonInfo.color || "#ccc" }}
                       title={order.ribbonInfo.color}
                     />
@@ -405,16 +405,16 @@ export function OrderReferenceCard({ order, onShippingFeeChange }: OrderReferenc
                   </thead>
                   <tbody>
                     {order.productDetails.map((detail, index) => (
-                      <tr 
-                        key={index} 
+                      <tr
+                        key={index}
                         className={`border-t border-border ${index % 2 === 0 ? "bg-background" : "bg-muted/30"}`}
                       >
                         <td className="p-3 text-center text-muted-foreground">{index + 1}</td>
                         <td className="p-2 text-center">
                           <div className="w-12 h-12 mx-auto rounded border bg-muted/50 flex items-center justify-center overflow-hidden">
                             {(detail as any).thumbnail ? (
-                              <img 
-                                src={(detail as any).thumbnail} 
+                              <img
+                                src={(detail as any).thumbnail}
                                 alt={detail.model || detail.name}
                                 className="w-full h-full object-cover"
                               />

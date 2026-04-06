@@ -384,10 +384,10 @@ if ($method === 'POST') {
         product_category, product_type, budget, sales_channel,
         subtotal, delivery_cost, vat_amount, total_amount, total_price,
         payment_method, payment_status, paid_amount,
-        delivery_type, delivery_recipient, delivery_phone, delivery_address, preferred_delivery_date,
+        delivery_type, delivery_method, private_transport_name, delivery_recipient, delivery_phone, delivery_address, preferred_delivery_date,
         origin_branch, destination_branch, preferred_time_slot,
-        status, job_created, departments, notes, graphics_notes, design_files
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+        order_status, job_created, departments, notes, graphics_notes, design_files
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
 
     $stmt = $conn->prepare($sql);
     if (!$stmt) {
@@ -431,6 +431,8 @@ if ($method === 'POST') {
     $v_payment_status = $data['payment_status'] ?? 'รอชำระเงิน';
     $v_paid_amount = floatval($data['paid_amount'] ?? 0);
     $v_delivery_type = $data['delivery_type'] ?? 'parcel';
+    $v_delivery_method = $data['delivery_method'] ?? null;
+    $v_private_transport_name = $data['private_transport_name'] ?? null;
     $v_delivery_recipient = $data['delivery_recipient'] ?? null;
     $v_delivery_phone = $data['delivery_phone'] ?? null;
     $v_delivery_address = $data['delivery_address'] ?? null;
@@ -446,7 +448,7 @@ if ($method === 'POST') {
     $v_design_files = !empty($data['design_files']) ? json_encode($data['design_files']) : null;
 
     $stmt->bind_param(
-        "sssssissssisssssssssssdsddddddssdssssssisssssss",
+        "sssssissssisssssssssssdsddddddssdssssssssisssssss",
         $v_job_id,
         $v_quotation_number,
         $v_quotation_url,
@@ -481,6 +483,8 @@ if ($method === 'POST') {
         $v_payment_status,
         $v_paid_amount,
         $v_delivery_type,
+        $v_delivery_method,
+        $v_private_transport_name,
         $v_delivery_recipient,
         $v_delivery_phone,
         $v_delivery_address,
@@ -506,8 +510,8 @@ if ($method === 'POST') {
 
     // Insert order items
     if (!empty($data['items']) && is_array($data['items'])) {
-        $item_sql = "INSERT INTO order_items (order_id, product_id, item_type, product_name, product_code, material, size, color, quantity, price, unit_price, total_price_item, details)
-                      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)";
+        $item_sql = "INSERT INTO order_items (order_id, product_id, item_type, product_name, product_code, material, size, color, bow_type, bow_colors, quantity, price, unit_price, total_price_item, details)
+                      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
         $item_stmt = $conn->prepare($item_sql);
 
         foreach ($data['items'] as $item) {
@@ -523,10 +527,13 @@ if ($method === 'POST') {
             $i_unit_price = floatval($item['unit_price'] ?? 0);
             $i_total_price = floatval($item['total_price'] ?? ($i_qty * $i_unit_price));
 
+            $i_bow_type = $item['details']['bowType'] ?? null;
+            $i_bow_colors = !empty($item['details']['bowColors']) ? json_encode($item['details']['bowColors']) : null;
+
             $i_details_json = !empty($item['details']) ? json_encode($item['details']) : null;
 
             $item_stmt->bind_param(
-                "iissssssidds" . "s",
+                "iisssssssssddds",
                 $order_id,
                 $i_product_id,
                 $i_item_type,
@@ -535,6 +542,8 @@ if ($method === 'POST') {
                 $i_material,
                 $i_size,
                 $i_color,
+                $i_bow_type,
+                $i_bow_colors,
                 $i_qty,
                 $i_unit_price, // for `price`
                 $i_unit_price, // for `unit_price`
@@ -657,6 +666,7 @@ if ($method === 'PUT') {
         'payment_method',
         'delivery_type',
         'delivery_method',
+        'private_transport_name',
         'delivery_recipient',
         'delivery_phone',
         'delivery_address',

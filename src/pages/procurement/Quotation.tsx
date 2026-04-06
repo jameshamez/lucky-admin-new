@@ -13,7 +13,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Upload, Calculator, Plus, Trash2, Settings, Clock, FileCheck, CheckCircle2, Search, AlertCircle, Inbox, RotateCcw, FileImage, Paperclip, AlertTriangle, CheckCircle, X, History, User, FileText, Save, Pencil, Trophy, Copy, ChevronDown, ChevronUp, Package, Factory, Image } from "lucide-react";
+import { Upload, Calculator, Plus, Trash2, Settings, Clock, FileCheck, CheckCircle2, Search, AlertCircle, Inbox, RotateCcw, FileImage, Paperclip, AlertTriangle, CheckCircle, X, History, User, FileText, Save, Pencil, Trophy, Copy, ChevronDown, ChevronUp, Package, Factory, Image, Download } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import sampleArtwork from "@/assets/sample-artwork.png";
 import sampleArtworkMedal from "@/assets/sample-artwork-medal.png";
@@ -805,117 +805,43 @@ const Quotation = () => {
     const isInProgress = quotation.status === "อยู่ระหว่างการประเมินราคา" || quotation.status === "เสนอราคา";
     setIsReadOnlyMode(isReadOnly);
 
-    if (isReadOnly || isInProgress) {
-      // Load mock saved estimation data for read-only or in-progress editing
-      setEstimationStarted(true);
-      setGlobalHeader({
-        shippingCostRMB: 120,
+    const rawDetails: any = (quotation as any).rawDetails || {};
+    const savedSupplierEntries = rawDetails.supplierEntries || [];
+    const savedGlobalHeader = rawDetails.globalHeader;
+
+    if (isReadOnly || isInProgress || rawDetails.estimationStarted) {
+      setEstimationStarted(rawDetails.estimationStarted !== undefined ? rawDetails.estimationStarted : true);
+      
+      const currentGlobalHeader = savedGlobalHeader || {
+        shippingCostRMB: 0,
         exchangeRate: 5.5,
         vat: 7,
-        quantity: quotation.quantity || 800,
-        unitSellingPriceTHB: 85,
-        lanyardSellingPriceTHB: 15,
-      });
+        quantity: quotation.quantity || 0,
+        unitSellingPriceTHB: 0,
+        lanyardSellingPriceTHB: 0,
+      };
+      setGlobalHeader(currentGlobalHeader);
 
-      // Determine winner factory for completed status
-      const winnerFactory = quotation.winnerFactoryValue;
-
-      // Mock supplier entries for read-only display
-      const mockSupplierData: FactoryEntry[] = [
-        {
-          id: "entry-1",
-          factoryValue: "china_zj",
-          factoryLabel: "China ZJ",
-          unitCost: 12.5,
-          moldCost: 800,
-          moldCostAdditionalTHB: 0,
-          shippingCost: 120,
-          exchangeRate: 5.5,
-          vat: 7,
-          totalCostPerUnit: 0,
-          sellingPricePerUnit: 85,
-          sellingPriceLanyard: 15,
-          totalSellingPricePerUnit: 0,
-          totalProfit: 0,
-          isWinner: winnerFactory === "china_zj",
-          uploadedFile: null
-        },
-        {
-          id: "entry-2",
-          factoryValue: "china_xiaoli",
-          factoryLabel: "China Xiaoli",
-          unitCost: 11.8,
-          moldCost: 750,
-          moldCostAdditionalTHB: 0,
-          shippingCost: 120,
-          exchangeRate: 5.5,
-          vat: 7,
-          totalCostPerUnit: 0,
-          sellingPricePerUnit: 85,
-          sellingPriceLanyard: 15,
-          totalSellingPricePerUnit: 0,
-          totalProfit: 0,
-          isWinner: winnerFactory === "china_xiaoli",
-          uploadedFile: null
-        },
-        {
-          id: "entry-3",
-          factoryValue: "china_pn",
-          factoryLabel: "China PN",
-          unitCost: 13.2,
-          moldCost: 900,
-          moldCostAdditionalTHB: 0,
-          shippingCost: 120,
-          exchangeRate: 5.5,
-          vat: 7,
-          totalCostPerUnit: 0,
-          sellingPricePerUnit: 85,
-          sellingPriceLanyard: 15,
-          totalSellingPricePerUnit: 0,
-          totalProfit: 0,
-          isWinner: winnerFactory === "china_pn",
-          uploadedFile: null
-        },
-        {
-          id: "entry-4",
-          factoryValue: "china_benc",
-          factoryLabel: "China BENC",
-          unitCost: 10.5,
-          moldCost: 700,
-          moldCostAdditionalTHB: 0,
-          shippingCost: 120,
-          exchangeRate: 5.5,
-          vat: 7,
-          totalCostPerUnit: 0,
-          sellingPricePerUnit: 85,
-          sellingPriceLanyard: 15,
-          totalSellingPricePerUnit: 0,
-          totalProfit: 0,
-          isWinner: winnerFactory === "china_benc",
-          uploadedFile: null
-        }
-      ];
-      // Calculate costs for each entry
-      const calculatedEntries = mockSupplierData.map(entry => {
-        const calculated = calculateSupplierCosts(entry, quotation.quantity, {
-          shippingCostRMB: 120,
-          exchangeRate: 5.5,
-          vat: 7,
-          quantity: quotation.quantity || 800,
-          unitSellingPriceTHB: 85,
-          lanyardSellingPriceTHB: 15,
+      if (savedSupplierEntries.length > 0) {
+        const calculatedEntries = savedSupplierEntries.map((entry: any) => {
+          const calculated = calculateSupplierCosts(entry, quotation.quantity, currentGlobalHeader);
+          return { ...entry, ...calculated };
         });
-        return { ...entry, ...calculated };
-      });
-      setSupplierEntries(calculatedEntries);
-      setSelectedFactories(["china_zj", "china_xiaoli", "china_pn", "china_benc"]);
+        
+        setSupplierEntries(calculatedEntries);
+        setSelectedFactories(calculatedEntries.map((e: any) => e.factoryValue));
 
-      // Set selected winner if completed (เสนอลูกค้า)
-      if (isReadOnly && winnerFactory) {
-        const winnerEntry = calculatedEntries.find(e => e.factoryValue === winnerFactory);
-        if (winnerEntry) {
-          setSelectedWinner(winnerEntry.id);
+        const winnerFactory = quotation.winnerFactoryValue;
+        if (winnerFactory) {
+          const winnerEntry = calculatedEntries.find((e: any) => e.factoryValue === winnerFactory);
+          if (winnerEntry) setSelectedWinner(winnerEntry.id);
+        } else {
+          const savedWinner = calculatedEntries.find((e: any) => e.isWinner);
+          if (savedWinner) setSelectedWinner(savedWinner.id);
         }
+      } else {
+        setSupplierEntries([]);
+        setSelectedFactories([]);
       }
     } else {
       // For "รอประเมิน" - start fresh
@@ -1111,6 +1037,9 @@ const Quotation = () => {
     }
     if (selectedQuotation) {
       try {
+        const calcQuantity = globalHeader.quantity || selectedQuotation.quantity;
+        const totalSellingPrice = (globalHeader.unitSellingPriceTHB + globalHeader.lanyardSellingPriceTHB) * calcQuantity;
+        
         // Merge procurement data into details JSON
         const updatedDetails = {
           ...(selectedQuotation as any).rawDetails,
@@ -1119,11 +1048,15 @@ const Quotation = () => {
             uploadedFile: null // Can't stringify File object
           })),
           globalHeader,
-          estimationStarted: true
+          estimationStarted: true,
+          totalSellingPrice: totalSellingPrice,
+          totalCost: supplierEntries[0]?.totalCostPerUnit * calcQuantity || 0,
+          profit: supplierEntries[0]?.totalProfit || 0
         };
 
         const payload = {
           status: "เสนอลูกค้า",
+          price: totalSellingPrice,
           details: updatedDetails
         };
 
@@ -1140,7 +1073,9 @@ const Quotation = () => {
             return {
               ...q,
               status: "เสนอลูกค้า" as QuotationStatus,
-              // Update with new details locally too
+              totalSellingPrice: totalSellingPrice,
+              totalCost: updatedDetails.totalCost,
+              profit: updatedDetails.profit,
               ...(updatedDetails as any)
             };
           }
@@ -1165,6 +1100,9 @@ const Quotation = () => {
     }
     if (selectedQuotation) {
       try {
+        const calcQuantity = globalHeader.quantity || selectedQuotation.quantity;
+        const totalSellingPrice = (globalHeader.unitSellingPriceTHB + globalHeader.lanyardSellingPriceTHB) * calcQuantity;
+        
         const updatedDetails = {
           ...(selectedQuotation as any).rawDetails,
           supplierEntries: supplierEntries.map(e => ({
@@ -1172,11 +1110,15 @@ const Quotation = () => {
             uploadedFile: null
           })),
           globalHeader,
-          estimationStarted: true
+          estimationStarted: true,
+          totalSellingPrice: totalSellingPrice,
+          totalCost: supplierEntries[0]?.totalCostPerUnit * calcQuantity || 0,
+          profit: supplierEntries[0]?.totalProfit || 0
         };
 
         const payload = {
           status: "เสนอลูกค้า",
+          price: totalSellingPrice,
           details: updatedDetails
         };
 
@@ -1193,6 +1135,9 @@ const Quotation = () => {
             return {
               ...q,
               status: "เสนอลูกค้า" as QuotationStatus,
+              totalSellingPrice: totalSellingPrice,
+              totalCost: updatedDetails.totalCost,
+              profit: updatedDetails.profit,
               ...(updatedDetails as any)
             };
           }
@@ -1218,6 +1163,9 @@ const Quotation = () => {
 
     if (selectedQuotation) {
       try {
+        const calcQuantity = globalHeader.quantity || selectedQuotation.quantity;
+        const totalSellingPrice = (globalHeader.unitSellingPriceTHB + globalHeader.lanyardSellingPriceTHB) * calcQuantity;
+        
         const updatedDetails = {
           ...(selectedQuotation as any).rawDetails,
           supplierEntries: supplierEntries.map(e => ({
@@ -1225,10 +1173,14 @@ const Quotation = () => {
             uploadedFile: null
           })),
           globalHeader,
-          estimationStarted: true
+          estimationStarted: true,
+          totalSellingPrice: totalSellingPrice,
+          totalCost: supplierEntries[0]?.totalCostPerUnit * calcQuantity || 0,
+          profit: supplierEntries[0]?.totalProfit || 0
         };
 
         const payload = {
+          price: totalSellingPrice,
           details: updatedDetails
         };
 
@@ -1244,6 +1196,9 @@ const Quotation = () => {
           if (q.id === selectedQuotation.id) {
             return {
               ...q,
+              totalSellingPrice: totalSellingPrice,
+              totalCost: updatedDetails.totalCost,
+              profit: updatedDetails.profit,
               ...(updatedDetails as any)
             };
           }
@@ -1274,6 +1229,11 @@ const Quotation = () => {
 
     if (selectedQuotation) {
       try {
+        const calcQuantity = globalHeader.quantity || selectedQuotation.quantity;
+        const totalSellingPrice = winnerEntry.totalSellingPricePerUnit * calcQuantity;
+        const totalCost = winnerEntry.totalCostPerUnit * calcQuantity;
+        const profit = winnerEntry.totalProfit;
+        
         const updatedDetails = {
           ...(selectedQuotation as any).rawDetails,
           supplierEntries: supplierEntries.map(e => ({
@@ -1283,12 +1243,15 @@ const Quotation = () => {
           globalHeader,
           winnerFactoryValue: winnerEntry.factoryValue,
           factoryLabel: winnerEntry.factoryLabel,
-          estimationStarted: true
+          estimationStarted: true,
+          totalSellingPrice: totalSellingPrice,
+          totalCost: totalCost,
+          profit: profit
         };
 
         const payload = {
           status: "เสนอราคา",
-          price: winnerEntry.totalSellingPricePerUnit * (globalHeader.quantity || selectedQuotation.quantity),
+          price: totalSellingPrice,
           details: updatedDetails
         };
 
@@ -1308,6 +1271,10 @@ const Quotation = () => {
               winnerFactoryValue: winnerEntry.factoryValue,
               factory: winnerEntry.factoryValue,
               factoryLabel: winnerEntry.factoryLabel,
+              totalSellingPrice: totalSellingPrice,
+              totalCost: totalCost,
+              profit: profit,
+              ...(updatedDetails as any)
             };
           }
           return q;

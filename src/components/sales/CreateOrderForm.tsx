@@ -93,10 +93,11 @@ const createOrderSchema = z.object({
     notes: z.string().optional(),
     model: z.string().optional(),
     engraving: z.string().optional(),
-    engravingDetails: z.string().optional(),
     engravingFiles: z.any().optional(),
     attachedFiles: z.any().optional(),
     customType: z.string().optional(),
+    bowType: z.string().optional(),
+    bowColors: z.array(z.string()).optional(),
   }).optional(),
 
   // Section 5: Delivery Information
@@ -119,6 +120,8 @@ const createOrderSchema = z.object({
     originBranch: z.string().optional(),
     destinationBranch: z.string().optional(),
     preferredTimeSlot: z.string().optional(),
+    receiveTimeSlot: z.string().optional(),
+    privateTransportName: z.string().optional(),
   }).optional(),
 });
 
@@ -191,7 +194,7 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
     if (zipMatch) {
       zipcode = zipMatch[zipMatch.length - 1];
     }
-    
+
     // Normalize "กทม" to "กรุงเทพมหานคร"
     if (text.includes("กทม.") || text.includes("กทม")) {
       text = text.replace(/กทม\./g, "กรุงเทพมหานคร").replace(/\bกทม\b/g, "กรุงเทพมหานคร");
@@ -208,7 +211,7 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
     // 1. If we have zipcode, it can drastically narrow down the search
     if (zipcode) {
       const possibleLocations = allData.filter(d => d.zipcode.toString() === zipcode);
-      
+
       // match text against possible locations
       for (const loc of possibleLocations) {
         if (text.includes(loc.province) && text.includes(loc.amphoe) && text.includes(loc.district)) {
@@ -259,19 +262,19 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
     if (zipcode) {
       form.setValue("deliveryInfo.postalCode", zipcode, { shouldValidate: true, shouldDirty: true });
     }
-    
+
     if (foundProvince) {
       form.setValue("deliveryInfo.province", foundProvince, { shouldValidate: true, shouldDirty: true });
       setSelectedProvinceName(foundProvince);
-      
+
       if (foundAmphure) {
         setTimeout(() => {
           form.setValue("deliveryInfo.district", foundAmphure, { shouldValidate: true, shouldDirty: true });
           setSelectedAmphureName(foundAmphure);
           if (foundTambon) {
-             setTimeout(() => {
-                form.setValue("deliveryInfo.subdistrict", foundTambon, { shouldValidate: true, shouldDirty: true });
-             }, 50);
+            setTimeout(() => {
+              form.setValue("deliveryInfo.subdistrict", foundTambon, { shouldValidate: true, shouldDirty: true });
+            }, 50);
           }
         }, 50);
       }
@@ -283,10 +286,10 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
     if (foundProvince) cleanAddress = cleanAddress.replace(foundProvince, "");
     if (foundAmphure) cleanAddress = cleanAddress.replace(foundAmphure, "");
     if (foundTambon) cleanAddress = cleanAddress.replace(foundTambon, "");
-    
+
     // Remove prefixes mapping
     cleanAddress = cleanAddress.replace(/จังหวัด|จ\.|อำเภอ|อ\.|เขต|ตำบล|ต\.|แขวง|รหัสไปรษณีย์/g, " ");
-    
+
     // cleanup spaces and trailing commas
     cleanAddress = cleanAddress.replace(/\s+/g, ' ').trim();
     cleanAddress = cleanAddress.replace(/,$/, '').trim();
@@ -738,7 +741,7 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
       description: `นำข้อมูลจากรายการประเมินราคา #${estimation.id} มาใช้แล้ว`,
     });
   };
-  
+
   // Category-first product selection structure
   const productCategories = [
     { id: "readymade", name: "สินค้าสำเร็จรูป", icon: "🏆" },
@@ -835,46 +838,47 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
   const watchedCustomerEmail = form.watch("customerEmail");
   const watchedDeliveryDate = form.watch("deliveryDate");
   const watchedCustomerSearch = form.watch("customerSearch");
+  const watchedDeliveryMethod = form.watch("deliveryInfo.deliveryMethod");
 
   // If navigated from Customer Profile / Management
   useEffect(() => {
     if (customerData) {
       form.setValue("customerName", customerData.name || customerData.company_name || customerData.contact_name || "");
-      
+
       const phoneArr = customerData.phone_numbers;
       const phone = Array.isArray(phoneArr) ? (phoneArr[0] || "") : (customerData.phone || customerData.customerPhone || "");
       form.setValue("customerPhone", phone);
-      
+
       form.setValue("customerLine", customerData.line_id || customerData.customerLine || "");
-      
+
       const emailArr = customerData.emails;
       const email = Array.isArray(emailArr) ? (emailArr[0] || "") : (customerData.email || "");
       form.setValue("customerEmail", email);
-      
+
       // Auto-fill delivery address if available
       form.setValue("deliveryInfo.recipientName", customerData.contact || customerData.contact_name || customerData.name || "");
       form.setValue("deliveryInfo.recipientPhone", phone);
-      
+
       const addr = customerData.shipping_address || customerData.billing_address || customerData.address || "";
       if (addr) form.setValue("deliveryInfo.address", addr);
-      
+
       const province = customerData.shipping_province || customerData.billing_province || customerData.province || "";
       if (province) {
         setSelectedProvinceName(province);
         form.setValue("deliveryInfo.province", province);
       }
-      
+
       const district = customerData.shipping_district || customerData.billing_district || customerData.district || "";
       if (district) {
         setSelectedAmphureName(district);
         form.setValue("deliveryInfo.district", district);
       }
-      
+
       const subdistrict = customerData.shipping_subdistrict || customerData.billing_subdistrict || customerData.subdistrict || "";
       if (subdistrict) {
         form.setValue("deliveryInfo.subdistrict", subdistrict);
       }
-      
+
       const postcode = customerData.shipping_postcode || customerData.billing_postcode || customerData.postalCode || "";
       if (postcode) {
         form.setValue("deliveryInfo.postalCode", postcode);
@@ -1079,7 +1083,7 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
       if (customerData.tax_id) {
         form.setValue("taxId", customerData.tax_id || "");
         form.setValue("taxPayerName", customerData.company_name || customerData.contact_name || "");
-        
+
         // Build tax address
         const taxAddr = [
           customerData.billing_address,
@@ -1088,7 +1092,7 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
           customerData.billing_province,
           customerData.billing_postcode,
         ].filter(Boolean).join(" ");
-        
+
         form.setValue("taxAddress", taxAddr);
         form.setValue("requireTaxInvoice", true);
         form.setValue("invoiceType", "tax-invoice");
@@ -2142,7 +2146,11 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
           unit_price: s.price,
           total_price: (parseInt(s.quantity) || 0) * s.price,
           product_price_type: "custom",
-          details: { height: s.height, opening: s.opening },
+          details: {
+            height: s.height,
+            opening: s.opening,
+            ...data.jobDetails
+          },
         });
       });
     }
@@ -2550,7 +2558,7 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                               // แจ้งเตือนผู้ใช้ว่ากำลังอัพโหลดและเตรียมตรวจด้วย SlipOK
                               toast({ title: "กำลังอัพโหลดสลิป...", description: "กรุณารอสักครู่ ระบบกำลังนำข้อมูลไปตรวจสอบ" });
                               const url = await uploadFile(file, 'slip');
-                              
+
                               if (url) {
                                 let verifiedAmount = newPayment.amount;
                                 let verifiedDate = newPayment.transferDate;
@@ -2559,7 +2567,7 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                                 try {
                                   // เริ่มกระบวนการตรวจสอบ SlipOK
                                   toast({ title: "กำลังตรวจสอบสลิป...", description: "ระบบอ่านข้อมูลจากตรายาง SlipOK" });
-                                  
+
                                   const formData = new FormData();
                                   formData.append('files', file);
 
@@ -2581,27 +2589,27 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                                     const slipOkData = await slipOkRes.json();
                                     if (slipOkData.success) {
                                       const { amount, transTimestamp, transDate, transTime, receiver } = slipOkData.data;
-                                      
+
                                       verifiedAmount = amount.toString();
                                       // ใช้ transTimestamp สำหรับวันที่ที่ถูกต้อง (เช่น 2026-04-05T04:10:27.000Z)
                                       const dateObj = transTimestamp ? new Date(transTimestamp) : new Date();
                                       if (isValid(dateObj)) verifiedDate = dateObj;
-                                      
+
                                       if (receiver) {
                                         // account ซ้อนอยู่ข้างใน object receiver.account
                                         const recAccount = receiver.account?.value || "";
                                         verifiedDetails = `โอนเข้าระบบ: ${receiver.displayName} ${recAccount ? `(${recAccount})` : ''}`;
                                       }
-                                      
-                                      toast({ 
-                                        title: "ตรวจสอบสลิปถูกต้อง ✅", 
-                                        description: `ยอดเงิน ${amount} บาท โอนเมื่อ ${isValid(dateObj) ? format(dateObj, 'dd/MM/yyyy HH:mm') : `${transDate} ${transTime}`}` 
+
+                                      toast({
+                                        title: "ตรวจสอบสลิปถูกต้อง ✅",
+                                        description: `ยอดเงิน ${amount} บาท โอนเมื่อ ${isValid(dateObj) ? format(dateObj, 'dd/MM/yyyy HH:mm') : `${transDate} ${transTime}`}`
                                       });
                                     } else {
-                                      toast({ 
-                                        title: "ตรวจสอบสลิปไม่ผ่าน ❌", 
-                                        description: slipOkData.message || "กรุณาตรวจสอบสลิปอีกครั้ง", 
-                                        variant: "destructive" 
+                                      toast({
+                                        title: "ตรวจสอบสลิปไม่ผ่าน ❌",
+                                        description: slipOkData.message || "กรุณาตรวจสอบสลิปอีกครั้ง",
+                                        variant: "destructive"
                                       });
                                     }
                                   } else {
@@ -2932,9 +2940,9 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                             return url ? { file, url, name: file.name, size: file.size } : null;
                           })
                         );
-                        
+
                         const successfulUploads = uploads.filter((u): u is { file: File; url: string; name: string; size: number } => u !== null);
-                        
+
                         setDesignFiles(prev => [...prev, ...successfulUploads]);
                         toast({
                           title: `อัปโหลด ${successfulUploads.length} ไฟล์สำเร็จแล้ว`,
@@ -3843,13 +3851,13 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                                         )}
                                       </div>
                                     </div>
-                                )}
-                              </div>
-                            )}
-                          </>
-                        )}
-                      </>
-                    )}
+                                  )}
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </>
+                      )}
                       {/* Pricing Selection for ReadyMedal */}
                       {getProductFlow(watchedProductType) === "catalog"}
                     </div>
@@ -4135,42 +4143,88 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                           </div>
 
                           {form.watch("jobDetails.customType") === "bow-accept" && (
-                            <div className="space-y-3">
-                              <Label className="text-sm font-medium">เลือกสีโบว์</Label>
-                              <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
-                                {[
-                                  { id: "1", name: "แดง", color: "#FF0000" },
-                                  { id: "2", name: "น้ำเงิน", color: "#0000FF" },
-                                  { id: "3", name: "เขียว", color: "#008000" },
-                                  { id: "4", name: "เหลือง", color: "#FFFF00" },
-                                  { id: "5", name: "ดำ", color: "#000000" },
-                                  { id: "6", name: "ขาว", color: "#FFFFFF" },
-                                  { id: "7", name: "เทา", color: "#808080" },
-                                ].map((bowColor) => (
-                                  <div
-                                    key={bowColor.id}
-                                    className={cn(
-                                      "border rounded-lg p-3 cursor-pointer transition-all flex flex-col items-center gap-2 hover:border-primary",
-                                      form.watch("jobDetails.lanyardQuantity") === bowColor.id
-                                        ? "border-primary ring-2 ring-primary bg-primary/5"
-                                        : "border-border"
-                                    )}
-                                    onClick={() => form.setValue("jobDetails.lanyardQuantity", bowColor.id)}
-                                  >
-                                    <div
-                                      className="w-12 h-12 rounded border border-border"
-                                      style={{ backgroundColor: bowColor.color }}
-                                    />
-                                    <span className="text-xs font-medium">{bowColor.name}</span>
-                                    <span className="text-[10px] text-muted-foreground">#{bowColor.id}</span>
+                            <div className="space-y-6">
+                              <div className="space-y-3">
+                                <Label className="text-sm font-medium">ประเภทโบว์</Label>
+                                <RadioGroup
+                                  onValueChange={(val) => form.setValue("jobDetails.bowType", val)}
+                                  defaultValue={form.watch("jobDetails.bowType")}
+                                  className="flex gap-6"
+                                >
+                                  <div className="flex items-center space-x-2">
+                                    <RadioGroupItem value="bow-tie" id="bow-tie-select" />
+                                    <Label htmlFor="bow-tie-select" className="cursor-pointer">🎀 โบว์หูกระต่าย</Label>
                                   </div>
-                                ))}
+                                  <div className="flex items-center space-x-2">
+                                    <RadioGroupItem value="pom-pom" id="pom-pom-select" />
+                                    <Label htmlFor="pom-pom-select" className="cursor-pointer">🏵️ โบว์พุ่ม</Label>
+                                  </div>
+                                </RadioGroup>
                               </div>
-                              {form.watch("jobDetails.lanyardQuantity") && (
-                                <p className="text-sm text-muted-foreground">
-                                  เลือกแล้ว: สี #{form.watch("jobDetails.lanyardQuantity")}
-                                </p>
-                              )}
+
+                              <div className="space-y-3">
+                                <Label className="text-sm font-medium">เลือกสีโบว์</Label>
+                                <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
+                                  {[
+                                    { id: "1", name: "แดง", color: "#FF0000" },
+                                    { id: "2", name: "น้ำเงิน", color: "#0000FF" },
+                                    { id: "3", name: "เขียว", color: "#008000" },
+                                    { id: "4", name: "เหลือง", color: "#FFFF00" },
+                                    { id: "5", name: "ดำ", color: "#000000" },
+                                    { id: "6", name: "ขาว", color: "#FFFFFF" },
+                                    { id: "7", name: "เทา", color: "#808080" },
+                                  ].map((bowColor) => {
+                                    const selectedColors = form.watch("jobDetails.bowColors") || [];
+                                    const isSelected = selectedColors.includes(bowColor.id);
+                                    return (
+                                      <div
+                                        key={bowColor.id}
+                                        className={cn(
+                                          "border rounded-lg p-3 cursor-pointer transition-all flex flex-col items-center gap-2 hover:border-primary",
+                                          isSelected
+                                            ? "border-primary ring-2 ring-primary bg-primary/5"
+                                            : "border-border"
+                                        )}
+                                        onClick={() => {
+                                          const current = form.getValues("jobDetails.bowColors") || [];
+                                          if (isSelected) {
+                                            form.setValue("jobDetails.bowColors", current.filter((id: string) => id !== bowColor.id));
+                                          } else {
+                                            form.setValue("jobDetails.bowColors", [...current, bowColor.id]);
+                                          }
+                                        }}
+                                      >
+                                        <div
+                                          className="w-12 h-12 rounded border border-border"
+                                          style={{ backgroundColor: bowColor.color }}
+                                        >
+                                          {isSelected && (
+                                            <div className="w-full h-full flex items-center justify-center bg-black/20">
+                                              <Check className="w-6 h-6 text-white drop-shadow-md" strokeWidth={3} />
+                                            </div>
+                                          )}
+                                        </div>
+                                        <span className="text-xs font-medium">{bowColor.name}</span>
+                                        <span className="text-[10px] text-muted-foreground">#{bowColor.id}</span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                                {(form.watch("jobDetails.bowColors")?.length || 0) > 0 && (
+                                  <p className="text-sm text-muted-foreground">
+                                    เลือกแล้ว {form.watch("jobDetails.bowColors").length} สี: {
+                                      form.watch("jobDetails.bowColors").map((id: string) => {
+                                        const c = [
+                                          { id: "1", name: "แดง" }, { id: "2", name: "น้ำเงิน" },
+                                          { id: "3", name: "เขียว" }, { id: "4", name: "เหลือง" },
+                                          { id: "5", name: "ดำ" }, { id: "6", name: "ขาว" }, { id: "7", name: "เทา" },
+                                        ].find(x => x.id === id);
+                                        return c ? c.name : id;
+                                      }).join(", ")
+                                    }
+                                  </p>
+                                )}
+                              </div>
                             </div>
                           )}
 
@@ -4393,37 +4447,37 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                       {getProductFlow(watchedProductType) === "catalog"}
                     </div>
                   ) : (
-                  <FormField
-                    control={form.control}
-                    name="material"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>วัสดุ</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
-                          <FormControl>
-                            <SelectTrigger className="bg-background">
-                              <SelectValue placeholder="เลือกวัสดุ" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent className="bg-background">
-                            {getMaterialOptions(watchedProductType).map((material) => (
-                              <SelectItem key={material} value={material}>
-                                {material}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                )}
+                    <FormField
+                      control={form.control}
+                      name="material"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>วัสดุ</FormLabel>
+                          <Select onValueChange={field.onChange} defaultValue={field.value}>
+                            <FormControl>
+                              <SelectTrigger className="bg-background">
+                                <SelectValue placeholder="เลือกวัสดุ" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent className="bg-background">
+                              {getMaterialOptions(watchedProductType).map((material) => (
+                                <SelectItem key={material} value={material}>
+                                  {material}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
 
-                {/* Pricing Selection for Other Catalog Items */}
-                {getProductFlow(watchedProductType) === "catalog"}
-              </>
-            )}
-          </div>
+                  {/* Pricing Selection for Other Catalog Items */}
+                  {getProductFlow(watchedProductType) === "catalog"}
+                </>
+              )}
+            </div>
 
             {/* Save Product Button */}
             {watchedProductType && watchedMaterial && (
@@ -4639,7 +4693,7 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                       const unitPrice = product.unitPrice || null;
                       const totalPrice = unitPrice ? unitPrice * quantity : null;
                       const priceTypeLabel = product.priceType === 'retail' ? '(ปลีก)' : (product.priceType === 'wholesale' ? '(ส่ง)' : (product.priceType === 'clearance' ? '(โล๊ะ)' : ''));
-                      
+
                       return (
                         <TableRow key={`saved-${product.id}`} className="hover:bg-muted/30">
                           <TableCell className="text-xs py-3 text-center font-medium">
@@ -4862,7 +4916,13 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                           <FormItem>
                             <FormLabel>ชื่อ-นามสกุลผู้รับ</FormLabel>
                             <FormControl>
-                              <Input {...field} />
+                              <Input
+                                {...field}
+                                onChange={(e) => {
+                                  const val = e.target.value.replace(/[0-9]/g, '');
+                                  field.onChange(val);
+                                }}
+                              />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -4876,7 +4936,14 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                           <FormItem>
                             <FormLabel>เบอร์โทรศัพท์ติดต่อ</FormLabel>
                             <FormControl>
-                              <Input {...field} />
+                              <Input
+                                {...field}
+                                maxLength={10}
+                                onChange={(e) => {
+                                  const val = e.target.value.replace(/[^0-9]/g, '');
+                                  field.onChange(val);
+                                }}
+                              />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -4891,13 +4958,13 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                     <div className="flex items-center justify-between mb-4">
                       <h4 className="font-semibold">5.2 ที่อยู่สำหรับจัดส่ง</h4>
                     </div>
-                    
+
                     <div className="mb-4 p-4 border border-blue-200 bg-blue-50/50 rounded-lg dark:bg-blue-900/10 dark:border-blue-800">
                       <label className="text-sm font-medium mb-2 block text-blue-800 dark:text-blue-300">
                         วางที่อยู่แบบเต็มเพื่อแยกกล่องอัตโนมัติ (Auto-fill)
                       </label>
                       <div className="flex gap-2">
-                        <Input 
+                        <Input
                           placeholder="เช่น 123/45 หมู่บ้านอรวรรณ ซ.สยาม เขตดอนเมือง จ.กรุงเทพมหานคร 10210"
                           value={addressAutoFill}
                           onChange={(e) => setAddressAutoFill(e.target.value)}
@@ -5066,6 +5133,7 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                                 <SelectItem value="ninja">Ninja Van</SelectItem>
                                 <SelectItem value="grab">Grab Express</SelectItem>
                                 <SelectItem value="lalamove">Lalamove</SelectItem>
+                                <SelectItem value="lineman">Line Man Messenger</SelectItem>
                                 <SelectItem value="private_transport">ขนส่งเอกชน / รถบรรทุก</SelectItem>
                                 <SelectItem value="company_delivery">จัดส่งโดยบริษัท</SelectItem>
                                 <SelectItem value="pickup">รับสินค้าเอง / นัดรับ</SelectItem>
@@ -5075,6 +5143,40 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                           </FormItem>
                         )}
                       />
+
+                      {watchedDeliveryMethod === "private_transport" && (
+                        <FormField
+                          control={form.control}
+                          name="deliveryInfo.privateTransportName"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>ระบุบริษัทขนส่งเอกชน</FormLabel>
+                              <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="เลือกบริษัทขนส่ง" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  <SelectItem value="inter_express">Inter Express</SelectItem>
+                                  <SelectItem value="nim_express">Nim Express</SelectItem>
+                                  <SelectItem value="scg_express">SCG Express (แมวดำ)</SelectItem>
+                                  <SelectItem value="tp_logistics">TP Logistics (TP พัสดุภัณฑ์)</SelectItem>
+                                  <SelectItem value="ntc">NTC (เอ็นทีซี)</SelectItem>
+                                  <SelectItem value="it_transport">IT Transport (ไอที ทรานสปอร์ต)</SelectItem>
+                                  <SelectItem value="bizcar">Bizcar (พาหะนะ)</SelectItem>
+                                  <SelectItem value="business_idea">Business Idea (บิสซิเนส ไอเดีย)</SelectItem>
+                                  <SelectItem value="pl_express">PL Express (เค.ดับบลิว.พี / พีแอล)</SelectItem>
+                                  <SelectItem value="bs_transport">BS Transport (บีเอส ทรานสปอร์ต)</SelectItem>
+                                  <SelectItem value="sd_express">SD Express (เฮียสี่ ขนส่งด่วน)</SelectItem>
+                                  <SelectItem value="other">อื่นๆ (โปรดระบุในหมายเหตุ)</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      )}
 
                       <FormField
                         control={form.control}
@@ -5093,9 +5195,9 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                                     )}
                                   >
                                     {field.value ? (
-                                      format(field.value, "PPP")
+                                      format(field.value, "PPP", { locale: th })
                                     ) : (
-                                      <span>{watchedDeliveryDate ? format(watchedDeliveryDate, "PPP") : "เลือกวันที่"}</span>
+                                      <span>{watchedDeliveryDate ? format(watchedDeliveryDate, "PPP", { locale: th }) : "เลือกวันที่"}</span>
                                     )}
                                     <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                                   </Button>
@@ -5118,8 +5220,44 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                           </FormItem>
                         )}
                       />
+
+                      {(watchedDeliveryMethod === "grab" ||
+                        watchedDeliveryMethod === "lalamove" ||
+                        watchedDeliveryMethod === "lineman") && (
+                          <FormField
+                            control={form.control}
+                            name="deliveryInfo.preferredTimeSlot"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>ระบุเวลาที่ต้องการให้เรียกรถ / ขนส่งเข้ารับ</FormLabel>
+                                <FormControl>
+                                  <Input
+                                    type="time"
+                                    {...field}
+                                    value={field.value || ""}
+                                    onChange={(e) => field.onChange(e.target.value)}
+                                    onFocus={(e) => {
+                                      try {
+                                        // @ts-ignore - showPicker is modern API
+                                        if (e.target.showPicker) e.target.showPicker();
+                                      } catch (err) {}
+                                    }}
+                                    onClick={(e) => {
+                                      try {
+                                        // @ts-ignore
+                                        if (e.target.showPicker) e.target.showPicker();
+                                      } catch (err) {}
+                                    }}
+                                    className="bg-white dark:bg-background cursor-pointer"
+                                  />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        )}
                     </div>
-                    
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                       {/* ต้นทาง/ปลายทาง (สาขา) */}
                       <FormField
@@ -5173,7 +5311,7 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                       {/* เวลารับลูกค้าสะดวกรับ */}
                       <FormField
                         control={form.control}
-                        name="deliveryInfo.preferredTimeSlot"
+                        name="deliveryInfo.receiveTimeSlot"
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>เวลารับลูกค้าสะดวกรับ</FormLabel>

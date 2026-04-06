@@ -446,7 +446,7 @@ export default function JobOrderManagement() {
     try {
       await designJobService.updateJob(selectedJob.id!, {
         designer: assignee,
-        status: "กำลังดำเนินการ",
+        status: "รับงานแล้ว",
         assigned_at: new Date().toISOString()
       });
       toast.success(`มอบหมายงาน ${selectedJob.job_id} ให้ ${assignee} เรียบร้อยแล้ว`);
@@ -496,7 +496,30 @@ export default function JobOrderManagement() {
   const handleUpdateJobSubmit = async (data: any) => {
     if (!selectedJobForUpdate?.id) return;
     try {
-      await designJobService.updateJob(selectedJobForUpdate.id, data);
+      const updatePayload = { ...data };
+      
+      // Auto-progress status based on data
+      if (data.isFinished) {
+        updatePayload.status = "เสร็จสิ้น";
+        updatePayload.finish_date = new Date().toISOString();
+      } else if (data.aiFileLogs?.length > 0 || data.productionArtworkLogs?.length > 0) {
+        updatePayload.status = "ผลิตชิ้นงาน";
+      } else if (data.artworkStatus === "pending_review") {
+        updatePayload.status = "รอตรวจสอบ";
+      } else if (data.artworkStatus === "rejected") {
+        updatePayload.status = "แก้ไข";
+      } else if (data.layoutLogs?.length > 0) {
+        updatePayload.status = "กำลังดำเนินการ";
+        if (selectedJobForUpdate.status === "รับงานแล้ว") {
+          updatePayload.started_at = new Date().toISOString();
+        }
+      } else if (selectedJobForUpdate.status === "รับงานแล้ว") {
+        // Fallback for explicitly picking "ลงข้อมูลเริ่มงาน" with no files
+        updatePayload.status = "กำลังดำเนินการ";
+        updatePayload.started_at = new Date().toISOString();
+      }
+
+      await designJobService.updateJob(selectedJobForUpdate.id, updatePayload);
       toast.success(`อัพเดทงาน ${selectedJobForUpdate.job_id} เรียบร้อยแล้ว`);
       setIsUpdateDialogOpen(false);
       setSelectedJobForUpdate(null);
@@ -526,7 +549,7 @@ export default function JobOrderManagement() {
       try {
         await designJobService.updateJob(selectedJobForDetail.id, {
           designer: employeeId,
-          status: "กำลังดำเนินการ",
+          status: "รับงานแล้ว",
           assigned_at: new Date().toISOString()
         });
         toast.success(`มอบหมายงาน ${selectedJobForDetail.job_id} ให้ ${employeeId} เรียบร้อยแล้ว`);
@@ -807,13 +830,22 @@ export default function JobOrderManagement() {
                           </div>
                         </TableCell>
                         <TableCell className="sticky right-0 bg-background text-center">
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => handleOpenJobDetailDrawer(job, "action")}
-                          >
-                            ดูรายละเอียดงาน
-                          </Button>
+                          <div className="flex items-center justify-center gap-2">
+                            <Button
+                              size="sm"
+                              className="bg-blue-600 hover:bg-blue-700"
+                              onClick={() => handleOpenUpdateDialog(job)}
+                            >
+                              ลงข้อมูลเริ่มงาน
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => handleOpenJobDetailDrawer(job, "action")}
+                            >
+                              ดูรายละเอียด
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     );

@@ -208,6 +208,21 @@ export function JobUpdateForm({ jobId, quotationNo, clientName, jobType, onSubmi
     onSubmit(submitData);
   };
 
+  const handleFinishSubmit = () => {
+    const submitData = {
+      ...formData,
+      layoutLogs,
+      artworkLogs,
+      artworkStatus,
+      artworkVersion,
+      artworkFeedbackHistory,
+      productionArtworkLogs,
+      aiFileLogs,
+      isFinished: true,
+    };
+    onSubmit(submitData);
+  };
+
   const getArtworkStatusBadge = () => {
     switch (artworkStatus) {
       case 'draft':
@@ -365,8 +380,7 @@ export function JobUpdateForm({ jobId, quotationNo, clientName, jobType, onSubmi
     );
   };
 
-  // Check if Section 3 should be unlocked (artwork must be approved)
-  const isSection3Unlocked = artworkStatus === 'approved';
+  // Allowed unconditionally to support direct checking with customers
 
   return (
     <div className="space-y-6 max-h-[70vh] overflow-y-auto pr-2">
@@ -632,18 +646,7 @@ export function JobUpdateForm({ jobId, quotationNo, clientName, jobType, onSubmi
       </div>
 
       {/* Section 3: ไฟล์สั่งผลิต */}
-      <div className={cn(
-        "space-y-4 p-4 border rounded-lg relative",
-        !isSection3Unlocked && "opacity-50 pointer-events-none"
-      )}>
-        {!isSection3Unlocked && (
-          <div className="absolute inset-0 bg-muted/30 rounded-lg flex items-center justify-center z-10">
-            <div className="flex items-center gap-2 text-muted-foreground bg-background px-3 py-2 rounded-lg shadow-sm border">
-              <Lock className="h-4 w-4" />
-              <span className="text-sm">รอ Artwork ผ่านการอนุมัติก่อน</span>
-            </div>
-          </div>
-        )}
+      <div className="space-y-4 p-4 border rounded-lg relative">
         <h3 className="font-semibold text-base border-b pb-2">3. ไฟล์สั่งผลิต</h3>
         
         {/* แนบ Artwork - ดึงจาก Section 2 อัตโนมัติ */}
@@ -741,9 +744,15 @@ export function JobUpdateForm({ jobId, quotationNo, clientName, jobType, onSubmi
 
       {/* ปุ่มบันทึก */}
       <div className="flex justify-end gap-2 pt-4 border-t">
-        <Button type="button" onClick={handleSubmit}>
-          บันทึกข้อมูล
+        <Button type="button" variant="outline" onClick={handleSubmit}>
+          บันทึกอัปเดต
         </Button>
+        {(aiFileLogs.length > 0 || productionArtworkLogs.length > 0) && (
+          <Button type="button" onClick={handleFinishSubmit} className="bg-green-600 hover:bg-green-700">
+            <CheckCircle className="mr-2 h-4 w-4" />
+            เสร็จสิ้นการส่งไฟล์
+          </Button>
+        )}
       </div>
 
       {/* Image Modal */}

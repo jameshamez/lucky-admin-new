@@ -419,6 +419,8 @@ export default function CreateOrder() {
 
         // จัดส่ง
         delivery_type: data.deliveryType ?? "parcel",
+        delivery_method: deliveryInfo.deliveryMethod ?? null,
+        private_transport_name: deliveryInfo.privateTransportName ?? null,
         delivery_recipient: deliveryInfo.recipientName ?? null,
         delivery_phone: deliveryInfo.recipientPhone ?? null,
         delivery_address: [
