@@ -1,6 +1,10 @@
 {
     "rewrites": [
         {
+            "source": "/slipok-proxy/:path*",
+            "destination": "https://api.slipok.com/api/line/apikey/:path*"
+        },
+        {
             "source": "/(.*)",
             "destination": "/index.html"
         }
