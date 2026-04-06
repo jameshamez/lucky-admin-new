@@ -496,6 +496,11 @@ export default function CreateOrder() {
           description: json.job_id ? `JOB ID: ${json.job_id}` : undefined,
         });
         fetchOrders();
+        setShowCreateForm(false);
+        setIsEditing(false);
+        setSelectedOrder(null);
+        setEstimationData(null);
+        setCustomerData(null);
       } else {
         toast({ title: "เกิดข้อผิดพลาด", description: json.message, variant: "destructive" });
       }
@@ -503,11 +508,6 @@ export default function CreateOrder() {
       console.error("Order submit error:", e);
       toast({ title: "ไม่สามารถเชื่อมต่อ API ได้", variant: "destructive" });
     }
-    setShowCreateForm(false);
-    setIsEditing(false);
-    setSelectedOrder(null);
-    setEstimationData(null);
-    setCustomerData(null);
   };
 
   const handleFormCancel = () => {
@@ -751,9 +751,9 @@ export default function CreateOrder() {
             <Button variant="default" onClick={() => {
               const link = `${window.location.origin}/payment/${selectedOrder?.jobId || selectedOrder?.id}`;
               navigator.clipboard.writeText(link);
-              toast({ title: "คัดลอกลิ๊งสำเร็จ", description: "คัดลอกลิ๊งสั่งซื้อลงคลิปบอร์ดแล้ว" });
+              toast({ title: "คัดลอกลิงก์สำเร็จ", description: "คัดลอกลิงก์สั่งซื้อลงคลิปบอร์ดแล้ว" });
             }}>
-              ส่งลิ๊งสั่งซื้อ
+              ส่งลิงก์สั่งซื้อ
             </Button>
             <Button variant="outline" onClick={handleBackToList}>กลับไปรายการคำสั่งซื้อ</Button>
           </div>

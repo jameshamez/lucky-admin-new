@@ -3489,25 +3489,125 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
 
                     if (!hasEstimationsForCategory) {
                       return (
-                        <div className="text-center py-6 border border-dashed border-border rounded-lg bg-muted/20">
-                          <p className="text-sm text-muted-foreground mb-3">
-                            ไม่มีสินค้าในรายการประเมินราคา
+                        <div className="text-center py-8 px-4 border border-dashed border-border rounded-xl bg-muted/20 animate-in fade-in duration-300">
+                          <div className="bg-muted w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3">
+                            <FileText className="h-6 w-6 text-muted-foreground opacity-50" />
+                          </div>
+                          <p className="text-sm font-medium text-foreground mb-1">
+                            { (watchedCustomerName || watchedCustomerLine) ? "ไม่พบรายการประเมินราคาที่แมตช์" : "กรุณาเลือกลูกค้าก่อน" }
+                          </p>
+                          <p className="text-xs text-muted-foreground mb-4 max-w-[200px] mx-auto">
+                            ยังไม่มีรายการประเมินราคาสำหรับ {(watchedCustomerName || watchedCustomerLine) ? "ลูกค้ารายนี้" : "หมวดหมู่นี้"}
                           </p>
                           <Button
                             type="button"
                             variant="default"
                             size="sm"
                             onClick={() => navigate(`/sales/price-estimation/add?customer=${encodeURIComponent(watchedCustomerName || "")}`)}
-                            className="gap-2"
+                            className="gap-2 font-bold shadow-sm"
                           >
-                            <ExternalLink className="h-4 w-4" />
-                            ไปหน้าประเมินราคา
+                            <Plus className="h-4 w-4" />
+                            สร้างใบประเมินใหม่
                           </Button>
                         </div>
                       );
                     }
 
-                    return null;
+                    const matchingEstimations = getFilteredEstimations().filter(est =>
+                      categoryProductLabels.includes(est.productType)
+                    );
+
+                    return (
+                      <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
+                        <div className="flex items-center justify-between px-1">
+                          <Label className="text-[11px] font-bold text-primary uppercase tracking-wider">เลือกรายการที่เคยประเมินราคาไว้</Label>
+                          <span className="text-[10px] text-muted-foreground">{matchingEstimations.length} รายการ</span>
+                        </div>
+                        <div className="grid grid-cols-1 gap-2 max-h-[400px] overflow-y-auto pr-1">
+                          {matchingEstimations.map((est) => {
+                            const isSelected = selectedEstimations.some(e => e.id === est.id);
+                            return (
+                              <div
+                                key={est.id}
+                                className={cn(
+                                  "group relative flex items-center justify-between p-3 border rounded-xl transition-all cursor-pointer shadow-sm",
+                                  isSelected 
+                                    ? "bg-primary/5 border-primary ring-1 ring-primary" 
+                                    : "bg-background hover:border-primary/50 hover:shadow-md"
+                                )}
+                                onClick={() => toggleEstimationSelection(est)}
+                              >
+                                <div className="flex items-center gap-3 overflow-hidden">
+                                  <div className={cn(
+                                    "p-2.5 rounded-lg transition-colors",
+                                    isSelected ? "bg-primary/20" : "bg-muted group-hover:bg-primary/10"
+                                  )}>
+                                    <FileText className={cn(
+                                      "h-5 w-5",
+                                      isSelected ? "text-primary" : "text-muted-foreground group-hover:text-primary"
+                                    )} />
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-2 mb-0.5">
+                                      <span className="font-bold text-sm truncate">{est.productType}</span>
+                                      <Badge variant="outline" className="text-[9px] h-4 font-normal px-1.5 opacity-70">
+                                        {format(new Date(est.date), "dd/MM/yy", { locale: th })}
+                                      </Badge>
+                                    </div>
+                                    <p className="text-[11px] text-muted-foreground line-clamp-1 mb-1">
+                                      {est.jobDescription || est.material || "ไม่มีรายละเอียดสินค้า"}
+                                    </p>
+                                    <div className="flex items-center gap-3">
+                                      <div className="flex items-center gap-1">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-primary/40"></div>
+                                        <span className="text-[10px] font-bold text-primary">
+                                          {est.quantity.toLocaleString()} <span className="font-normal opacity-70 italic text-[9px]">ชิ้น</span>
+                                        </span>
+                                      </div>
+                                      <div className="flex items-center gap-1">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-green-500/40"></div>
+                                        <span className="text-[10px] font-extrabold text-foreground">
+                                          ฿{est.price.toLocaleString()}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1 ml-2">
+                                  <Button
+                                    type="button"
+                                    variant={isSelected ? "default" : "outline"}
+                                    size="sm"
+                                    className={cn(
+                                      "h-8 px-3 text-[10px] font-bold transition-all",
+                                      isSelected ? "shadow-inner bg-primary" : "shadow-sm border-primary/20 hover:bg-primary/10 hover:text-primary"
+                                    )}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      toggleEstimationSelection(est);
+                                    }}
+                                  >
+                                    {isSelected ? "เลือกแล้ว" : "เลือกใช้"}
+                                  </Button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div className="pt-2 flex justify-center">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="text-[11px] font-bold text-primary hover:bg-primary/5 gap-1.5"
+                            onClick={() => navigate(`/sales/price-estimation/add?customer=${encodeURIComponent(watchedCustomerName || "")}`)}
+                          >
+                            <Plus className="h-3 w-3" />
+                            ยังไม่ประเมิน? สร้างใบประเมินราคาใหม่
+                          </Button>
+                        </div>
+                      </div>
+                    );
                   })()}
                 </div>
               )}
