@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { ImageIcon, FileText, User, History, CheckCircle2 } from "lucide-react";
 import sampleArtwork from "@/assets/sample-artwork.png";
@@ -39,6 +40,20 @@ interface EstimationDetailDialogProps {
     salesOwner?: string;
     productCategory?: string;
     hasDesign?: string;
+    selectedFactory?: {
+      name: string;
+      leadTime: string;
+      procurementNotes?: string;
+      contactPerson?: string;
+      phone?: string;
+    };
+    finishType?: string;
+    frontDetails?: string[];
+    backDetails?: string[];
+    medalSize?: string;
+    medalThickness?: string;
+    lanyardSize?: string;
+    colorQuantities?: { color: string; quantity: number }[];
   } | null;
 }
 
@@ -197,56 +212,195 @@ export function EstimationDetailDialog({ open, onOpenChange, estimation }: Estim
               </Card>
 
               {/* รายละเอียดสำหรับประเมินราคา */}
-              <Card>
-                <CardHeader className="py-3">
-                  <CardTitle className="text-base font-semibold text-primary">รายละเอียดสำหรับประเมินราคา</CardTitle>
+              <Card className="overflow-hidden">
+                <CardHeader className="py-3 bg-primary/5 border-b">
+                  <CardTitle className="text-base font-bold text-primary flex items-center gap-2">
+                    <FileText className="h-4 w-4" />
+                    รายละเอียดข้อมูลสินค้า
+                  </CardTitle>
                 </CardHeader>
-                <CardContent className="py-3 pt-0">
-                  <div>
-                    <p className="text-xs text-muted-foreground">หมายเหตุ</p>
-                    <p className="font-medium text-sm text-primary">{estimation.notes || estimation.jobDescription || "สำหรับงานแข่งขันกีฬาสี"}</p>
+                <CardContent className="py-4 space-y-6">
+                  {/* Medal Specifications */}
+                  <div className="grid grid-cols-2 gap-y-4 gap-x-8">
+                    <div className="col-span-2 pb-2 border-b border-dashed">
+                      <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider mb-1">ชื่อโครงการ / PROJECT</p>
+                      <p className="font-bold text-lg text-primary">{estimation.eventName || estimation.jobDescription || "-"}</p>
+                    </div>
+
+                    <div>
+                      <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider mb-1">วัสดุ (MATERIAL)</p>
+                      <p className="font-semibold text-sm capitalize">{estimation.material || "ซิงค์อัลลอย"}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider mb-1">สีชุบ (FINISH)</p>
+                      <Badge variant="outline" className="font-semibold bg-primary/5">{estimation.finishType || "ทองเงา, เงินเงา, ทองแดงเงา"}</Badge>
+                    </div>
+
+                    <div>
+                      <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider mb-1">ขนาดเหรียญ (SIZE)</p>
+                      <p className="font-semibold text-sm">{estimation.medalSize || estimation.size || "8"} ซม.</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider mb-1">ความหนา (THICKNESS)</p>
+                      <p className="font-semibold text-sm">{estimation.medalThickness || "3"} มม.</p>
+                    </div>
+
+                    <div className="col-span-2">
+                      <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider mb-1">ขนาดสาย (RIBBON SIZE)</p>
+                      <p className="font-semibold text-sm">{estimation.lanyardSize || "90*2.5 ซม. (1แบบ)"}</p>
+                    </div>
+
+                    <div className="col-span-1">
+                      <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider mb-1">รายละเอียดด้านหน้า</p>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {(estimation.frontDetails || ["3D", "UV PRINT", "CUT OUT"]).map((d, i) => (
+                          <Badge key={i} variant="secondary" className="text-[10px] px-1">{d}</Badge>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="col-span-1">
+                      <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider mb-1">รายละเอียดด้านหลัง</p>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {(estimation.backDetails || ["ADD SAND", "CUT OUT"]).map((d, i) => (
+                          <Badge key={i} variant="secondary" className="text-[10px] px-1">{d}</Badge>
+                        ))}
+                      </div>
+                    </div>
                   </div>
+
+                  {/* Colors and Quantities Breakdown */}
+                  <div className="pt-4 border-t">
+                    <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider mb-3">สรุปจำนวนแยกตามสี (QUANTITY BREAKDOWN)</p>
+                    <div className="bg-muted/30 rounded-lg overflow-hidden border">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-muted hover:bg-muted">
+                            <TableHead className="h-8 text-[10px] font-bold text-muted-foreground">รายการสีชุบ</TableHead>
+                            <TableHead className="h-8 text-[10px] font-bold text-muted-foreground text-right">จำนวน (เหรียญ)</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {(estimation.colorQuantities || [
+                            { color: "ทองเงา", quantity: 200 },
+                            { color: "เงินเงา", quantity: 150 },
+                            { color: "แดงเงา", quantity: 100 }
+                          ]).map((cq, i) => (
+                            <TableRow key={i} className="hover:bg-transparent">
+                              <TableCell className="py-2 text-sm font-medium">{cq.color}</TableCell>
+                              <TableCell className="py-2 text-sm text-right font-bold">{cq.quantity.toLocaleString()}</TableCell>
+                            </TableRow>
+                          ))}
+                          <TableRow className="bg-primary/5 hover:bg-primary/5 font-bold">
+                            <TableCell className="py-2 text-sm text-primary">รวมจำนวนทั้งหมด</TableCell>
+                            <TableCell className="py-2 text-sm text-right text-primary">{estimation.quantity.toLocaleString()} เหรียญ</TableCell>
+                          </TableRow>
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+
+                  {/* Notes / Project Info */}
+                  {estimation.notes && (
+                    <div className="pt-4 border-t">
+                      <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider mb-1">หมายเหตุเพิ่มเติม</p>
+                      <p className="text-sm italic">{estimation.notes}</p>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
 
+              {/* ข้อมูลโรงงาน (ถ้าอนุมัติแล้ว) */}
+              {estimation.status === "อนุมัติแล้ว" && estimation.selectedFactory && (
+                <Card className="border-green-200 bg-green-50/20 dark:bg-green-950/20 dark:border-green-800">
+                  <CardHeader className="py-3">
+                    <CardTitle className="text-base font-semibold flex items-center gap-2 text-green-700 dark:text-green-400">
+                      <CheckCircle2 className="h-4 w-4" />
+                      โรงงานที่ได้รับมอบหมาย
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="py-3 pt-0 space-y-3">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider">ชื่อโรงงาน</p>
+                        <p className="font-semibold text-sm">{estimation.selectedFactory.name}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider">ระยะเวลาผลิต</p>
+                        <p className="font-semibold text-sm">{estimation.selectedFactory.leadTime}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider">ผู้ติดต่อ</p>
+                        <p className="text-sm">{estimation.selectedFactory.contactPerson || "-"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider">เบอร์โทรศัพท์</p>
+                        <a 
+                          href={`tel:${estimation.selectedFactory.phone}`} 
+                          className="text-sm text-primary hover:underline font-medium"
+                        >
+                          {estimation.selectedFactory.phone || "-"}
+                        </a>
+                      </div>
+                    </div>
+                    {estimation.selectedFactory.procurementNotes && (
+                      <div className="pt-2 border-t border-green-200/50 dark:border-green-800/50">
+                        <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider mb-1">หมายเหตุจากจัดซื้อ</p>
+                        <p className="text-sm italic text-muted-foreground">{estimation.selectedFactory.procurementNotes}</p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+
               {/* สถานะการประเมินราคา */}
-              <Card className="border-2">
-                <CardHeader className="py-3">
+              <Card className="border-2 shadow-sm">
+                <CardHeader className="py-3 bg-muted/20">
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-base font-semibold flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                      <div className={cn(
+                        "w-3 h-3 rounded-full animate-pulse", 
+                        estimation.status === "อนุมัติแล้ว" ? "bg-green-500" : "bg-red-500"
+                      )}></div>
                       สถานะการประเมินราคา
                     </CardTitle>
-                    <Badge className={cn("text-sm", getStatusColor(estimation.status))}>
+                    <Badge className={cn("text-sm transition-colors", getStatusColor(estimation.status))}>
                       <CheckCircle2 className="h-3 w-3 mr-1" />
                       {estimation.status}
                     </Badge>
                   </div>
                 </CardHeader>
-                <CardContent className="py-4 pt-0">
-                  <div className="bg-muted/30 rounded-lg p-4 space-y-3">
-                    <div className="text-center">
-                      <p className="text-xs text-muted-foreground">ราคาต่อหน่วย</p>
-                      <p className="text-3xl font-bold text-primary">
+                <CardContent className="py-4">
+                  <div className="bg-muted/30 rounded-xl p-5 space-y-4 border">
+                    <div className="text-center pb-2">
+                      <p className="text-xs text-muted-foreground uppercase font-bold tracking-widest mb-1">ราคาต่อหน่วย</p>
+                      <p className="text-4xl font-black text-primary">
                         {unitPrice.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                        <span className="text-base font-normal text-muted-foreground ml-2">บาท / เหรียญ</span>
+                        <span className="text-lg font-normal text-muted-foreground ml-2">บาท / {estimation.productType === "เหรียญสั่งผลิต" ? "เหรียญ" : "ชิ้น"}</span>
                       </p>
                     </div>
-                    <div className="flex justify-between items-center border-t pt-3">
-                      <span className="text-sm text-muted-foreground">จำนวน</span>
-                      <span className="text-sm font-medium">{estimation.quantity.toLocaleString()} เหรียญ</span>
+                    <div className="flex justify-between items-center border-t border-dashed pt-4">
+                      <span className="text-sm font-medium text-muted-foreground uppercase tracking-wider">จำนวนรวม</span>
+                      <span className="text-base font-bold">{estimation.quantity.toLocaleString()} {estimation.productType === "เหรียญสั่งผลิต" ? "เหรียญ" : "ชิ้น"}</span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm font-medium">ราคารวม</span>
-                      <span className="text-2xl font-bold text-green-600">
+                    <div className="flex justify-between items-center bg-primary/5 p-3 rounded-lg border border-primary/10">
+                      <span className="text-sm font-bold text-primary uppercase tracking-widest">ราคารวมสิทธิพิเศษ</span>
+                      <span className="text-3xl font-black text-green-600">
                         {estimation.price.toLocaleString()}
-                        <span className="text-sm font-normal text-muted-foreground ml-1">บาท</span>
+                        <span className="text-sm font-bold text-muted-foreground ml-1">บาท</span>
                       </span>
                     </div>
                   </div>
-                  <p className="text-xs text-muted-foreground text-right mt-2">
-                    อัปเดตสถานะล่าสุด: {new Date(estimation.date).toLocaleDateString('th-TH')} โดย {estimation.salesOwner || "พนักงานขาย B"}
-                  </p>
+                  <div className="flex justify-between items-center mt-4">
+                    {estimation.status === "อนุมัติแล้ว" && (
+                      <Button size="sm" className="bg-green-600 hover:bg-green-700 text-xs font-bold gap-2">
+                        <CheckCircle2 className="h-3 w-3" />
+                        เปิด PO สั่งผลิต
+                      </Button>
+                    )}
+                    <p className="text-[10px] text-muted-foreground italic ml-auto">
+                      อัปเดตสถานะล่าสุด: {new Date(estimation.date).toLocaleDateString('th-TH')} โดย {estimation.salesOwner || "พนักงานขาย B"}
+                    </p>
+                  </div>
                 </CardContent>
               </Card>
             </div>

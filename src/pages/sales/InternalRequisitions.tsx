@@ -199,16 +199,13 @@ export default function InternalRequisitions() {
       setIsUsageDialogOpen(true);
     } else {
       // Purchase request
-      setPurchaseName(item.material_name);
-      setPurchaseQty(item.qty.toString());
-      setPurchaseRequester(item.requester || purchaseRequester);
-      const remarkParts = item.remark?.split('|');
-      setPurchaseReason(remarkParts[0]?.trim() || "");
-      const budgetMatch = item.remark?.match(/งบ:\s*(\d+)/);
-      setPurchaseBudget(budgetMatch ? budgetMatch[1] : "");
       if (item.request_date && !item.request_date.startsWith("0000")) {
         setMaterialDate(new Date(item.request_date.replace(' ', 'T')));
       }
+      
+      // If it's a purchase request, set the purchase name
+      // Check if it exists in materials list for the dropdown
+      setPurchaseName(item.material_name);
       setIsPurchaseDialogOpen(true);
     }
   };
@@ -540,18 +537,49 @@ export default function InternalRequisitions() {
                   <div className="space-y-4">
                     <div className="space-y-2">
                       <Label htmlFor="material-name" className="flex items-center gap-1 font-medium">
-                        ชื่ออุปกรณ์/วัสดุ * {purchaseName.trim() && !formErrors.purchaseName && <CheckCircle2 className="w-4 h-4 text-green-500" />}
+                        ชื่ออุปกรณ์/วัสดุ * {purchaseName && !formErrors.purchaseName && <CheckCircle2 className="w-4 h-4 text-green-500" />}
                       </Label>
-                      <Input
-                        id="material-name"
-                        placeholder="กรอกชื่ออุปกรณ์หรือวัสดุ"
-                        value={purchaseName}
-                        onChange={e => { setPurchaseName(e.target.value); clearError('purchaseName'); }}
-                        className={cn(
-                          formErrors.purchaseName ? "border-red-500 ring-1 ring-red-500" :
-                            purchaseName.trim() ? "border-green-500 focus-visible:ring-green-500" : ""
+                      <div className="flex flex-col gap-2">
+                        <Select 
+                          value={materials.some(m => m.material_name === purchaseName) ? purchaseName : (purchaseName ? "custom" : "")} 
+                          onValueChange={(val) => {
+                            if (val === "custom") {
+                              setPurchaseName("");
+                            } else {
+                              setPurchaseName(val);
+                            }
+                            clearError('purchaseName');
+                          }}
+                        >
+                          <SelectTrigger className={cn(
+                            formErrors.purchaseName ? "border-red-500 ring-1 ring-red-500" :
+                            purchaseName ? "border-green-500 focus-visible:ring-green-500" : ""
+                          )}>
+                            <SelectValue placeholder="เลือกรายการวัสดุ/อุปกรณ์" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {materials.map(m => (
+                              <SelectItem key={m.id} value={m.material_name}>
+                                {m.material_name}
+                              </SelectItem>
+                            ))}
+                            <SelectItem value="custom" className="font-bold text-primary italic">+ ระบุเอง (รายการใหม่)</SelectItem>
+                          </SelectContent>
+                        </Select>
+
+                        {(!materials.some(m => m.material_name === purchaseName) || purchaseName === "") && (
+                          <Input
+                            placeholder="ระบุชื่อวัสดุ/อุปกรณ์ (รายการใหม่)"
+                            value={purchaseName}
+                            onChange={e => { setPurchaseName(e.target.value); clearError('purchaseName'); }}
+                            className={cn(
+                              "mt-1",
+                              formErrors.purchaseName ? "border-red-500 ring-1 ring-red-500" :
+                              purchaseName.trim() ? "border-green-500 focus-visible:ring-green-500" : ""
+                            )}
+                          />
                         )}
-                      />
+                      </div>
                       {formErrors.purchaseName && <p className="text-xs text-red-500">{formErrors.purchaseName}</p>}
                     </div>
                     <div className="space-y-2">
