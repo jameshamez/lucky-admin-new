@@ -749,7 +749,7 @@ export default function CreateOrder() {
           </div>
           <div className="flex gap-2">
             <Button variant="default" onClick={() => {
-              const link = `${window.location.origin}/payment/${selectedOrder?.jobId || selectedOrder?.id}`;
+              const link = `https://lucky-company.vercel.app/payment/${selectedOrder?.jobId || selectedOrder?.id}`;
               navigator.clipboard.writeText(link);
               toast({ title: "คัดลอกลิงก์สำเร็จ", description: "คัดลอกลิงก์สั่งซื้อลงคลิปบอร์ดแล้ว" });
             }}>
