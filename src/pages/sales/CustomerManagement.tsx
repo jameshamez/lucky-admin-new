@@ -566,21 +566,21 @@ export default function CustomerManagement() {
     }
     // ----------------------
 
-    if (Object.keys(errors).length > 0) {
-      setFormErrors(errors);
-      // Auto-scroll to the first errored field
-      const firstErrorKey = Object.keys(errors)[0];
-      const el = document.getElementById(`field-${firstErrorKey}`);
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-      toast({
-        title: "ข้อมูลไม่ครบถ้วน",
-        description: "กรุณากรอกข้อมูลในช่องที่จำเป็นและถูกต้องทั้งหมด",
-        variant: "destructive"
-      });
-      return;
-    }
+    // if (Object.keys(errors).length > 0) {
+    //   setFormErrors(errors);
+    //   // Auto-scroll to the first errored field
+    //   const firstErrorKey = Object.keys(errors)[0];
+    //   const el = document.getElementById(`field-${firstErrorKey}`);
+    //   if (el) {
+    //     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    //   }
+    //   toast({
+    //     title: "ข้อมูลไม่ครบถ้วน",
+    //     description: "กรุณากรอกข้อมูลในช่องที่จำเป็นและถูกต้องทั้งหมด",
+    //     variant: "destructive"
+    //   });
+    //   return;
+    // }
     setFormErrors({});
 
     try {
@@ -1110,7 +1110,7 @@ export default function CustomerManagement() {
                 </div>
               </div>
 
-              <form onSubmit={(e) => { e.preventDefault(); if (addStep === 3) handleAddCustomer(); else setAddStep(s => s + 1); }} className="px-6 py-4">
+              <form onSubmit={(e) => { e.preventDefault(); }} onKeyDown={(e) => { if (e.key === 'Enter' && (e.target as HTMLElement).tagName !== 'TEXTAREA') e.preventDefault(); }} className="px-6 py-4">
                 <div className="min-h-[400px]">
                   {addStep === 0 && (
                     <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
@@ -1626,7 +1626,7 @@ export default function CustomerManagement() {
                         ถัดไป <ArrowRight className="w-4 h-4" />
                       </Button>
                     ) : (
-                      <Button type="submit" className="bg-green-600 hover:bg-green-700 gap-2 px-8 shadow-md">
+                      <Button type="button" onClick={handleAddCustomer} className="bg-green-600 hover:bg-green-700 gap-2 px-8 shadow-md">
                         <Save className="w-4 h-4" /> บันทึกลูกค้า
                       </Button>
                     )}
