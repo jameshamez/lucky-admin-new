@@ -41,8 +41,6 @@ export default function PriceEstimationDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
 
-  // Mock artwork images - replace with actual data
-  const artworkImages = [sampleArtwork];
   const [selectedArtwork, setSelectedArtwork] = useState(0);
   const [isFullscreenOpen, setIsFullscreenOpen] = useState(false);
   const [isUploadHistoryOpen, setIsUploadHistoryOpen] = useState(false);
@@ -91,14 +89,13 @@ export default function PriceEstimationDetail() {
     });
   };
 
+  const [estimation, setEstimation] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Mock design files upload history - replace with actual data
-  const designFileHistory: DesignFileUpload[] = [
-    { fileName: "artwork_final_v3.ai", uploadDate: "2024-01-18", uploadTime: "14:32:15", uploadedBy: "สมชาย กราฟิก" },
-    { fileName: "artwork_v2.ai", uploadDate: "2024-01-16", uploadTime: "10:15:42", uploadedBy: "สมหญิง ดีไซน์" },
-    { fileName: "artwork_draft.ai", uploadDate: "2024-01-14", uploadTime: "09:20:30", uploadedBy: "สมชาย กราฟิก" },
-  ];
-
+  // Dynamic values from estimation
+  const artworkImages = estimation?.artworkImages || [];
+  const designFileHistory: DesignFileUpload[] = estimation?.designFiles || [];
+  
   // Get the latest uploaded file (first item in history)
   const latestDesignFile = designFileHistory.length > 0 ? designFileHistory[0] : null;
 
@@ -129,6 +126,29 @@ export default function PriceEstimationDetail() {
             });
           }
 
+          let parsedArtworkImages = [];
+          if (detailObj.customerReferenceImages && Array.isArray(detailObj.customerReferenceImages)) {
+             parsedArtworkImages = detailObj.customerReferenceImages.map((img: any) => img.url || img);
+          } else if (detailObj.referenceImages && Array.isArray(detailObj.referenceImages)) {
+             parsedArtworkImages = detailObj.referenceImages.map((img: any) => img.url || img);
+          }
+
+          let parsedDesignFiles: DesignFileUpload[] = [];
+          if (detailObj.attachedFiles && Array.isArray(detailObj.attachedFiles)) {
+             parsedDesignFiles = detailObj.attachedFiles.map((file: any, i: number) => {
+                const isObj = typeof file === 'object' && file !== null;
+                const uploadRaw = item.estimation_date || '';
+                const parts = uploadRaw.split(' ');
+                
+                return {
+                  fileName: isObj && file.name ? file.name : (isObj && file.fileName ? file.fileName : `ไฟล์แนบ_${i+1}`),
+                  uploadDate: parts[0] || new Date().toISOString().split('T')[0],
+                  uploadTime: parts[1] || '00:00:00',
+                  uploadedBy: item.sales_owner_id || "ลูกค้า"
+                };
+             });
+          }
+
           setEstimation({
             id: item.id,
             estimateId: item.estimate_id,
@@ -144,7 +164,7 @@ export default function PriceEstimationDetail() {
             eventDate: detailObj.usage_date || null,
             productCategory: item.product_category || "-",
             productType: detailObj.productCategoryText || item.product_type || "-",
-            hasDesign: "มีแบบ",
+            hasDesign: detailObj.hasDesign ? "มีแบบ" : (parsedArtworkImages.length > 0 ? "มีแบบ" : "ไม่มีแบบ"),
             material: detailObj.material || "-",
             finishType: detailObj.finish || "",
             colorQuantities: colorQuantities,
@@ -157,7 +177,9 @@ export default function PriceEstimationDetail() {
             lanyardSize: detailObj.lanyardSize || "-",
             lanyardPatterns: detailObj.lanyardPatterns || "",
             notes: item.notes || "",
-            attachedFiles: [],
+            attachedFiles: parsedDesignFiles.map(f => f.fileName), // compatibility for bottom section
+            artworkImages: parsedArtworkImages,
+            designFiles: parsedDesignFiles,
             approvedUnitPrice: item.price ? parseFloat(item.price) : 0,
             genericDesignDetails: detailObj.genericDesignDetails || "",
             selectedFactory: detailObj.selectedFactory || null

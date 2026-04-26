@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-const API_BASE_URL = "https://nacres.co.th/api-lucky/admin/sales_settings.php";
+const API_BASE_URL = "https://nacres.co.th/api-lucky/admin";
 
 export default function SalesSettings() {
   const [openDialog, setOpenDialog] = useState(false);
@@ -48,7 +48,7 @@ export default function SalesSettings() {
   const fetchAllData = async () => {
     setLoading(true);
     try {
-      const response = await fetch(API_BASE_URL);
+      const response = await fetch(`${API_BASE_URL}/sales_settings.php`);
       const result = await response.json();
       if (result.status === "success") {
         const { master_data, sales_targets, activity_targets } = result.data;
@@ -65,7 +65,7 @@ export default function SalesSettings() {
         setActivityTargets(activity_targets);
 
         // Fetch employees
-        const empResponse = await fetch(API_BASE_URL.replace('sales_settings.php', 'employees.php'));
+        const empResponse = await fetch(`${API_BASE_URL}/employees.php`);
         const empResult = await empResponse.json();
         if (empResult.status === "success") {
           setEmployees(empResult.data);
@@ -85,7 +85,7 @@ export default function SalesSettings() {
 
   const handleSaveMasterData = async (name: string, description: string, color: string | null = null) => {
     try {
-      const response = await fetch(API_BASE_URL, {
+      const response = await fetch(`${API_BASE_URL}/sales_settings.php`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -113,7 +113,7 @@ export default function SalesSettings() {
   const handleDeleteMasterData = async (id: number) => {
     if (!confirm("คุณต้องการลบข้อมูลนี้ใช่หรือไม่?")) return;
     try {
-      const response = await fetch(`${API_BASE_URL}?type=master_data&id=${id}`, {
+      const response = await fetch(`${API_BASE_URL}/sales_settings.php?type=master_data&id=${id}`, {
         method: "DELETE"
       });
       const result = await response.json();
@@ -130,7 +130,7 @@ export default function SalesSettings() {
 
   const handleSaveSalesTarget = async (data: any) => {
     try {
-      const response = await fetch(API_BASE_URL, {
+      const response = await fetch(`${API_BASE_URL}/sales_settings.php`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -155,7 +155,7 @@ export default function SalesSettings() {
   const handleDeleteSalesTarget = async (id: number) => {
     if (!confirm("คุณต้องการลบข้อมูลนี้ใช่หรือไม่?")) return;
     try {
-      const response = await fetch(`${API_BASE_URL}?type=sales_targets&id=${id}`, {
+      const response = await fetch(`${API_BASE_URL}/sales_settings.php?type=sales_targets&id=${id}`, {
         method: "DELETE"
       });
       const result = await response.json();
@@ -172,7 +172,7 @@ export default function SalesSettings() {
 
   const handleSaveActivityTarget = async (data: any) => {
     try {
-      const response = await fetch(API_BASE_URL, {
+      const response = await fetch(`${API_BASE_URL}/sales_settings.php`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -197,7 +197,7 @@ export default function SalesSettings() {
   const handleDeleteActivityTarget = async (id: number) => {
     if (!confirm("คุณต้องการลบข้อมูลนี้ใช่หรือไม่?")) return;
     try {
-      const response = await fetch(`${API_BASE_URL}?type=activity_targets&id=${id}`, {
+      const response = await fetch(`${API_BASE_URL}/sales_settings.php?type=activity_targets&id=${id}`, {
         method: "DELETE"
       });
       const result = await response.json();

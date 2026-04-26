@@ -30,7 +30,10 @@ import {
   Globe,
   MapPin,
   ThumbsUp,
-  Eye
+  Eye,
+  MessageSquare,
+  RotateCcw,
+  ZoomIn
 } from "lucide-react";
 import { toast } from "sonner";
 import artworkSample from "@/assets/artwork-sample.png";
@@ -38,6 +41,7 @@ import QCVerificationCards from "@/components/sales/QCVerificationCards";
 import LogisticsDeliveryCards from "@/components/sales/LogisticsDeliveryCards";
 import ProductionProgressBar from "@/components/sales/ProductionProgressBar";
 import { ProductionOrderInfoReadOnly, OrderShippingData } from "@/components/procurement/ProductionOrderInfo";
+import { designJobService, DesignJob } from "@/services/designJobService";
 
 // Status list for "เหรียญสั่งผลิต + ลูกค้ามีแบบแล้ว"
 const productStatusList = [
@@ -448,9 +452,9 @@ const getStatusIndex = (status: string) => {
 };
 
 // Helper to find the slowest item (lowest status index)
-const getSlowestItem = (items: OrderItem[]) => {
+const getSlowestItem = (items: any[]) => {
   let slowestIndex = Infinity;
-  let slowestItem: OrderItem | null = null;
+  let slowestItem: any | null = null;
 
   items.forEach(item => {
     const index = getStatusIndex(item.currentStatus);
@@ -464,7 +468,7 @@ const getSlowestItem = (items: OrderItem[]) => {
 };
 
 // Helper to count items by status category
-const getStatusCounts = (items: OrderItem[]) => {
+const getStatusCounts = (items: any[]) => {
   const counts: { [key: string]: number } = {};
   items.forEach(item => {
     const status = item.currentStatus;
@@ -489,120 +493,182 @@ export default function OrderDetail() {
     vehicleInfo: null as { driverName?: string; vehiclePlate?: string; contactPhone?: string } | null,
   };
 
-  const [order, setOrder] = useState<Order | null>(null);
+  const [order, setOrder] = useState<any | null>(null);
+  const [designJob, setDesignJob] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [rejectionReason, setRejectionReason] = useState("");
 
-  useEffect(() => {
-    const fetchOrderDetail = async () => {
-      if (!orderId) return;
-      setIsLoading(true);
-      try {
-        let finalOrderId = orderId;
+  const fetchOrderDetail = async () => {
+    if (!orderId) return;
+    setIsLoading(true);
+    try {
+      let finalOrderId = orderId;
 
-        // If orderId is not numeric (is a job_id like JOB-xxx), find the numeric order_id first
-        if (isNaN(Number(orderId))) {
-          const searchRes = await fetch(`https://nacres.co.th/api-lucky/admin/orders.php?search=${orderId}`);
-          const searchJson = await searchRes.json();
-          if (searchJson.status === "success" && searchJson.data && searchJson.data.length > 0) {
-            // Find exact match by job_id
-            const match = searchJson.data.find((d: any) => d.job_id === orderId);
-            if (match) {
-              finalOrderId = String(match.order_id);
-            }
+      if (isNaN(Number(orderId))) {
+        const searchRes = await fetch(`https://nacres.co.th/api-lucky/admin/orders.php?search=${orderId}`);
+        const searchJson = await searchRes.json();
+        if (searchJson.status === "success" && searchJson.data && searchJson.data.length > 0) {
+          const match = searchJson.data.find((d: any) => d.job_id === orderId);
+          if (match) {
+            finalOrderId = String(match.order_id);
           }
         }
+      }
 
-        // Fetch full detail using numeric id (actually uses order_id param if my fix at line 57 works or search works)
-        // Since I fixed line 57 to order_id = ?, I'll try to find a way to pass it.
-        // Actually, let's use the param name that works: order_id
-        const res = await fetch(`https://nacres.co.th/api-lucky/admin/orders.php?order_id=${finalOrderId}`);
-        const json = await res.json();
+      const res = await fetch(`https://nacres.co.th/api-lucky/admin/orders.php?order_id=${finalOrderId}`);
+      const json = await res.json();
 
-        if (json.status === "success" && json.data) {
-          // The API might return the array from search or single object from detail
-          const apiData = Array.isArray(json.data) ? json.data[0] : json.data;
+      if (json.status === "success" && json.data) {
+        const apiData = Array.isArray(json.data) ? json.data[0] : json.data;
 
-          if (!apiData) {
-            setOrder(null);
-            return;
-          }
+        let broadStatus = "pending_approval";
+        const os = apiData.order_status;
+        if (["กำลังผลิต", "ตรวจสอบ Artwork จากโรงงาน", "ตรวจสอบ CNC", "อัปเดทปั้มชิ้นงาน", "อัปเดตสาย"].includes(os)) {
+          broadStatus = "in_production";
+        } else if (["อัปเดตชิ้นงานก่อนจัดส่ง", "งานเสร็จสมบูรณ์"].includes(os)) {
+          broadStatus = "ready_to_ship";
+        } else if (["อยู่ระหว่างขนส่ง", "สินค้ามาส่งที่ร้าน", "จัดส่งเรียบร้อย"].includes(os)) {
+          broadStatus = "shipped";
+        }
 
-          // Broad status mapping
-          let broadStatus = "pending_approval";
-          const os = apiData.order_status;
-          if (["กำลังผลิต", "ตรวจสอบ Artwork จากโรงงาน", "ตรวจสอบ CNC", "อัปเดทปั้มชิ้นงาน", "อัปเดตสาย"].includes(os)) {
-            broadStatus = "in_production";
-          } else if (["อัปเดตชิ้นงานก่อนจัดส่ง", "งานเสร็จสมบูรณ์"].includes(os)) {
-            broadStatus = "ready_to_ship";
-          } else if (["อยู่ระหว่างขนส่ง", "สินค้ามาส่งที่ร้าน", "จัดส่งเรียบร้อย"].includes(os)) {
-            broadStatus = "shipped";
-          }
-
-          // Map order items
-          const mappedItems: OrderItem[] = (apiData.items || []).map((item: any) => ({
+        // Map order items
+        const mappedItems: any[] = (apiData.items || []).map((item: any) => {
+          const isReadymade = item.item_type === 'readymade' || item.item_type === 'catalog';
+          const details = item.details || {};
+          return {
             id: item.id || item.item_id,
             name: item.product_name || apiData.job_name || "สินค้า",
-            description: item.notes || apiData.notes || "-",
+            description: [
+              item.size ? `ขนาด: ${item.size}` : null,
+              item.color ? `สี: ${item.color}` : null,
+              item.material ? `วัสดุ: ${item.material}` : null,
+              apiData.notes || null
+            ].filter(Boolean).join(' | ') || "-",
             quantity: parseInt(item.quantity) || 1,
-            currentStatus: item.status || apiData.order_status || "รอคำสั่งซื้อ",
+            currentStatus: apiData.order_status || "สร้างคำสั่งซื้อใหม่",
             statusHistory: [],
-            productType: apiData.product_category === "readymade" ? "readymade" : "madeToOrder",
-            material: item.details?.material || "-",
-            model: item.details?.model || "-",
-            modelSize: item.details?.size || "-",
-          }));
+            productType: isReadymade ? "readymade" : "madeToOrder",
+            material: item.material || details.material || "-",
+            model: item.product_code || details.model || "-",
+            modelSize: item.size || details.size || "-",
+          };
+        });
 
-          // Fallback if no items array
-          if (mappedItems.length === 0) {
-            mappedItems.push({
-              id: 1,
-              name: apiData.job_name || "สินค้า",
-              description: apiData.notes || "-",
-              quantity: 1,
-              currentStatus: apiData.order_status || "รอคำสั่งซื้อ",
-              statusHistory: [],
-              productType: apiData.product_category === "readymade" ? "readymade" : "madeToOrder"
-            });
-          }
-
-          setOrder({
-            id: apiData.job_id || String(apiData.order_id),
-            customer: apiData.customer_name || "ไม่ระบุชื่อ",
-            items: apiData.job_name || "ไม่ระบุรายการ",
-            orderDate: (apiData.order_date || "").split(" ")[0],
-            dueDate: apiData.delivery_date || apiData.usage_date || "-",
-            status: broadStatus,
-            value: parseFloat(apiData.total_price ?? apiData.total_amount) || 0,
-            progress: 0,
-            type: apiData.product_category || "internal",
-            location: apiData.event_location || "domestic",
-            department: apiData.responsible_person || "-",
-            lineId: apiData.customer_line || "-",
-            phone: apiData.customer_phone || "-",
-            email: apiData.customer_email || "-",
-            address: apiData.customer_address || apiData.delivery_address || "-",
-            taxId: apiData.tax_id || "-",
-            orderItems: mappedItems,
-            graphicsNotes: apiData.graphics_notes || null,
-            designFiles: apiData.design_files ? (typeof apiData.design_files === 'string' ? JSON.parse(apiData.design_files) : apiData.design_files) : [],
-            quotationUrl: apiData.quotation_url || null,
-            invoiceType: apiData.invoice_type || "no-tax-invoice",
-            payments: apiData.payments || [],
-            originBranch: apiData.origin_branch,
-            destinationBranch: apiData.destination_branch,
-            preferredTimeSlot: apiData.preferred_time_slot,
+        // Fallback if no items array
+        if (mappedItems.length === 0) {
+          const isReadymade = (apiData.product_category || '').toLowerCase().includes('readymade');
+          mappedItems.push({
+            id: 1,
+            name: apiData.job_name || "สินค้า",
+            description: apiData.notes || "-",
+            quantity: 1,
+            currentStatus: apiData.order_status || "สร้างคำสั่งซื้อใหม่",
+            statusHistory: [],
+            productType: isReadymade ? "readymade" : "madeToOrder",
+            material: "-",
+            model: "-",
+            modelSize: "-"
           });
         }
-      } catch (err) {
-        console.error(err);
-        toast.error("ดึงข้อมูลคำสั่งซื้อล้มเหลว");
-      } finally {
-        setIsLoading(false);
-      }
-    };
 
+        setOrder({
+          id: apiData.job_id || String(apiData.order_id),
+          customer: apiData.customer_name || "ไม่ระบุชื่อ",
+          items: apiData.job_name || "ไม่ระบุรายการ",
+          orderDate: (apiData.order_date || "").split(" ")[0],
+          dueDate: apiData.delivery_date || apiData.usage_date || "-",
+          status: broadStatus,
+          value: parseFloat(apiData.total_price ?? apiData.total_amount) || 0,
+          progress: 0,
+          type: apiData.product_category || "internal",
+          location: apiData.event_location || "domestic",
+          department: apiData.responsible_person || "-",
+          lineId: apiData.customer_line || "-",
+          phone: apiData.customer_phone || "-",
+          email: apiData.customer_email || "-",
+          address: apiData.customer_address || apiData.delivery_address || "-",
+          taxId: apiData.tax_id || "-",
+          orderItems: mappedItems,
+          graphicsNotes: apiData.graphics_notes || null,
+          designFiles: apiData.design_files ? (typeof apiData.design_files === 'string' ? JSON.parse(apiData.design_files) : apiData.design_files) : [],
+          quotationUrl: apiData.quotation_url || null,
+          invoiceType: apiData.invoice_type || "no-tax-invoice",
+          payments: apiData.payments || [],
+          originBranch: apiData.origin_branch,
+          destinationBranch: apiData.destination_branch,
+          preferredTimeSlot: apiData.preferred_time_slot,
+        });
+
+        try {
+          const djRes = await designJobService.getJobs({ job_code: apiData.job_id || orderId });
+          if (djRes.status === "success" && djRes.data && djRes.data.length > 0) {
+            const match = djRes.data.find((j: any) => j.job_code === (apiData.job_id || orderId));
+            if (match) {
+              setDesignJob(match);
+            }
+          }
+        } catch (e) {
+          console.error("Error fetching design job:", e);
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("ดึงข้อมูลคำสั่งซื้อล้มเหลว");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchOrderDetail();
   }, [orderId]);
+
+  const handleApproveArtwork = async () => {
+    if (!designJob?.id) return;
+
+    try {
+      await designJobService.updateJob(designJob.id, {
+        artwork_status: 'approved',
+        status: 'ผลิตชิ้นงาน',
+        feedback: 'เซลล์อนุมัติแบบแล้ว'
+      });
+
+      await fetch(`https://nacres.co.th/api-lucky/admin/orders.php?id=${orderId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_status: 'ไฟล์ผลิตพร้อมสั่งผลิต' })
+      });
+
+      toast.success("อนุมัติแบบ Artwork สำเร็จ", {
+        description: "ระบบได้แจ้งแผนกผลิตและจัดซื้อแล้ว"
+      });
+      fetchOrderDetail();
+    } catch (e) {
+      toast.error("เกิดข้อผิดพลาดในการอนุมัติ");
+    }
+  };
+
+  const handleRejectArtwork = async () => {
+    if (!designJob?.id) return;
+    if (!rejectionReason.trim()) {
+      toast.error("กรุณาระบุเหตุผลที่ต้องการให้แก้ไข");
+      return;
+    }
+
+    try {
+      await designJobService.updateJob(designJob.id, {
+        artwork_status: 'rejected',
+        status: 'แก้ไข',
+        feedback: rejectionReason
+      });
+
+      toast.info("ส่งกลับให้กราฟิกแก้ไขเรียบร้อยแล้ว");
+      setRejectionReason("");
+      fetchOrderDetail();
+    } catch (e) {
+      toast.error("เกิดข้อผิดพลาดในการส่งกลับ");
+    }
+  };
 
   if (isLoading) {
     return (
@@ -1006,16 +1072,86 @@ export default function OrderDetail() {
               <p className="text-sm text-muted-foreground mb-3">รูป Artwork</p>
               <div className="border rounded-lg p-4 bg-muted/20">
                 <div className="flex justify-center">
-                  {/* <img
-                    src={artworkSample}
-                    alt="Artwork Preview"
-                    className="max-w-full h-auto max-h-96 object-contain cursor-pointer hover:opacity-90 transition-opacity"
-                  /> */}
+                  {designJob?.artwork_image ? (
+                    <img
+                      src={designJob.artwork_image}
+                      alt="Artwork Preview"
+                      className="max-w-full h-auto max-h-96 object-contain cursor-pointer hover:opacity-90 transition-opacity"
+                      onClick={() => setEnlargedImage(designJob.artwork_image!)}
+                    />
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+                      <ImageIcon className="w-12 h-12 mb-2 opacity-20" />
+                      <p>ยังไม่มีการอัพโหลดรูป Artwork</p>
+                    </div>
+                  )}
                 </div>
-                {/* <p className="text-sm text-primary text-center mt-3 cursor-pointer hover:underline">
-                  คลิกที่รูปเพื่อขยายเต็มจอ
-                </p> */}
+                {designJob?.artwork_image && (
+                  <p className="text-sm text-primary text-center mt-3 cursor-pointer hover:underline">
+                    คลิกที่รูปเพื่อขยายเต็มจอ
+                  </p>
+                )}
               </div>
+
+              {/* Artwork Approval Interface for Sales */}
+              {designJob?.artwork_status === 'pending_review' && (
+                <div className="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-xl animate-in fade-in slide-in-from-top-2 duration-500">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center">
+                      <MessageSquare className="w-5 h-5 text-amber-600" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-amber-900">ตรวจจารึก / แบบป้าย</h3>
+                      <p className="text-xs text-amber-700">กราฟิกส่งแบบให้คุณตรวจสอบ กรุณายืนยันเพื่อดำเนินการต่อ</p>
+                    </div>
+                    <Badge className="ml-auto bg-amber-500 text-white border-none">รอคุณอนุมัติ</Badge>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-amber-800">ความคิดเห็น / เหตุผลที่ต้องการให้แก้ไข (กรณีไม่ผ่าน)</label>
+                      <textarea
+                        className="w-full min-h-[80px] p-3 text-sm border rounded-lg focus:ring-2 focus:ring-amber-500 outline-none"
+                        placeholder="ระบุสิ่งที่ต้องการให้แก้ไข..."
+                        value={rejectionReason}
+                        onChange={(e) => setRejectionReason(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="flex gap-3">
+                      <Button 
+                        onClick={handleApproveArtwork}
+                        className="flex-1 bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-200"
+                      >
+                        <CheckCircle2 className="w-4 h-4 mr-2" />
+                        อนุมัติแบบ (ผ่าน)
+                      </Button>
+                      <Button 
+                        onClick={handleRejectArtwork}
+                        variant="outline"
+                        className="flex-1 border-red-200 text-red-600 hover:bg-red-50"
+                      >
+                        <XCircle className="w-4 h-4 mr-2" />
+                        ส่งกลับแก้ไข
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Status Badge for existing states */}
+              {designJob?.artwork_status === 'approved' && (
+                <div className="mt-4 p-3 bg-green-50 border border-green-100 rounded-lg flex items-center gap-3 text-green-700">
+                  <CheckCircle2 className="w-5 h-5" />
+                  <span className="text-sm font-medium">อนุมัติแบบจารึกแล้ว - พร้อมสั่งผลิต</span>
+                </div>
+              )}
+              {designJob?.artwork_status === 'rejected' && (
+                <div className="mt-4 p-3 bg-red-50 border border-red-100 rounded-lg flex items-center gap-3 text-red-700">
+                  <RotateCcw className="w-5 h-5" />
+                  <span className="text-sm font-medium">ส่งกลับแก้ไข - รอรายละเอียดจากกราฟิก</span>
+                </div>
+              )}
             </div>
 
             {/* Design Files */}

@@ -408,7 +408,7 @@ export default function CreateOrder() {
 
         // ราคา
         subtotal: parseFloat(data.subtotal ?? 0),
-        delivery_cost: parseFloat(data.deliveryCost ?? 0),
+        delivery_cost: parseFloat(deliveryInfo.shippingCost ?? data.deliveryCost ?? 0),
         vat_amount: parseFloat(data.vatAmount ?? 0),
         total_price: parseFloat(data.totalPrice ?? data.totalAmount ?? 0),
 
@@ -748,6 +748,9 @@ export default function CreateOrder() {
             <p className="text-muted-foreground">ข้อมูลคำสั่งซื้อทั้งหมด</p>
           </div>
           <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => handleEditOrder(selectedOrder)}>
+              แก้ไขคำสั่งซื้อ
+            </Button>
             <Button variant="default" onClick={() => {
               const link = `https://lucky-company.vercel.app/payment/${selectedOrder?.jobId || selectedOrder?.id}`;
               navigator.clipboard.writeText(link);

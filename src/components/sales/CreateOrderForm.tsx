@@ -115,6 +115,7 @@ const createOrderSchema = z.object({
     deliveryMethod: z.string().optional(),
     preferredDeliveryDate: z.date().optional(),
     paymentMethod: z.string().optional(),
+    shippingCost: z.string().optional(),
     shippingPaymentProof: z.any().optional(),
     deliveryInstructions: z.string().optional(),
     pickupDate: z.date().optional(),
@@ -594,6 +595,7 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
   }>({ type: '', amount: '', transferDate: undefined, slipFile: null, slipPreview: '', slipUrl: '', additionalDetails: '', receivingBank: '' });
 
   const [isUploading, setIsUploading] = useState(false);
+  const [eventLocationOpen, setEventLocationOpen] = useState(false);
 
   // Graphics connection info
   const [graphicsNotes, setGraphicsNotes] = useState("");
@@ -610,7 +612,41 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
     { value: "promptpay", label: "PromptPay / พร้อมเพย์", account: "xxx-xxx-xxxx" },
   ];
 
-  // Price estimation data (from /sales/price-estimation)
+  // Price estimation data
+  const [fetchedPriceEstimations, setFetchedPriceEstimations] = useState<any[]>([]);
+
+  // Load real estimations from API on mount
+  useEffect(() => {
+    fetch('https://nacres.co.th/api-lucky/admin/price_estimations.php')
+      .then(r => r.json())
+      .then(json => {
+        if (json.status === "success" && json.data) {
+          // map to expected format in getFilteredEstimations
+          const mapped = json.data.map((item: any) => {
+             let detailObj: any = {};
+             try { detailObj = typeof item.details === 'string' ? JSON.parse(item.details) : (item.details || {}); } catch(e) {}
+             
+             return {
+               id: item.id,
+               date: item.estimation_date,
+               lineName: item.customer_line || detailObj.customerLine || "",
+               productType: detailObj.productCategoryText || item.product_type || "",
+               quantity: parseInt(item.quantity) || detailObj.totalQuantity || 0,
+               price: parseFloat(item.price) || 0,
+               status: String(item.status) === "0" ? "ยื่นคำขอประเมิน" : item.status,
+               customerName: item.customer_name || "",
+               customerPhone: item.customer_phone || "",
+               customerEmail: item.customer_email || "",
+               jobDescription: item.job_name || "-",
+               material: detailObj.material || "",
+             };
+          });
+          setFetchedPriceEstimations(mapped);
+        }
+      })
+      .catch(err => console.warn("Failed to fetch real estimators", err));
+  }, []);
+
   const basePriceEstimations = [
     {
       id: 1,
@@ -783,11 +819,16 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
       // Filter out cancelled estimations
       if (est.status === "ยกเลิก") return false;
 
-      // Match by LINE ID or customer name
-      const matchesLine =
-        customerLine && est.lineName.toLowerCase().includes(customerLine.toLowerCase());
-      const matchesName =
-        customerName && est.customerName.toLowerCase().includes(customerName.toLowerCase());
+      // Match by LINE ID or customer name (case-insensitive)
+      const lineToMatch = customerLine.toLowerCase();
+      const nameToMatch = customerName.toLowerCase();
+      
+      const recordLine = (est.lineName || "").toLowerCase();
+      const recordCustomerLine = (est.customerLine || "").toLowerCase(); // Check alternative field
+      const recordName = (est.customerName || "").toLowerCase();
+
+      const matchesLine = lineToMatch && (recordLine.includes(lineToMatch) || recordCustomerLine.includes(lineToMatch));
+      const matchesName = nameToMatch && recordName.includes(nameToMatch);
 
       // Match by product type
       const matchesProduct = est.productType === selectedProductLabel;
@@ -807,11 +848,16 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
       // Filter out cancelled estimations
       if (est.status === "ยกเลิก") return false;
 
-      // Match by LINE ID or customer name
-      const matchesLine =
-        customerLine && est.lineName.toLowerCase().includes(customerLine.toLowerCase());
-      const matchesName =
-        customerName && est.customerName.toLowerCase().includes(customerName.toLowerCase());
+      // Match by LINE ID or customer name (case-insensitive)
+      const lineToMatch = customerLine.toLowerCase();
+      const nameToMatch = customerName.toLowerCase();
+      
+      const recordLine = (est.lineName || "").toLowerCase();
+      const recordCustomerLine = (est.customerLine || "").toLowerCase(); // Check alternative field
+      const recordName = (est.customerName || "").toLowerCase();
+
+      const matchesLine = lineToMatch && (recordLine.includes(lineToMatch) || recordCustomerLine.includes(lineToMatch));
+      const matchesName = nameToMatch && recordName.includes(nameToMatch);
 
       return matchesLine || matchesName;
     });
@@ -1053,19 +1099,23 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
   // If user navigated from PriceEstimation, merge that record into the list
   // (and replace same-id records to prevent mock ID collision)
   const priceEstimations = useMemo(() => {
-    if (!estimationData) return basePriceEstimations;
+    const combinedBase = fetchedPriceEstimations.length > 0 ? fetchedPriceEstimations : basePriceEstimations;
+
+    if (!estimationData) return combinedBase;
 
     const merged = {
       ...estimationData,
       status: estimationData.status || "อนุมัติแล้ว",
-      customerName: watchedCustomerName || "",
+      customerName: watchedCustomerName || estimationData.customerName || "",
+      customerLine: watchedCustomerLine || estimationData.lineName || "",
+      lineName: watchedCustomerLine || estimationData.lineName || "", // fallback field mapping
       customerPhone: watchedCustomerPhone || "",
       customerEmail: watchedCustomerEmail || "",
       jobDescription: undefined,
     };
 
-    return [merged, ...basePriceEstimations.filter((e) => e.id !== estimationData.id)];
-  }, [estimationData, watchedCustomerName, watchedCustomerPhone, watchedCustomerEmail]);
+    return [merged, ...combinedBase.filter((e) => e.id !== estimationData.id)];
+  }, [estimationData, fetchedPriceEstimations, watchedCustomerName, watchedCustomerLine, watchedCustomerPhone, watchedCustomerEmail]);
 
   // Load address database immediately on mount
   useEffect(() => {
@@ -2419,10 +2469,52 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
     form.handleSubmit(handleSubmit)();
     console.log("Ordering production...");
   };
-  const handleInvalid = () => {
+  const handleInvalid = (errors: any) => {
+    // Map error field names to Thai labels for friendly toast message
+    const fieldLabels: Record<string, string> = {
+      responsiblePerson: "พนักงานที่รับผิดชอบ",
+      customerName: "ชื่อลูกค้า",
+      customerPhone: "เบอร์โทร",
+      customerEmail: "อีเมล",
+      taxPayerName: "ชื่อผู้เสียภาษี",
+      taxId: "เลขประจำตัวผู้เสียภาษี",
+      taxAddress: "ที่อยู่ผู้เสียภาษี",
+      urgencyLevel: "ความเร่งด่วน",
+      jobName: "ชื่องาน",
+      eventLocation: "สถานที่จัดงาน (จังหวัด)",
+      usageDate: "วันที่ใช้งาน",
+      productType: "ประเภทสินค้า",
+      deliveryType: "ประเภทการรับสินค้า",
+      "deliveryInfo.recipientName": "ชื่อ-นามสกุลผู้รับ",
+      "deliveryInfo.recipientPhone": "เบอร์โทรผู้รับ",
+      "deliveryInfo.address": "ที่อยู่สำหรับจัดส่ง",
+      "deliveryInfo.province": "จังหวัดจัดส่ง",
+      "deliveryInfo.district": "เขต/อำเภอจัดส่ง",
+      "deliveryInfo.subdistrict": "แขวง/ตำบลจัดส่ง",
+      "deliveryInfo.postalCode": "รหัสไปรษณีย์",
+    };
+
+    const emptyFields: string[] = [];
+    
+    const extractErrors = (obj: any, parentKey = "") => {
+      if (!obj) return;
+      Object.keys(obj).forEach((key) => {
+        const currentPath = parentKey ? `${parentKey}.${key}` : key;
+        if (obj[key]?.message) {
+           emptyFields.push(fieldLabels[currentPath] || currentPath);
+        } else if (typeof obj[key] === 'object') {
+           extractErrors(obj[key], currentPath);
+        }
+      });
+    };
+
+    extractErrors(errors);
+
     toast({
-      title: "บันทึกไม่ได้",
-      description: "กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน",
+      title: "ข้อมูลไม่ครบถ้วน",
+      description: emptyFields.length > 0 
+        ? `กรุณาตรวจสอบ: ${emptyFields.join(", ")}`
+        : "กรุณากรอกข้อมูลที่จำเป็นในจุดที่มีข้อความสีแดงให้ครบถ้วน",
       variant: "destructive",
     });
 
@@ -3285,7 +3377,7 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
               render={({ field }) => (
                 <FormItem className="flex flex-col">
                   <FormLabel>สถานที่จัดงาน (จังหวัด)</FormLabel>
-                  <Popover>
+                  <Popover open={eventLocationOpen} onOpenChange={setEventLocationOpen}>
                     <PopoverTrigger asChild>
                       <FormControl>
                         <Button
@@ -3315,6 +3407,7 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                                 value={province}
                                 onSelect={() => {
                                   form.setValue("eventLocation", province);
+                                  setEventLocationOpen(false);
                                 }}
                               >
                                 <Check
@@ -5889,6 +5982,22 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                           </FormItem>
                         )}
                       />
+
+                      {form.watch("deliveryInfo.paymentMethod") === "collect" && (
+                        <FormField
+                          control={form.control}
+                          name="deliveryInfo.shippingCost"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>ยอดค่าขนส่ง (บาท)</FormLabel>
+                              <FormControl>
+                                <Input type="number" placeholder="กรอกยอดค่าขนส่ง" min="0" {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      )}
                     </div>
                   </div>
 

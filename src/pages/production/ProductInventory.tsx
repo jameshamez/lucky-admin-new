@@ -473,7 +473,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
     });
 
     if (hasZeroWholesale) {
-      const label = editProduct.productType === "1" ? "ราคาส่ง" : "ราคาต้นทุน";
+      const label = editProduct.productType === "1" ? "ราคาส่ง" : "ราคาส่ง";
       toast.error(`กรุณาระบุ${label}ให้ถูกต้อง (ต้องมากกว่า 0)`);
       return;
     }
@@ -778,7 +778,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
 
     // ตรวจสอบราคาส่ง (wholesalePrice) ไม่ให้เป็น 0
     if (newProduct.prices && newProduct.prices.some(price => !price.wholesalePrice || price.wholesalePrice <= 0)) {
-      const label = newProduct.productType === "1" ? "ราคาส่ง" : "ราคาต้นทุน";
+      const label = newProduct.productType === "1" ? "ราคาส่ง" : "ราคาส่ง";
       errors.prices = `กรุณาระบุ${label}ให้ถูกต้อง (ต้องมากกว่า 0)`;
     }
 
@@ -1042,6 +1042,8 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
 
   const filteredItems = useMemo(() => {
     return products.filter((item) => {
+      // สินค้าประเภท "option" (type 3) ไม่แสดงในตารางหลัก
+      if (item.productType === "3") return false;
       const term = searchTerm.toLowerCase();
       const matchesSearch = !term || item.name.toLowerCase().includes(term) || item.code.toLowerCase().includes(term) || item.model.toLowerCase().includes(term) || item.tags.toLowerCase().includes(term);
       const isDefectiveCategory = selectedCategory === "defective";
@@ -1057,6 +1059,12 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
       return matchesSearch && matchesCategory && matchesSubcategory && matchesStatus;
     });
   }, [searchTerm, selectedCategory, selectedSubcategoryId, statusFilter, products]);
+
+  // รวบรวม option products (productType=3) เพื่อใช้ใน Options checkboxes
+  const dynamicOptionProducts = useMemo(() =>
+    products.filter(p => p.productType === "3"),
+    [products]
+  );
 
   // Pagination Logic
   const totalPages = Math.ceil(filteredItems.length / itemsPerPage);
@@ -2120,26 +2128,42 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                 <div className="relative">
                   <input
                     type="text"
-                    value={editProduct?.tags?.join(" ") || ""}
+                    value={editProduct?.tagsRaw !== undefined ? editProduct.tagsRaw : (editProduct?.tags?.join(", ") || "")}
                     onChange={(e) => {
-                      // Split by spaces and add # to each tag
-                      const tags = e.target.value
-                        .split(" ")
-                        .map((tag) => tag.trim())
-                        .filter((tag) => tag.length > 0)
+                      const val = e.target.value;
+                      const tagsArray = val
+                        .split(/[\s,]+/)
+                        .filter((tag) => tag.trim() !== "")
                         .map((tag) =>
                           tag.startsWith("#") ? tag : `#${tag}`
                         );
 
                       setEditProduct((prev) => ({
                         ...prev!,
-                        tags: tags,
+                        tagsRaw: val,
+                        tags: tagsArray,
                       }));
                     }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        const val = editProduct?.tagsRaw !== undefined ? editProduct.tagsRaw : (editProduct?.tags?.join(", ") || "");
+                        const parts = val.split(/[\s,]+/).filter((p) => p.trim() !== "");
+                        if (parts.length > 0) {
+                          const formattedParts = parts.map(p => p.startsWith("#") ? p : `#${p}`);
+                          const newVal = formattedParts.join(", ") + ", ";
+                          setEditProduct((prev) => ({
+                            ...prev!,
+                            tagsRaw: newVal,
+                            tags: formattedParts,
+                          }));
+                        }
+                      }
+                    }}
                     className="w-full px-4 py-2.5 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
-                    placeholder="ป้อน tags แยกด้วยช่องว่าง"
+                    placeholder="ป้อน tags กด Enter หรือแยกด้วยช่องว่าง/ลูกน้ำ"
                   />
-                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400">
+                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 pointer-events-none">
                     <span className="text-sm">#Tags</span>
                   </div>
                 </div>
@@ -2453,25 +2477,38 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                 <div className="relative">
                   <input
                     type="text"
-                    value={editProduct?.tags?.join(" ") || ""}
+                    value={editProduct?.tagsRaw !== undefined ? editProduct.tagsRaw : (editProduct?.tags?.join(", ") || "")}
                     onChange={(e) => {
-                      // Split by spaces and add # to each tag
-                      const tags = e.target.value
-                        .split(" ")
-                        .map((tag) => tag.trim())
-                        .filter((tag) => tag.length > 0)
+                      const val = e.target.value;
+                      const tagsArray = val
+                        .split(/[\s,]+/)
+                        .filter((tag) => tag.trim() !== "")
                         .map((tag) =>
                           tag.startsWith("#") ? tag : `#${tag}`
                         );
 
                       if (editProduct) {
-                        setEditProduct({ ...editProduct, tags: tags });
+                        setEditProduct({ ...editProduct, tagsRaw: val, tags: tagsArray });
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        if (editProduct) {
+                          const val = editProduct.tagsRaw !== undefined ? editProduct.tagsRaw : (editProduct.tags?.join(", ") || "");
+                          const parts = val.split(/[\s,]+/).filter((p) => p.trim() !== "");
+                          if (parts.length > 0) {
+                            const formattedParts = parts.map(p => p.startsWith("#") ? p : `#${p}`);
+                            const newVal = formattedParts.join(", ") + ", ";
+                            setEditProduct({ ...editProduct, tagsRaw: newVal, tags: formattedParts });
+                          }
+                        }
                       }
                     }}
                     className="w-full px-4 py-2.5 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
-                    placeholder="ป้อน tags แยกด้วยช่องว่าง"
+                    placeholder="ป้อน tags กด Enter หรือแยกด้วยช่องว่าง/ลูกน้ำ"
                   />
-                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400">
+                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 pointer-events-none">
                     <span className="text-sm">#Tags</span>
                   </div>
                 </div>
@@ -2817,6 +2854,69 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                               {option.label}
                             </label>
                           </div>
+                        </div>
+                      );
+                    })}
+
+                    {/* Dynamic options จาก productType=3 */}
+                    {dynamicOptionProducts.map((optProd) => {
+                      const selOpt = editProduct?.options?.find(
+                        (o: any) => o.option_id === -Number(optProd.id)
+                      );
+                      const isSelected = !!selOpt;
+                      return (
+                        <div
+                          key={`dyn-${optProd.id}`}
+                          className="flex flex-col space-y-3 bg-amber-50 p-4 rounded-lg border border-amber-200 hover:bg-amber-100 transition-colors w-full"
+                        >
+                          <div className="flex items-center space-x-1">
+                            <input
+                              type="checkbox"
+                              id={`dyn-option-${optProd.id}`}
+                              checked={isSelected}
+                              onChange={(e) => {
+                                const currentOptions = editProduct.options || [];
+                                let updatedOptions;
+                                if (e.target.checked) {
+                                  updatedOptions = [
+                                    ...currentOptions,
+                                    { id: Date.now(), product_id: editProduct.id || 0, option_id: -Number(optProd.id), description: "" },
+                                  ];
+                                } else {
+                                  updatedOptions = currentOptions.filter((o: any) => o.option_id !== -Number(optProd.id));
+                                }
+                                setEditProduct({ ...editProduct, options: updatedOptions });
+                              }}
+                              className="w-4 h-4 text-amber-600 border-gray-300 rounded focus:ring-amber-500"
+                            />
+                            <label htmlFor={`dyn-option-${optProd.id}`} className="text-sm font-medium text-gray-700">
+                              {optProd.name}
+                            </label>
+                          </div>
+                          {isSelected && (optProd.color?.length > 0 || optProd.size?.length > 0) && (
+                            <div className="pl-6">
+                              <select
+                                value={selOpt?.description || ""}
+                                onChange={(e) => {
+                                  const updatedOptions = (editProduct.options || []).map((opt: any) =>
+                                    opt.option_id === -Number(optProd.id)
+                                      ? { ...opt, description: e.target.value }
+                                      : opt
+                                  );
+                                  setEditProduct({ ...editProduct, options: updatedOptions });
+                                }}
+                                className="w-full px-3 py-2 bg-white text-black border border-amber-300 rounded-lg focus:ring-2 focus:ring-amber-500 text-sm"
+                              >
+                                <option value="">เลือกสี/ตัวเลือกย่อย...</option>
+                                {optProd.color?.map((c, idx) => (
+                                  <option key={`c-${idx}`} value={`สี: ${c}`}>สี: {c}</option>
+                                ))}
+                                {optProd.size?.map((s, idx) => (
+                                  <option key={`s-${idx}`} value={`ขนาด: ${s}`}>ขนาด: {s}</option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -3190,7 +3290,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                                 {editProduct &&
                                   editProduct.productType === "1"
                                   ? "ราคาส่ง (100 ชิ้นขึ้นไป)"
-                                  : "ราคาต้นทุน"}
+                                  : "ราคาส่ง"}
                               </label>
                               <input
                                 type="text"
@@ -3317,7 +3417,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                             </div>
                             <div>
                               <label className="block text-sm text-gray-700 mb-1">
-                                ราคาต้นทุน
+                                ราคาส่ง
                               </label>
                               <input
                                 type="text"
@@ -3444,7 +3544,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                             </div>
                             <div>
                               <label className="block text-sm text-gray-700 mb-1">
-                                ราคาต้นทุน
+                                ราคาส่ง
                               </label>
                               <input
                                 type="text"
@@ -3671,7 +3771,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                 </label>
                 <div className="grid grid-cols-3 gap-2">
                   {newProduct.images &&
-                    newProduct.images.slice(1).map((img, index) => (
+                    newProduct.images.map((img: string, index: number) => (
                       <div
                         key={index}
                         className="relative h-20 bg-gray-100 rounded-md overflow-hidden"
@@ -3693,7 +3793,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                             const newImages = [
                               ...(newProduct.images || []),
                             ];
-                            newImages.splice(index + 1, 1); // +1 because we sliced the first image
+                            newImages.splice(index, 1);
                             setNewProduct({
                               ...newProduct,
                               images: newImages,
@@ -4160,11 +4260,11 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                 <div className="relative">
                   <input
                     type="text"
-                    value={newProduct?.tagsRaw !== undefined ? newProduct.tagsRaw : (newProduct?.tags?.join(" ") || "")}
+                    value={newProduct?.tagsRaw !== undefined ? newProduct.tagsRaw : (newProduct?.tags?.join(", ") || "")}
                     onChange={(e) => {
                       const val = e.target.value;
                       const tagsArray = val
-                        .split(" ")
+                        .split(/[\s,]+/)
                         .filter((tag) => tag.trim() !== "")
                         .map((tag) =>
                           tag.startsWith("#") ? tag : `#${tag}`
@@ -4172,10 +4272,22 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
 
                       setNewProduct({ ...newProduct, tagsRaw: val, tags: tagsArray });
                     }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        const val = newProduct?.tagsRaw !== undefined ? newProduct.tagsRaw : (newProduct?.tags?.join(", ") || "");
+                        const parts = val.split(/[\s,]+/).filter((p) => p.trim() !== "");
+                        if (parts.length > 0) {
+                          const formattedParts = parts.map(p => p.startsWith("#") ? p : `#${p}`);
+                          const newVal = formattedParts.join(", ") + ", ";
+                          setNewProduct({ ...newProduct, tagsRaw: newVal, tags: formattedParts });
+                        }
+                      }
+                    }}
                     className="w-full px-4 py-2.5 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
-                    placeholder="ป้อน tags แยกด้วยช่องว่าง"
+                    placeholder="ป้อน tags กด Enter หรือแยกด้วยช่องว่าง/ลูกน้ำ"
                   />
-                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400">
+                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 pointer-events-none">
                     <span className="text-sm">#Tags</span>
                   </div>
                 </div>
@@ -4497,6 +4609,62 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                         </div>
                       </div>
                     ))}
+
+                    {/* Dynamic options จาก productType=3 */}
+                    {dynamicOptionProducts.map((optProd) => {
+                      const prefix = `__prod__${optProd.id}`;
+                      const selOptValue = newProduct.options?.find((v) => v.startsWith(prefix));
+                      const isSelected = !!selOptValue;
+                      return (
+                        <div
+                          key={`dyn-${optProd.id}`}
+                          className="flex flex-col space-y-3 bg-amber-50 p-4 rounded-lg border border-amber-200 hover:bg-amber-100 transition-colors w-full"
+                        >
+                          <div className="flex items-center space-x-1">
+                            <input
+                              type="checkbox"
+                              id={`new-dyn-option-${optProd.id}`}
+                              checked={isSelected}
+                              onChange={(e) => {
+                                const currentOptions = newProduct.options || [];
+                                const updatedOptions = e.target.checked
+                                  ? [...currentOptions, prefix]
+                                  : currentOptions.filter((v) => !v.startsWith(prefix));
+                                setNewProduct({ ...newProduct, options: updatedOptions });
+                              }}
+                              className="w-4 h-4 text-amber-600 border-gray-300 rounded focus:ring-amber-500"
+                            />
+                            <label htmlFor={`new-dyn-option-${optProd.id}`} className="text-sm font-medium text-gray-700">
+                              {optProd.name}
+                            </label>
+                          </div>
+                          {isSelected && (optProd.color?.length > 0 || optProd.size?.length > 0) && (
+                            <div className="pl-6">
+                              <select
+                                value={selOptValue && selOptValue.includes("::") ? selOptValue.split("::")[1] : ""}
+                                onChange={(e) => {
+                                  const currentOptions = newProduct.options || [];
+                                  const updatedOptions = currentOptions.map((v) =>
+                                    v.startsWith(prefix) ? (e.target.value ? `${prefix}::${e.target.value}` : prefix) : v
+                                  );
+                                  setNewProduct({ ...newProduct, options: updatedOptions });
+                                }}
+                                className="w-full px-3 py-2 bg-white text-black border border-amber-300 rounded-lg focus:ring-2 focus:ring-amber-500 text-sm"
+                              >
+                                <option value="">เลือกสี/ตัวเลือกย่อย...</option>
+                                {optProd.color?.map((c, idx) => (
+                                  <option key={`c-${idx}`} value={`สี: ${c}`}>สี: {c}</option>
+                                ))}
+                                {optProd.size?.map((s, idx) => (
+                                  <option key={`s-${idx}`} value={`ขนาด: ${s}`}>ขนาด: {s}</option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+
                     {/* Others option */}
                     {(() => {
                       const otherOption = {
@@ -4846,7 +5014,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                             <label className="block text-sm text-gray-700 mb-1">
                               {newProduct.productType === "1"
                                 ? "ราคาส่ง (100 ชิ้นขึ้นไป)"
-                                : "ราคาต้นทุน"}
+                                : "ราคาส่ง"}
                             </label>
                             <input
                               type="text"
@@ -4872,7 +5040,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                             />
                             {(price.wholesale_price ?? price.wholesalePrice ?? price.moldCost) === 0 && (
                               <p className="text-[10px] text-red-500 mt-0.5">
-                                * กรุณาระบุ{newProduct.productType === "1" ? "ราคาส่ง" : "ราคาต้นทุน"}
+                                * กรุณาระบุ{newProduct.productType === "1" ? "ราคาส่ง" : "ราคาส่ง"}
                               </p>
                             )}
                           </div>
@@ -5065,7 +5233,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                 <div className="space-y-2">
                   <p className="text-xs font-semibold">ราคา</p>
                   <Table>
-                    <TableHeader><TableRow className="bg-muted/50"><TableHead className="text-xs">Model</TableHead><TableHead className="text-xs text-right">ราคาปลีก</TableHead><TableHead className="text-xs text-right">{isSalesMode ? "ราคาส่ง" : "ราคาต้นทุน"}</TableHead><TableHead className="text-xs text-right">ราคาพิเศษ</TableHead></TableRow></TableHeader>
+                    <TableHeader><TableRow className="bg-muted/50"><TableHead className="text-xs">Model</TableHead><TableHead className="text-xs text-right">ราคาปลีก</TableHead><TableHead className="text-xs text-right">{isSalesMode ? "ราคาส่ง" : "ราคาส่ง"}</TableHead><TableHead className="text-xs text-right">ราคาพิเศษ</TableHead></TableRow></TableHeader>
                     <TableBody>{detailItem.prices.map((p, i) => (
                       <TableRow key={i}><TableCell className="text-xs">{p.model}</TableCell><TableCell className="text-xs text-right">{p.retailPrice.toLocaleString()}</TableCell><TableCell className="text-xs text-right">{p.moldCost.toLocaleString()}</TableCell><TableCell className="text-xs text-right">{p.specialPrice.toLocaleString()}</TableCell></TableRow>
                     ))}</TableBody>
