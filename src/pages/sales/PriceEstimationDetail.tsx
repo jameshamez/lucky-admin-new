@@ -99,9 +99,6 @@ export default function PriceEstimationDetail() {
   // Get the latest uploaded file (first item in history)
   const latestDesignFile = designFileHistory.length > 0 ? designFileHistory[0] : null;
 
-  const [estimation, setEstimation] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(true);
-
   useEffect(() => {
     const fetchDetail = async () => {
       try {
