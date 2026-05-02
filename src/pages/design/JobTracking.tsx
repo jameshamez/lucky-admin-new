@@ -84,6 +84,78 @@ export default function JobTracking() {
   const [jobs, setJobs] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
+  // Sales API base (align with other pages)
+  const API_BASE = "https://nacres.co.th/api-lucky/admin";
+
+  // Local editable state per job to avoid losing changes before save
+  const [designEdits, setDesignEdits] = useState<Record<string, DesignWorkflowData>>({});
+  const getDesignEdit = (job: JobTracking): DesignWorkflowData =>
+    designEdits[job.job_id] || job.designWorkflow || ({ artworkStatus: 'draft' } as DesignWorkflowData);
+  const updateDesignEdit = (jobId: string, patch: Partial<DesignWorkflowData>) => {
+    setDesignEdits(prev => ({
+      ...prev,
+      [jobId]: { artworkStatus: 'draft', ...(prev[jobId] || {}), ...patch }
+    }));
+  };
+
+  // Load design workflow from Sales price_estimations for this job
+  const loadFromSales = async (job: JobTracking) => {
+    try {
+      const res = await fetch(`${API_BASE}/price_estimations.php`);
+      if (!res.ok) throw new Error('fetch failed');
+      const json = await res.json();
+      const rows = json?.data || [];
+      const found = rows.find((it: any) => String(it.estimate_id || it.job_code || it.id) === String(job.job_id));
+      if (!found) {
+        toast.error("ไม่พบบันทึกจากฝ่ายขายด้วยรหัสงานนี้");
+        return;
+      }
+      let details: any = {};
+      try { details = typeof found.details === 'string' ? JSON.parse(found.details) : (found.details || {}); } catch {}
+      const wf: DesignWorkflowData = details?.designWorkflow || { artworkStatus: 'draft' };
+      updateDesignEdit(job.job_id, wf);
+      toast.success("โหลดข้อมูลจากฝ่ายขายแล้ว");
+    } catch (e) {
+      console.error(e);
+      toast.error("โหลดข้อมูลจากฝ่ายขายล้มเหลว");
+    }
+  };
+
+  // Save back to Sales price_estimations details (merge to avoid overwriting other fields)
+  const saveToSales = async (job: JobTracking) => {
+    try {
+      const res = await fetch(`${API_BASE}/price_estimations.php`);
+      if (!res.ok) throw new Error('fetch list failed');
+      const json = await res.json();
+      const item = (json?.data || []).find((it: any) => String(it.estimate_id || it.job_code || it.id) === String(job.job_id));
+      if (!item) {
+        toast.error("ไม่พบบันทึกฝ่ายขายเพื่อบันทึก");
+        return;
+      }
+      let details: any = {};
+      try { details = typeof item.details === 'string' ? JSON.parse(item.details) : (item.details || {}); } catch {}
+      const payload = {
+        details: {
+          ...details,
+          designWorkflow: {
+            ...(details?.designWorkflow || {}),
+            ...getDesignEdit(job)
+          }
+        }
+      } as any;
+      const saveRes = await fetch(`${API_BASE}/price_estimations.php/${item.id}` , {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!saveRes.ok) throw new Error('save failed');
+      toast.success("บันทึกข้อมูลออกแบบไปยังฝ่ายขายแล้ว");
+    } catch (e) {
+      console.error(e);
+      toast.error("บันทึกไปฝ่ายขายล้มเหลว");
+    }
+  };
+
   useEffect(() => {
     const fetchJobs = async () => {
       try {
@@ -296,16 +368,24 @@ export default function JobTracking() {
           {/* Design Workflow Section */}
           <div className="pt-4 border-t space-y-4">
             <h3 className="font-semibold text-base">รับออกแบบ</h3>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => loadFromSales(job)}>โหลดจากฝ่ายขาย</Button>
+              <Button size="sm" onClick={() => saveToSales(job)}>บันทึกไปฝ่ายขาย</Button>
+            </div>
 
             <div className="space-y-3 p-4 border rounded-lg bg-muted/20">
               <h4 className="font-medium text-sm">1. เริ่มวางแบบ</h4>
               <div className="space-y-2">
                 <span className="text-xs text-muted-foreground">ลิงก์ Google Drive</span>
-                <div className="flex items-center gap-2 p-2 bg-background rounded border">
-                  <LinkIcon className="h-4 w-4 text-muted-foreground" />
-                  {job.designWorkflow?.googleDriveLink ? (
-                    <a href={job.designWorkflow.googleDriveLink} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline truncate">{job.designWorkflow.googleDriveLink}</a>
-                  ) : <span className="text-sm text-muted-foreground">ยังไม่มีลิงก์</span>}
+                <div className="flex items-center gap-2">
+                  <Input
+                    placeholder="https://drive.google.com/..."
+                    value={getDesignEdit(job).googleDriveLink || ""}
+                    onChange={(e) => updateDesignEdit(job.job_id, { googleDriveLink: e.target.value })}
+                  />
+                  {getDesignEdit(job).googleDriveLink && (
+                    <a href={getDesignEdit(job).googleDriveLink} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline whitespace-nowrap">เปิดลิงก์</a>
+                  )}
                 </div>
               </div>
               <div className="space-y-2">

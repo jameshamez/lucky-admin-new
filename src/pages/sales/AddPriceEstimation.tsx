@@ -228,6 +228,11 @@ export default function AddPriceEstimation({
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [isSubmitted, setIsSubmitted] = useState(false);
 
+  // Allow adding custom sales owner name (for procurement filling the form)
+  const [additionalSalesOptions, setAdditionalSalesOptions] = useState<{ value: string; label: string; }[]>([]);
+  const [customSalesMode, setCustomSalesMode] = useState(false);
+  const [customSalesName, setCustomSalesName] = useState("");
+
   // Field refs for auto-scroll
   const fieldRefs = {
     customerName: useRef<HTMLDivElement>(null),
@@ -1761,7 +1766,17 @@ export default function AddPriceEstimation({
 
               <div className="space-y-2" ref={fieldRefs.salesOwner}>
                 <Label htmlFor="sales-owner">เซลล์ผู้รับผิดชอบ <span className="text-destructive">*</span></Label>
-                <Select value={salesOwnerId} onValueChange={setSalesOwnerId}>
+                <Select
+                  value={salesOwnerId}
+                  onValueChange={(val) => {
+                    if (val === "__custom__") {
+                      setCustomSalesMode(true);
+                    } else {
+                      setSalesOwnerId(val);
+                      setCustomSalesMode(false);
+                    }
+                  }}
+                >
                   <SelectTrigger className={cn(
                     formErrors.salesOwner ? "border-destructive focus:ring-destructive" :
                       (isSubmitted && salesOwnerId) ? "border-green-500 focus:ring-green-500" : ""
@@ -1769,13 +1784,43 @@ export default function AddPriceEstimation({
                     <SelectValue placeholder="เลือกเซลล์" />
                   </SelectTrigger>
                   <SelectContent>
-                    {salesOptions.map((option) => (
+                    {[...(salesOptions || []), ...additionalSalesOptions].map((option) => (
                       <SelectItem key={option.value} value={option.value}>
                         {option.label}
                       </SelectItem>
                     ))}
+                    <SelectItem value="__custom__">+ เพิ่มชื่อเอง (อื่นๆ)</SelectItem>
                   </SelectContent>
                 </Select>
+                {customSalesMode && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <Input
+                      placeholder="พิมพ์ชื่อเซลล์ที่ต้องการเพิ่ม..."
+                      value={customSalesName}
+                      onChange={(e) => setCustomSalesName(e.target.value)}
+                      className="h-9"
+                    />
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        const name = customSalesName.trim();
+                        if (!name) {
+                          toast({ title: "กรุณาพิมพ์ชื่อเซลล์", variant: "destructive" });
+                          return;
+                        }
+                        const newId = `custom-${Date.now()}`;
+                        const newOption = { value: newId, label: name };
+                        setAdditionalSalesOptions((prev) => [...prev, newOption]);
+                        setSalesOwnerId(newId);
+                        setCustomSalesMode(false);
+                        setCustomSalesName("");
+                        toast({ title: "เพิ่มรายชื่อสำเร็จ", description: name });
+                      }}
+                    >
+                      เพิ่ม
+                    </Button>
+                  </div>
+                )}
                 {formErrors.salesOwner && (
                   <div className="flex items-center gap-1.5 mt-1.5 text-xs text-destructive animate-in fade-in slide-in-from-top-1">
                     <AlertCircle className="h-3.5 w-3.5" />

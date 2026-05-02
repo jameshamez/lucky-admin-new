@@ -220,6 +220,100 @@ const Quotation = () => {
     setProductTypeFilter("all");
   };
 
+  // Translate material to user-friendly label (TH/EN)
+  const translateMaterial = (material: string): string => {
+    if (!material) return "-";
+    const m = material.toLowerCase();
+    if (m.includes("zinc") || m.includes("zinc-alloy") || m.includes("ซิงค์")) return "ซิงค์อัลลอย (Zinc Alloy)";
+    if (m.includes("brass") || m.includes("ทองเหลือง")) return "ทองเหลือง (Brass)";
+    if (m.includes("acrylic") || m.includes("อะคริลิค")) return "อะคริลิค (Acrylic)";
+    if (m.includes("crystal") || m.includes("คริสตัล")) return "คริสตัล (Crystal)";
+    if (m.includes("iron") || m.includes("เหล็ก")) return "เหล็ก (Iron)";
+    if (m.includes("polyscreen") || m.includes("โพลีสกรีน")) return "โพลีสกรีน (Polyscreen)";
+    return material;
+  };
+
+  // Get concise Thai plating name for a single color token
+  const getThaiPlatingName = (raw: string): string => {
+    const c = (raw || "").toLowerCase();
+    if (c.includes("rose") || c.includes("โรส")) return "โรสโกลด์";
+    if (c.includes("black nickel") || c.includes("รมดำ") || c.includes("นิกเกิลดำ")) return "รมดำ";
+    if (c.includes("antique gold") || c.includes("ทองโบราณ")) return "ทองโบราณ";
+    if (c.includes("antique silver") || c.includes("เงินโบราณ")) return "เงินโบราณ";
+    if (c.includes("antique") || c.includes("โบราณ")) return "โบราณ";
+    if (c.includes("matte gold") || c.includes("gold matte") || c.includes("ทองด้าน")) return "ทองด้าน";
+    if (c.includes("matte silver") || c.includes("silver matte") || c.includes("เงินด้าน")) return "เงินด้าน";
+    if (c.includes("matte copper") || c.includes("copper matte") || c.includes("ทองแดงด้าน")) return "ทองแดงด้าน";
+    if (c.includes("shiny gold") || c.includes("shinny gold") || c.includes("ทองเงา")) return "ทองเงา";
+    if (c.includes("shiny silver") || c.includes("shinny silver") || c.includes("เงินเงา")) return "เงินเงา";
+    if (c.includes("shiny copper") || c.includes("shinny copper") || c.includes("ทองแดงเงา")) return "ทองแดงเงา";
+    if (c.includes("nickel")) return "นิกเกิล";
+    if (c.includes("gold")) return "ทอง";
+    if (c.includes("silver")) return "เงิน";
+    if (c.includes("copper")) return "ทองแดง";
+    return raw || "-";
+  };
+
+  // Compute per-color quantities (prefer rawDetails rows; fallback to even distribution)
+  const computeColorQuantities = (q: MockQuotation) => {
+    const rows = (q as any)?.rawDetails?.colorQuantityRows;
+    if (Array.isArray(rows) && rows.some((r: any) => r?.color)) {
+      return rows
+        .filter((r: any) => r?.color)
+        .map((row: any) => {
+          const qty = Array.isArray(row.quantities)
+            ? row.quantities.reduce((sum: number, v: number) => sum + (Number(v) || 0), 0)
+            : Number(row.quantity) || 0;
+          return { color: row.color, thai: getThaiPlatingName(row.color), qty };
+        });
+    }
+    const colors = Array.isArray(q.colors) ? q.colors : [];
+    const total = q.quantity || 0;
+    const n = Math.max(colors.length, 1);
+    const base = Math.floor(total / n);
+    let remainder = total - base * n;
+    return colors.map((color) => {
+      const add = remainder > 0 ? 1 : 0;
+      remainder -= add;
+      return { color, thai: getThaiPlatingName(color), qty: base + add };
+    });
+  };
+
+  // Build unified Thai summary text (for copy/share)
+  const buildUnifiedSummary = (q: MockQuotation): string => {
+    const materialStr = translateMaterial(q.material || "");
+    const colorsThai = (q.colors || []).map(getThaiPlatingName).join(" , ");
+    const frontStr = typeof q.frontDetails === 'string' ? q.frontDetails : Array.isArray((q as any).frontDetails) ? (q as any).frontDetails.join(" , ") : "-";
+    const backStr = typeof q.backDetails === 'string' ? q.backDetails : Array.isArray((q as any).backDetails) ? (q as any).backDetails.join(" , ") : "-";
+    const sizeStr = q.size || "-";
+    const thicknessStr = q.thickness || "-";
+    const lanyardStr = `${q.lanyardSize || "-"}  (${q.lanyardPatterns || 0}แบบ)`;
+    const totalQty = q.quantity || 0;
+    const colorEntries = computeColorQuantities(q);
+    const colorLines = colorEntries.length > 0
+      ? colorEntries.map(e => `${e.thai} ${e.qty.toLocaleString()} เหรียญ`).join("\n")
+      : "ส่งคละสีตามจำนวน";
+    const project = q.jobName || "-";
+    const eventDate = q.eventDate && q.eventDate !== '-' ? q.eventDate : '-';
+    const header = `ตีเหรียญ${materialStr.includes('ซิงค์') ? 'ซิงค์อัลลอยด์' : materialStr}`;
+    const lineOwner = `LINE  ${q.salesPerson || '-'}`;
+    return (
+`${header}
+${lineOwner}
+วัสดุ : ${materialStr}
+สีชุบ (สีเนื้องาน) : ${colorsThai || '-'}
+รายละเอียดด้านหน้า : ${frontStr}
+รายละเอียดด้านหลัง : ${backStr}
+ขนาด ซม. : ${sizeStr}
+ความหนา มม. : ${thicknessStr}
+ขนาดสาย : ${lanyardStr}
+รวมจำนวน ${totalQty.toLocaleString()} เหรียญ
+${colorLines}
+Project : ${project}
+ใช้งาน ${eventDate}`
+    );
+  };
+
   // Rejection modal state
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
@@ -281,6 +375,11 @@ const Quotation = () => {
   const [prodExchange, setProdExchange] = useState("5.5");
 
   const orderPrintRef = useRef<HTMLDivElement>(null);
+  // Other details input states for Production Modal
+  const [frontOtherOpen, setFrontOtherOpen] = useState(false);
+  const [frontOtherText, setFrontOtherText] = useState("");
+  const [backOtherOpen, setBackOtherOpen] = useState(false);
+  const [backOtherText, setBackOtherText] = useState("");
 
   const generateProductionOrderPDF = async () => {
     if (!orderPrintRef.current || !selectedProductionItem) return;
@@ -640,6 +739,62 @@ const Quotation = () => {
       };
     }
     return entry;
+  };
+
+  // Translate plating colors to show type clearly (e.g., Shiny, Matte, Antique, Black Nickel)
+  const translateColors = (colors: string[]): string => {
+    return colors.map(color => {
+      const colorLower = color.toLowerCase();
+      
+      // Shiny/Glossy finishes (สีชุบเงา)
+      if (colorLower.includes("shinny gold") || colorLower.includes("shiny gold") || colorLower.includes("ชุบทองเงา")) 
+        return "Shiny Gold (ชุบทองเงา)";
+      if (colorLower.includes("shinny silver") || colorLower.includes("shiny silver") || colorLower.includes("ชุบเงินเงา")) 
+        return "Shiny Silver (ชุบเงินเงา)";
+      if (colorLower.includes("shinny copper") || colorLower.includes("shiny copper") || colorLower.includes("ชุบทองแดงเงา")) 
+        return "Shiny Copper (ชุบทองแดงเงา)";
+      if (colorLower.includes("shinny nickel") || colorLower.includes("shiny nickel") || colorLower.includes("ชุบนิกเกิลเงา")) 
+        return "Shiny Nickel (ชุบนิกเกิลเงา)";
+      
+      // Matte finishes (สีชุบด้าน)
+      if (colorLower.includes("matte gold") || colorLower.includes("matt gold") || colorLower.includes("ชุบทองด้าน")) 
+        return "Matte Gold (ชุบทองด้าน)";
+      if (colorLower.includes("matte silver") || colorLower.includes("matt silver") || colorLower.includes("ชุบเงินด้าน")) 
+        return "Matte Silver (ชุบเงินด้าน)";
+      if (colorLower.includes("matte copper") || colorLower.includes("matt copper") || colorLower.includes("ชุบทองแดงด้าน")) 
+        return "Matte Copper (ชุบทองแดงด้าน)";
+      if (colorLower.includes("matte nickel") || colorLower.includes("matt nickel") || colorLower.includes("ชุบนิกเกิลด้าน")) 
+        return "Matte Nickel (ชุบนิกเกิลด้าน)";
+      
+      // Antique finishes (สีชุบโบราณ/แอนทีค)
+      if (colorLower.includes("antique gold") || colorLower.includes("ชุบทองโบราณ") || colorLower.includes("ชุบทองแอนทีค")) 
+        return "Antique Gold (ชุบทองโบราณ)";
+      if (colorLower.includes("antique silver") || colorLower.includes("ชุบเงินโบราณ") || colorLower.includes("ชุบเงินแอนทีค")) 
+        return "Antique Silver (ชุบเงินโบราณ)";
+      if (colorLower.includes("antique copper") || colorLower.includes("antique bronze") || colorLower.includes("ชุบทองแดงโบราณ") || colorLower.includes("ชุบบรอนซ์โบราณ")) 
+        return "Antique Copper/Bronze (ชุบทองแดงโบราณ)";
+      
+      // Black finishes (สีชุบดำ)
+      if (colorLower.includes("black nickel") || colorLower.includes("ชุบรมดำ") || colorLower.includes("ชุบนิกเกิลดำ")) 
+        return "Black Nickel (ชุบรมดำ)";
+      if (colorLower.includes("black") || colorLower.includes("ชุบดำ")) 
+        return "Black (ชุบดำ)";
+      
+      // Rose Gold (สีชุบโรสโกลด์)
+      if (colorLower.includes("rose gold") || colorLower.includes("pink gold") || colorLower.includes("ชุบโรสโกลด์")) 
+        return "Rose Gold (ชุบโรสโกลด์)";
+      
+      // Chrome (สีชุบโครเมี่ยม)
+      if (colorLower.includes("chrome") || colorLower.includes("ชุบโครเมี่ยม")) 
+        return "Chrome (ชุบโครเมี่ยม)";
+      
+      // Dual tone (สีชุบ 2 โทน)
+      if (colorLower.includes("dual") || colorLower.includes("two tone") || colorLower.includes("2 tone") || colorLower.includes("2โทน")) 
+        return "Dual Tone (ชุบ 2 โทน)";
+      
+      // If no match, return original with capitalization
+      return color.charAt(0).toUpperCase() + color.slice(1);
+    }).join(", ");
   };
 
   // Factory code mapping for job code generation
@@ -2084,41 +2239,7 @@ const Quotation = () => {
   // Copy Production Details
   const handleCopyProductionDetails = (quotation: MockQuotation) => {
     try {
-      let copyText = `📌 ข้อมูลสั่งผลิต: ${quotation.jobName} (${quotation.jobCode})\n`;
-      copyText += `👤 ลูกค้า: ${quotation.customerName}\n`;
-      copyText += `📅 วันส่งมอบ: ${quotation.eventDate}\n`;
-      copyText += `📋 จำนวน: ${quotation.quantity} ชิ้น\n`;
-      copyText += `------------------------\n`;
-      copyText += `🔸 วัสดุ: ${quotation.material}\n`;
-      copyText += `📏 ขนาด: ${quotation.size}\n`;
-      copyText += `↕️ ความหนา: ${quotation.thickness}\n`;
-      copyText += `✨ ชนิดการชุบ: ${(quotation as any).rawDetails?.finishTypeLabel || "-"}\n`;
-      copyText += `🎨 สีและจำนวน:\n`;
-
-      const colorRows = (quotation as any).rawDetails?.colorQuantityRows;
-      if (colorRows && Array.isArray(colorRows) && colorRows.some((r: any) => r.color)) {
-        colorRows.filter((r: any) => r.color).forEach((row: any) => {
-          const qty = Array.isArray(row.quantities) ? row.quantities.reduce((sum: number, q: number) => sum + (q || 0), 0) : 0;
-          copyText += `   - ${row.color} : ${qty} ชิ้น\n`;
-        });
-      } else if (quotation.colors.length > 0) {
-        quotation.colors.forEach((color) => {
-          const qty = Math.ceil(quotation.quantity / Math.max(quotation.colors.length, 1));
-          copyText += `   - ${color} : ${qty} ชิ้น\n`;
-        });
-      } else {
-        copyText += `   - ส่งคละสีตามจำนวน\n`;
-      }
-
-      copyText += `\n📄 ด้านหน้า: ${quotation.frontDetails !== "-" ? quotation.frontDetails : "ไม่มี"}\n`;
-      copyText += `📄 ด้านหลัง: ${quotation.backDetails !== "-" ? quotation.backDetails : "ไม่มี"}\n`;
-      copyText += `🔖 ขนาดสายห้อย: ${quotation.lanyardSize !== "-" ? quotation.lanyardSize : "ไม่มี"}\n`;
-      copyText += `👔 ลายสกรีนสายห้อย: ${quotation.lanyardPatterns || 0} ลาย\n`;
-      
-      if (quotation.notes && quotation.notes !== "-") {
-        copyText += `\n💡 หมายเหตุ: ${quotation.notes}\n`;
-      }
-
+      const copyText = buildUnifiedSummary(quotation);
       navigator.clipboard.writeText(copyText);
       toast.success("คัดลอกข้อมูลสำหรับสั่งผลิตเรียบร้อยแล้ว");
     } catch (err) {
@@ -2127,8 +2248,101 @@ const Quotation = () => {
     }
   };
 
+  // Download artwork image
+  const downloadArtwork = (imageUrl: string, index: number) => {
+    const link = document.createElement('a');
+    link.href = imageUrl;
+    link.download = `Artwork_${selectedQuotation?.jobCode || 'image'}_${index + 1}.jpg`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success("กำลังดาวน์โหลดรูปภาพ");
+  };
+
   return (
     <div className="space-y-6">
+      {/* Artwork Fullscreen Dialog */}
+      <Dialog open={isArtworkFullscreenOpen} onOpenChange={setIsArtworkFullscreenOpen}>
+        <DialogContent className="max-w-[95vw] max-h-[95vh] p-0 bg-black/95">
+          <div className="relative w-full h-[95vh] flex flex-col">
+            {/* Header with close and download buttons */}
+            <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between p-4 bg-gradient-to-b from-black/80 to-transparent">
+              <div className="text-white">
+                <p className="text-sm opacity-80">Artwork Preview</p>
+                <p className="font-medium">{selectedQuotation?.jobCode} - {selectedQuotation?.jobName}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    if (selectedQuotation && selectedQuotation.artworkImages[selectedArtworkIndex]) {
+                      downloadArtwork(selectedQuotation.artworkImages[selectedArtworkIndex], selectedArtworkIndex);
+                    }
+                  }}
+                  className="text-white hover:bg-white/20"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  บันทึกรูป
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setIsArtworkFullscreenOpen(false)}
+                  className="text-white hover:bg-white/20"
+                >
+                  <X className="h-5 w-5" />
+                </Button>
+              </div>
+            </div>
+
+            {/* Main image display */}
+            <div className="flex-1 flex items-center justify-center p-4">
+              {selectedQuotation && selectedQuotation.artworkImages[selectedArtworkIndex] && (
+                <img
+                  src={selectedQuotation.artworkImages[selectedArtworkIndex] || sampleArtwork}
+                  alt={`Artwork ${selectedArtworkIndex + 1}`}
+                  className="max-w-full max-h-full object-contain"
+                  onError={(e) => {
+                    e.currentTarget.src = sampleArtwork;
+                  }}
+                />
+              )}
+            </div>
+
+            {/* Navigation controls */}
+            {selectedQuotation && selectedQuotation.artworkImages.length > 1 && (
+              <>
+                {/* Previous button */}
+                {selectedArtworkIndex > 0 && (
+                  <button
+                    onClick={() => setSelectedArtworkIndex(prev => Math.max(0, prev - 1))}
+                    className="absolute left-4 top-1/2 -translate-y-1/2 bg-black/60 hover:bg-black/80 text-white p-3 rounded-full transition-all"
+                  >
+                    <ChevronDown className="h-6 w-6 rotate-90" />
+                  </button>
+                )}
+
+                {/* Next button */}
+                {selectedArtworkIndex < selectedQuotation.artworkImages.length - 1 && (
+                  <button
+                    onClick={() => setSelectedArtworkIndex(prev => Math.min(selectedQuotation.artworkImages.length - 1, prev + 1))}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 bg-black/60 hover:bg-black/80 text-white p-3 rounded-full transition-all"
+                  >
+                    <ChevronDown className="h-6 w-6 -rotate-90" />
+                  </button>
+                )}
+
+                {/* Image counter */}
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/60 text-white px-4 py-2 rounded-full text-sm">
+                  {selectedArtworkIndex + 1} / {selectedQuotation.artworkImages.length}
+                </div>
+              </>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -2343,22 +2557,35 @@ const Quotation = () => {
 
                     {/* Front/Back Details - Side by Side */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                      <div className="bg-muted/40 rounded-lg p-3">
-                        <p className="text-xs text-muted-foreground mb-2">รายละเอียดด้านหน้า</p>
-                        <div className="flex gap-1.5 flex-wrap">
-                          {(typeof selectedQuotation.frontDetails === 'string' ? selectedQuotation.frontDetails.split(", ") : []).map((detail, idx) => (
-                            <Badge key={idx} variant="secondary" className="text-xs">{detail}</Badge>
-                          )) || <span className="text-muted-foreground text-sm">-</span>}
-                        </div>
-                      </div>
-                      <div className="bg-muted/40 rounded-lg p-3">
-                        <p className="text-xs text-muted-foreground mb-2">รายละเอียดด้านหลัง</p>
-                        <div className="flex gap-1.5 flex-wrap">
-                          {(typeof selectedQuotation.backDetails === 'string' ? selectedQuotation.backDetails.split(", ") : []).map((detail, idx) => (
-                            <Badge key={idx} variant="secondary" className="text-xs">{detail}</Badge>
-                          )) || <span className="text-muted-foreground text-sm">-</span>}
-                        </div>
-                      </div>
+                      {/* Front Details - Collapsible */}
+                      <Collapsible className="bg-muted/40 rounded-lg">
+                        <CollapsibleTrigger className="w-full p-3 flex items-center justify-between hover:bg-muted/60 transition-colors rounded-lg">
+                          <p className="text-xs text-muted-foreground font-medium">รายละเอียดด้านหน้า</p>
+                          <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform duration-200 data-[state=open]:rotate-180" />
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="px-3 pb-3">
+                          <div className="flex gap-1.5 flex-wrap pt-2">
+                            {(typeof selectedQuotation.frontDetails === 'string' ? selectedQuotation.frontDetails.split(", ") : []).map((detail, idx) => (
+                              <Badge key={idx} variant="secondary" className="text-xs">{detail}</Badge>
+                            )) || <span className="text-muted-foreground text-sm">-</span>}
+                          </div>
+                        </CollapsibleContent>
+                      </Collapsible>
+
+                      {/* Back Details - Collapsible */}
+                      <Collapsible className="bg-muted/40 rounded-lg">
+                        <CollapsibleTrigger className="w-full p-3 flex items-center justify-between hover:bg-muted/60 transition-colors rounded-lg">
+                          <p className="text-xs text-muted-foreground font-medium">รายละเอียดด้านหลัง</p>
+                          <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform duration-200 data-[state=open]:rotate-180" />
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="px-3 pb-3">
+                          <div className="flex gap-1.5 flex-wrap pt-2">
+                            {(typeof selectedQuotation.backDetails === 'string' ? selectedQuotation.backDetails.split(", ") : []).map((detail, idx) => (
+                              <Badge key={idx} variant="secondary" className="text-xs">{detail}</Badge>
+                            )) || <span className="text-muted-foreground text-sm">-</span>}
+                          </div>
+                        </CollapsibleContent>
+                      </Collapsible>
                     </div>
 
                     {/* Lanyard */}
@@ -2396,20 +2623,58 @@ const Quotation = () => {
                     {/* Artwork Image Preview */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div>
-                        <p className="text-sm text-muted-foreground mb-2">รูป Artwork</p>
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-sm text-muted-foreground">รูป Artwork</p>
+                          {selectedQuotation.artworkImages.length > 0 && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                const currentImage = selectedQuotation.artworkImages[selectedArtworkIndex];
+                                const link = document.createElement('a');
+                                link.href = currentImage;
+                                link.download = `Artwork_${selectedQuotation.jobCode}_${selectedArtworkIndex + 1}.jpg`;
+                                document.body.appendChild(link);
+                                link.click();
+                                document.body.removeChild(link);
+                                toast.success("กำลังดาวน์โหลดรูปภาพ");
+                              }}
+                              className="gap-1.5 h-7 text-xs"
+                            >
+                              <Download className="h-3 w-3" />
+                              บันทึกรูป
+                            </Button>
+                          )}
+                        </div>
                         {selectedQuotation.artworkImages.length > 0 ? (
                           <>
                             {/* Main Preview - Clickable */}
-                            <button
-                              onClick={() => setIsArtworkFullscreenOpen(true)}
-                              className="w-full bg-muted rounded-lg p-4 flex items-center justify-center min-h-[200px] max-h-[300px] cursor-zoom-in hover:bg-muted/80 transition-colors"
-                            >
-                              <img
-                                src={sampleArtwork}
-                                alt={`Artwork preview ${selectedArtworkIndex + 1}`}
-                                className="max-w-full max-h-[260px] object-contain"
-                              />
-                            </button>
+                            <div className="relative">
+                              <button
+                                onClick={() => setIsArtworkFullscreenOpen(true)}
+                                className="w-full bg-muted rounded-lg p-4 flex items-center justify-center min-h-[200px] max-h-[300px] cursor-zoom-in hover:bg-muted/80 transition-colors relative group"
+                              >
+                                <img
+                                  src={selectedQuotation.artworkImages[selectedArtworkIndex] || sampleArtwork}
+                                  alt={`Artwork preview ${selectedArtworkIndex + 1}`}
+                                  className="max-w-full max-h-[260px] object-contain"
+                                  onError={(e) => {
+                                    // Fallback to sample image if real image fails to load
+                                    e.currentTarget.src = sampleArtwork;
+                                  }}
+                                />
+                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors rounded-lg flex items-center justify-center">
+                                  <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 text-white px-3 py-1.5 rounded-full text-sm">
+                                    คลิกเพื่อขยาย
+                                  </div>
+                                </div>
+                              </button>
+                              {selectedQuotation.artworkImages.length > 1 && (
+                                <div className="absolute top-2 right-2 bg-black/60 text-white px-2 py-1 rounded-full text-xs">
+                                  {selectedArtworkIndex + 1} / {selectedQuotation.artworkImages.length}
+                                </div>
+                              )}
+                            </div>
                             <p className="text-xs text-muted-foreground text-center mt-2">คลิกที่รูปเพื่อขยายเต็มจอ</p>
 
                             {/* Thumbnails */}
@@ -2425,9 +2690,12 @@ const Quotation = () => {
                                       }`}
                                   >
                                     <img
-                                      src={sampleArtwork}
+                                      src={img || sampleArtwork}
                                       alt={`Thumbnail ${index + 1}`}
                                       className="w-full h-full object-contain"
+                                      onError={(e) => {
+                                        e.currentTarget.src = sampleArtwork;
+                                      }}
                                     />
                                   </button>
                                 ))}
@@ -2558,14 +2826,14 @@ const Quotation = () => {
                                   onClick={() => {
                                     const sizeFormatted = selectedQuotation.size.replace("ซม.", "cm.");
                                     const thicknessFormatted = selectedQuotation.thickness.replace("มิล", "mm.");
-                                    const colorsFormatted = selectedQuotation.colors.join(", ");
+                                    const colorsThai = (selectedQuotation.colors || []).map(getThaiPlatingName).join(", ");
                                     const lanyardFormatted = `${selectedQuotation.lanyardSize.replace("ซม.", "cm.")} (${selectedQuotation.lanyardPatterns} Designs)`;
                                     const quantityFormatted = `${selectedQuotation.quantity.toLocaleString()} pcs.`;
 
                                     const summaryText = `Product: Medal
-Material: ${selectedQuotation.material}
+Material: ${translateMaterial(selectedQuotation.material)}
 Project: ${selectedQuotation.jobName}
-Plating: ${colorsFormatted}
+Plating: ${colorsThai}
 Front: ${selectedQuotation.frontDetails || "-"}
 Back: ${selectedQuotation.backDetails || "-"}
 Size: ${sizeFormatted}
@@ -2587,9 +2855,9 @@ Quantity: ${quantityFormatted}`;
                             <CardContent>
                               <div className="font-mono text-sm bg-white rounded-lg p-4 border border-slate-200 whitespace-pre-line leading-relaxed">
                                 <p><span className="text-slate-500">Product:</span> Medal</p>
-                                <p><span className="text-slate-500">Material:</span> {selectedQuotation.material}</p>
+                                <p><span className="text-slate-500">Material:</span> {translateMaterial(selectedQuotation.material)}</p>
                                 <p><span className="text-slate-500">Project:</span> {selectedQuotation.jobName}</p>
-                                <p><span className="text-slate-500">Plating:</span> {selectedQuotation.colors.join(", ")}</p>
+                                <p><span className="text-slate-500">Plating:</span> {(selectedQuotation.colors || []).map(getThaiPlatingName).join(", ")}</p>
                                 <p><span className="text-slate-500">Front:</span> {selectedQuotation.frontDetails || "-"}</p>
                                 <p><span className="text-slate-500">Back:</span> {selectedQuotation.backDetails || "-"}</p>
                                 <p><span className="text-slate-500">Size:</span> {selectedQuotation.size.replace("ซม.", "cm.")}</p>
@@ -2691,14 +2959,7 @@ Quantity: ${quantityFormatted}`;
                                     return details.split(", ").map(item => translations[item.trim()] || item.trim()).join(", ");
                                   };
 
-                                  const translateColors = (colors: string[]) => {
-                                    return colors.map(color => {
-                                      if (color.includes("shinny gold")) return "Shiny Gold";
-                                      if (color.includes("shinny silver")) return "Shiny Silver";
-                                      if (color.includes("shinny copper")) return "Shiny Copper";
-                                      return color;
-                                    }).join(", ");
-                                  };
+                                  // Use shared translateColors helper function
 
                                   const translateMaterial = (material: string) => {
                                     if (material.includes("ซิงค์อัลลอย") || material.includes("Zinc Alloy")) return "Zinc Alloy";
@@ -3020,9 +3281,9 @@ Quantity: ${quantityFormatted}`;
                                   <div className="text-orange-700 font-bold">ต้นทุนหยวน</div>
                                   <div className="text-xs font-normal text-orange-600">(ทุน/หน่วย, ค่าโมล)</div>
                                 </TableHead>
-                                <TableHead className="w-[100px] text-center bg-cyan-50 font-bold">ทุนรวม<br /><span className="text-xs font-normal">(THB)</span></TableHead>
-                                <TableHead className="w-[100px] text-center bg-green-50 font-bold">ราคาขายรวม<br /><span className="text-xs font-normal">(THB)</span></TableHead>
-                                <TableHead className="w-[100px] text-center bg-amber-50 font-bold">กำไร<br /><span className="text-xs font-normal">(THB)</span></TableHead>
+                                <TableHead className="w-[100px] text-center bg-cyan-50 font-bold">ทุนรวม/หน่วย<br /><span className="text-xs font-normal">(THB)</span></TableHead>
+                                <TableHead className="w-[100px] text-center bg-green-50 font-bold">ราคาขายรวม/หน่วย<br /><span className="text-xs font-normal">(THB)</span></TableHead>
+                                <TableHead className="w-[100px] text-center bg-amber-50 font-bold">กำไรรวม<br /><span className="text-xs font-normal">(THB)</span></TableHead>
                                 <TableHead className="w-[100px] text-center bg-purple-50 font-bold">ค่าโมล(เพิ่มเติม)<br /><span className="text-xs font-normal">(THB)</span></TableHead>
                                 <TableHead className="min-w-[130px] text-center">หลักฐาน</TableHead>
                               </TableRow>
@@ -3187,6 +3448,61 @@ Quantity: ${quantityFormatted}`;
                             </TableBody>
                           </Table>
                         </div>
+
+                        {/* Summary Section - Show total values */}
+                        {supplierEntries.length > 0 && (
+                          <div className="mt-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border-2 border-blue-200">
+                            <h3 className="font-semibold text-blue-700 mb-3 flex items-center gap-2">
+                              <Calculator className="w-5 h-5" />
+                              สรุปยอดรวม (Total Summary)
+                            </h3>
+                            <div className="grid grid-cols-3 gap-4">
+                              {supplierEntries.map((entry) => {
+                                const calcQuantity = globalHeader.quantity || selectedQuotation?.quantity || 0;
+                                const totalCost = entry.totalCostPerUnit * calcQuantity;
+                                const totalSellingPrice = entry.totalSellingPricePerUnit * calcQuantity;
+                                const totalProfit = entry.totalProfit;
+                                
+                                return (
+                                  <div 
+                                    key={entry.id} 
+                                    className={`p-3 rounded-lg border ${
+                                      entry.isWinner 
+                                        ? 'bg-green-50 border-green-300' 
+                                        : 'bg-white border-gray-200'
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <span className="font-medium text-sm">{entry.factoryLabel}</span>
+                                      {entry.isWinner && (
+                                        <Badge className="bg-green-500 text-white text-xs px-1.5 py-0">เลือก</Badge>
+                                      )}
+                                    </div>
+                                    <div className="space-y-1 text-xs">
+                                      <div className="flex justify-between">
+                                        <span className="text-gray-600">ต้นทุนรวมทั้งหมด:</span>
+                                        <span className="font-bold text-cyan-700">{totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ฿</span>
+                                      </div>
+                                      <div className="flex justify-between">
+                                        <span className="text-gray-600">ราคาขายรวมทั้งหมด:</span>
+                                        <span className="font-bold text-green-700">{totalSellingPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ฿</span>
+                                      </div>
+                                      <div className="flex justify-between pt-1 border-t">
+                                        <span className="text-gray-600">กำไรรวมทั้งหมด:</span>
+                                        <span className={`font-bold ${totalProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                          {totalProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ฿
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            <p className="text-xs text-blue-600 mt-3">
+                              * ตารางด้านบนแสดงราคาต่อหน่วย ส่วนนี้แสดงยอดรวมทั้งหมด (จำนวน {(globalHeader.quantity || selectedQuotation?.quantity || 0).toLocaleString()} ชิ้น)
+                            </p>
+                          </div>
+                        )}
 
                       </div>
                     )}
@@ -3534,7 +3850,7 @@ Quantity: ${quantityFormatted}`;
                     {/* Row 1 */}
                     <div className="border rounded-lg p-3 bg-muted/30">
                       <p className="text-xs text-muted-foreground">วัสดุ</p>
-                      <p className="font-medium text-blue-700">{selectedQuotation.material}</p>
+                      <p className="font-medium text-blue-700">{translateMaterial(selectedQuotation.material)}</p>
                     </div>
                     <div className="border rounded-lg p-3 bg-muted/30">
                       <p className="text-xs text-muted-foreground">ขนาด</p>
@@ -3547,7 +3863,7 @@ Quantity: ${quantityFormatted}`;
                     {/* Row 2 */}
                     <div className="border rounded-lg p-3 bg-muted/30">
                       <p className="text-xs text-muted-foreground">ชนิดการชุบ</p>
-                      <p className="font-medium">Shiny (เงา)</p>
+                      <p className="font-medium">{selectedQuotation.colors && selectedQuotation.colors.length > 0 ? translateColors(selectedQuotation.colors) : '-'}</p>
                     </div>
                     <div className="border rounded-lg p-3 bg-muted/30">
                       <p className="text-xs text-muted-foreground">จำนวนรวม</p>
@@ -3926,13 +4242,14 @@ Quantity: ${quantityFormatted}`;
                   if (!selectedEntry) return;
 
                   try {
+                    const headerForSummary = ((summaryQuotation as any)?.rawDetails?.globalHeader) || (globalHeader as any) || { quantity: summaryQuotation.quantity };
                     const updatedDetails = {
                       ...(summaryQuotation as any).rawDetails,
                       supplierEntries: summarySupplierEntries.map(e => ({
                         ...e,
                         uploadedFile: null
                       })),
-                      globalHeader: summaryGlobalHeader,
+                      globalHeader: headerForSummary,
                       winnerFactoryValue: selectedEntry.factoryValue,
                       factoryLabel: selectedEntry.factoryLabel,
                       estimationStarted: true
@@ -3940,7 +4257,7 @@ Quantity: ${quantityFormatted}`;
 
                     const payload = {
                       status: "เสนอราคา",
-                      price: selectedEntry.totalSellingPricePerUnit * (summaryGlobalHeader.quantity || summaryQuotation.quantity),
+                      price: selectedEntry.totalSellingPricePerUnit * (headerForSummary.quantity || summaryQuotation.quantity),
                       details: updatedDetails
                     };
 
@@ -4212,10 +4529,16 @@ Quantity: ${quantityFormatted}`;
                       </div>
                     </div>
 
-                    {/* Finish Type */}
+                    {/* Colors with Plating Type */}
                     <div className="mb-4">
-                      <p className="text-sm text-muted-foreground mb-2">ชนิดการชุบ (Finish)</p>
-                      <Badge variant="outline" className="text-sm">Shiny (เงา)</Badge>
+                      <p className="text-sm text-muted-foreground mb-2">สีชุบ (Plating Colors)</p>
+                      <div className="flex gap-2 flex-wrap">
+                        {selectedProductionItem.colors.map((color, idx) => (
+                          <Badge key={idx} variant="outline" className="text-sm bg-blue-50 border-blue-200">
+                            {translateColors([color])}
+                          </Badge>
+                        ))}
+                      </div>
                     </div>
 
                     {/* Colors and Quantity Table */}
@@ -4225,7 +4548,7 @@ Quantity: ${quantityFormatted}`;
                         <Table>
                           <TableHeader className="bg-muted/50">
                             <TableRow>
-                              <TableHead className="text-left">สี</TableHead>
+                              <TableHead className="text-left">สีชุบ</TableHead>
                               <TableHead className="text-right">จำนวน</TableHead>
                             </TableRow>
                           </TableHeader>
@@ -4236,15 +4559,10 @@ Quantity: ${quantityFormatted}`;
                                 "shinny silver (สีเงินเงา)": Math.ceil(selectedProductionItem.quantity * 0.44),
                                 "shinny copper (สีทองแดงเงา)": Math.ceil(selectedProductionItem.quantity * 0.34),
                               };
-                              const colorDisplayMap: Record<string, string> = {
-                                "shinny gold (สีทองเงา)": "Gold (ทอง)",
-                                "shinny silver (สีเงินเงา)": "Silver (เงิน)",
-                                "shinny copper (สีทองแดงเงา)": "Copper (ทองแดง)",
-                              };
                               const qty = colorQuantities[color] || Math.ceil(selectedProductionItem.quantity / selectedProductionItem.colors.length);
                               return (
                                 <TableRow key={idx}>
-                                  <TableCell>{colorDisplayMap[color] || color}</TableCell>
+                                  <TableCell>{translateColors([color])}</TableCell>
                                   <TableCell className="text-right">{qty.toLocaleString()} ชิ้น</TableCell>
                                 </TableRow>
                               );
@@ -4261,21 +4579,93 @@ Quantity: ${quantityFormatted}`;
                     {/* Front Details */}
                     <div className="mb-4">
                       <p className="text-sm text-muted-foreground mb-2">รายละเอียดด้านหน้า</p>
-                      <div className="flex gap-2 flex-wrap">
-                        {selectedProductionItem.frontDetails?.split(", ").map((detail, idx) => (
-                          <Badge key={idx} variant="outline" className="text-sm">{detail}</Badge>
-                        )) || <span className="text-muted-foreground">-</span>}
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex gap-2 flex-wrap">
+                          {selectedProductionItem.frontDetails?.split(", ").map((detail, idx) => (
+                            <Badge key={idx} variant="outline" className="text-sm">{detail}</Badge>
+                          )) || <span className="text-muted-foreground">-</span>}
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="shrink-0 h-7 text-xs"
+                          onClick={() => setFrontOtherOpen(o => !o)}
+                        >
+                          อื่นๆ
+                        </Button>
                       </div>
+                      {frontOtherOpen && (
+                        <div className="mt-2 flex items-center gap-2">
+                          <Input
+                            value={frontOtherText}
+                            onChange={(e) => setFrontOtherText(e.target.value)}
+                            placeholder="พิมพ์รายละเอียดด้านหน้าเพิ่มเติม..."
+                            className="h-8"
+                          />
+                          <Button
+                            size="sm"
+                            className="h-8"
+                            onClick={() => {
+                              if (!frontOtherText.trim() || !selectedProductionItem) return;
+                              const add = frontOtherText.trim();
+                              const current = selectedProductionItem.frontDetails || "";
+                              const next = current ? `${current}, ${add}` : add;
+                              setSelectedProductionItem({ ...selectedProductionItem, frontDetails: next });
+                              setFrontOtherText("");
+                              setFrontOtherOpen(false);
+                              toast.success("เพิ่มรายละเอียดด้านหน้าแล้ว");
+                            }}
+                          >
+                            เพิ่ม
+                          </Button>
+                        </div>
+                      )}
                     </div>
 
                     {/* Back Details */}
                     <div className="mb-4">
                       <p className="text-sm text-muted-foreground mb-2">รายละเอียดด้านหลัง</p>
-                      <div className="flex gap-2 flex-wrap">
-                        {selectedProductionItem.backDetails?.split(", ").map((detail, idx) => (
-                          <Badge key={idx} variant="outline" className="text-sm">{detail}</Badge>
-                        )) || <span className="text-muted-foreground">-</span>}
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex gap-2 flex-wrap">
+                          {selectedProductionItem.backDetails?.split(", ").map((detail, idx) => (
+                            <Badge key={idx} variant="outline" className="text-sm">{detail}</Badge>
+                          )) || <span className="text-muted-foreground">-</span>}
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="shrink-0 h-7 text-xs"
+                          onClick={() => setBackOtherOpen(o => !o)}
+                        >
+                          อื่นๆ
+                        </Button>
                       </div>
+                      {backOtherOpen && (
+                        <div className="mt-2 flex items-center gap-2">
+                          <Input
+                            value={backOtherText}
+                            onChange={(e) => setBackOtherText(e.target.value)}
+                            placeholder="พิมพ์รายละเอียดด้านหลังเพิ่มเติม..."
+                            className="h-8"
+                          />
+                          <Button
+                            size="sm"
+                            className="h-8"
+                            onClick={() => {
+                              if (!backOtherText.trim() || !selectedProductionItem) return;
+                              const add = backOtherText.trim();
+                              const current = selectedProductionItem.backDetails || "";
+                              const next = current ? `${current}, ${add}` : add;
+                              setSelectedProductionItem({ ...selectedProductionItem, backDetails: next });
+                              setBackOtherText("");
+                              setBackOtherOpen(false);
+                              toast.success("เพิ่มรายละเอียดด้านหลังแล้ว");
+                            }}
+                          >
+                            เพิ่ม
+                          </Button>
+                        </div>
+                      )}
                     </div>
 
                     {/* Lanyard */}
@@ -4314,18 +4704,46 @@ Quantity: ${quantityFormatted}`;
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div>
-                        <p className="text-sm text-muted-foreground mb-2">รูป Artwork</p>
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-sm text-muted-foreground">รูป Artwork</p>
+                          {selectedProductionItem.artworkImages.length > 0 && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                const currentImage = selectedProductionItem.artworkImages[0];
+                                downloadArtwork(currentImage, 0);
+                              }}
+                              className="gap-1.5 h-7 text-xs"
+                            >
+                              <Download className="h-3 w-3" />
+                              บันทึกรูป
+                            </Button>
+                          )}
+                        </div>
                         {selectedProductionItem.artworkImages.length > 0 ? (
                           <>
                             <button
-                              onClick={() => setIsArtworkFullscreenOpen(true)}
-                              className="w-full bg-muted rounded-lg p-4 flex items-center justify-center min-h-[200px] max-h-[300px] cursor-zoom-in hover:bg-muted/80 transition-colors"
+                              onClick={() => {
+                                setSelectedQuotation(selectedProductionItem);
+                                setSelectedArtworkIndex(0);
+                                setIsArtworkFullscreenOpen(true);
+                              }}
+                              className="w-full bg-muted rounded-lg p-4 flex items-center justify-center min-h-[200px] max-h-[300px] cursor-zoom-in hover:bg-muted/80 transition-colors relative group"
                             >
                               <img
-                                src={sampleArtwork}
+                                src={selectedProductionItem.artworkImages[0] || sampleArtwork}
                                 alt={`Artwork preview`}
                                 className="max-w-full max-h-[260px] object-contain"
+                                onError={(e) => {
+                                  e.currentTarget.src = sampleArtwork;
+                                }}
                               />
+                              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors rounded-lg flex items-center justify-center">
+                                <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 text-white px-3 py-1.5 rounded-full text-sm">
+                                  คลิกเพื่อขยาย
+                                </div>
+                              </div>
                             </button>
                             <p className="text-xs text-muted-foreground text-center mt-2">คลิกที่รูปเพื่อขยายเต็มจอ</p>
                           </>
@@ -4612,7 +5030,7 @@ Quantity: ${quantityFormatted}`;
                   <p><strong>วัสดุ:</strong> {selectedProductionItem.material}</p>
                   <p><strong>ขนาด:</strong> {selectedProductionItem.size}</p>
                   <p><strong>ความหนา:</strong> {selectedProductionItem.thickness}</p>
-                  <p><strong>สี/การชุบ:</strong> {selectedProductionItem.colors.join(", ")}</p>
+                  <p><strong>สี/การชุบ:</strong> {translateColors(selectedProductionItem.colors)}</p>
                   <p><strong>ด้านหน้า:</strong> {selectedProductionItem.frontDetails || "-"}</p>
                   <p><strong>ด้านหลัง:</strong> {selectedProductionItem.backDetails || "-"}</p>
                   <p><strong>สายคล้อง:</strong> {selectedProductionItem.lanyardSize} ({selectedProductionItem.lanyardPatterns} แบบ)</p>
