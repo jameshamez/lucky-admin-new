@@ -1254,6 +1254,53 @@ export default function CustomerManagement() {
                           <h3 className="text-lg font-bold">ที่อยู่ออกใบกำกับภาษี</h3>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="md:col-span-2 space-y-4">
+                            <div className="space-y-2 p-3 bg-muted/30 rounded-lg border border-dashed border-primary/30">
+                              <div className="flex items-center justify-between">
+                                <Label className="text-primary font-medium flex items-center gap-2">
+                                  <FileText className="w-4 h-4" /> วางที่อยู่แบบเต็มเพื่อกระจายอัตโนมัติ
+                                </Label>
+                              </div>
+                              <Textarea
+                                placeholder="เช่น 123/4 หมู่ 5 ซ.สุขใจ ถ.บางนา ต.บางแก้ว อ.บางพลี จ.สมุทรปราการ 10540"
+                                className="bg-background resize-none border-primary/20 focus-visible:ring-primary/30"
+                                rows={2}
+                                onChange={(e) => {
+                                  const text = e.target.value;
+                                  if (text.trim().length > 10) {
+                                    const extracted = extractThaiAddress(text);
+                                    if (extracted) {
+                                      setNewCustomer(prev => ({
+                                        ...prev,
+                                        billingProvince: extracted.province,
+                                        billingDistrict: extracted.district,
+                                        billingSubdistrict: extracted.subdistrict,
+                                        billingPostcode: extracted.zipcode,
+                                        billingAddress: extracted.address
+                                      }));
+                                      toast({
+                                        title: "กระจายที่อยู่สำเร็จ",
+                                        description: `จ.${extracted.province} อ.${extracted.district} ต.${extracted.subdistrict} ${extracted.zipcode}`,
+                                      });
+                                      e.target.value = ""; // clear after success
+                                    }
+                                  }
+                                }}
+                              />
+                              <p className="text-xs text-muted-foreground">ระบบจะแยก จังหวัด อำเภอ ตำบล รหัสไปรษณีย์ และบ้านเลขที่ให้โดยอัตโนมัติ</p>
+                            </div>
+
+                            <div className="space-y-2">
+                              <Label>รายละเอียดที่อยู่ (บ้านเลขที่, หมู่, ซอย, ถนน)</Label>
+                              <Textarea
+                                value={newCustomer.billingAddress}
+                                onChange={(e) => setNewCustomer({ ...newCustomer, billingAddress: e.target.value })}
+                                placeholder="พิมพ์บ้านเลขที่และถนน..."
+                                className="bg-background resize-none"
+                                rows={2}
+                              />
+                            </div>
+                          </div>
                           <div className="space-y-2">
                             <Label>จังหวัด/อำเภอ/ตำบล</Label>
                             <div className="grid grid-cols-3 gap-2">
@@ -1341,53 +1388,7 @@ export default function CustomerManagement() {
                               maxLength={5}
                             />
                           </div>
-                          <div className="md:col-span-2 space-y-4">
-                            <div className="space-y-2 p-3 bg-muted/30 rounded-lg border border-dashed border-primary/30">
-                              <div className="flex items-center justify-between">
-                                <Label className="text-primary font-medium flex items-center gap-2">
-                                  <FileText className="w-4 h-4" /> วางที่อยู่แบบเต็มเพื่อกระจายอัตโนมัติ
-                                </Label>
-                              </div>
-                              <Textarea
-                                placeholder="เช่น 123/4 หมู่ 5 ซ.สุขใจ ถ.บางนา ต.บางแก้ว อ.บางพลี จ.สมุทรปราการ 10540"
-                                className="bg-background resize-none border-primary/20 focus-visible:ring-primary/30"
-                                rows={2}
-                                onChange={(e) => {
-                                  const text = e.target.value;
-                                  if (text.trim().length > 10) {
-                                    const extracted = extractThaiAddress(text);
-                                    if (extracted) {
-                                      setNewCustomer(prev => ({
-                                        ...prev,
-                                        billingProvince: extracted.province,
-                                        billingDistrict: extracted.district,
-                                        billingSubdistrict: extracted.subdistrict,
-                                        billingPostcode: extracted.zipcode,
-                                        billingAddress: extracted.address
-                                      }));
-                                      toast({
-                                        title: "กระจายที่อยู่สำเร็จ",
-                                        description: `จ.${extracted.province} อ.${extracted.district} ต.${extracted.subdistrict} ${extracted.zipcode}`,
-                                      });
-                                      e.target.value = ""; // clear after success
-                                    }
-                                  }
-                                }}
-                              />
-                              <p className="text-xs text-muted-foreground">ระบบจะแยก จังหวัด อำเภอ ตำบล รหัสไปรษณีย์ และบ้านเลขที่ให้โดยอัตโนมัติ</p>
-                            </div>
 
-                            <div className="space-y-2">
-                              <Label>รายละเอียดที่อยู่ (บ้านเลขที่, หมู่, ซอย, ถนน)</Label>
-                              <Textarea
-                                value={newCustomer.billingAddress}
-                                onChange={(e) => setNewCustomer({ ...newCustomer, billingAddress: e.target.value })}
-                                placeholder="พิมพ์บ้านเลขที่และถนน..."
-                                className="bg-background resize-none"
-                                rows={2}
-                              />
-                            </div>
-                          </div>
                         </div>
                       </div>
 
@@ -1405,6 +1406,53 @@ export default function CustomerManagement() {
 
                         {!sameAddress && (
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="md:col-span-2 space-y-4">
+                              <div className="space-y-2 p-3 bg-muted/30 rounded-lg border border-dashed border-primary/30">
+                                <div className="flex items-center justify-between">
+                                  <Label className="text-primary font-medium flex items-center gap-2">
+                                    <FileText className="w-4 h-4" /> วางที่อยู่แบบเต็มเพื่อกระจายอัตโนมัติ
+                                  </Label>
+                                </div>
+                                <Textarea
+                                  placeholder="เช่น 123/4 หมู่ 5 ซ.สุขใจ ถ.บางนา ต.บางแก้ว อ.บางพลี จ.สมุทรปราการ 10540"
+                                  className="bg-background resize-none border-primary/20 focus-visible:ring-primary/30"
+                                  rows={2}
+                                  onChange={(e) => {
+                                    const text = e.target.value;
+                                    if (text.trim().length > 10) {
+                                      const extracted = extractThaiAddress(text);
+                                      if (extracted) {
+                                        setNewCustomer(prev => ({
+                                          ...prev,
+                                          shippingProvince: extracted.province,
+                                          shippingDistrict: extracted.district,
+                                          shippingSubdistrict: extracted.subdistrict,
+                                          shippingPostcode: extracted.zipcode,
+                                          shippingAddress: extracted.address
+                                        }));
+                                        toast({
+                                          title: "กระจายที่อยู่จัดส่งสำเร็จ",
+                                          description: `จ.${extracted.province} อ.${extracted.district} ต.${extracted.subdistrict} ${extracted.zipcode}`,
+                                        });
+                                        e.target.value = ""; // clear after success
+                                      }
+                                    }
+                                  }}
+                                />
+                                <p className="text-xs text-muted-foreground">ระบบจะแยก จังหวัด อำเภอ ตำบล รหัสไปรษณีย์ และบ้านเลขที่ให้โดยอัตโนมัติ</p>
+                              </div>
+
+                              <div className="space-y-2">
+                                <Label>รายละเอียดที่อยู่ (บ้านเลขที่, หมู่, ซอย, ถนน)</Label>
+                                <Textarea
+                                  value={newCustomer.shippingAddress}
+                                  onChange={(e) => setNewCustomer({ ...newCustomer, shippingAddress: e.target.value })}
+                                  placeholder="พิมพ์บ้านเลขที่และถนน..."
+                                  className="bg-background resize-none"
+                                  rows={2}
+                                />
+                              </div>
+                            </div>
                             <div className="space-y-2">
                               <Label>จังหวัด/อำเภอ/ตำบล</Label>
                               <div className="grid grid-cols-3 gap-2">
@@ -1491,53 +1539,7 @@ export default function CustomerManagement() {
                                 maxLength={5}
                               />
                             </div>
-                            <div className="md:col-span-2 space-y-4">
-                              <div className="space-y-2 p-3 bg-muted/30 rounded-lg border border-dashed border-primary/30">
-                                <div className="flex items-center justify-between">
-                                  <Label className="text-primary font-medium flex items-center gap-2">
-                                    <FileText className="w-4 h-4" /> วางที่อยู่แบบเต็มเพื่อกระจายอัตโนมัติ
-                                  </Label>
-                                </div>
-                                <Textarea
-                                  placeholder="เช่น 123/4 หมู่ 5 ซ.สุขใจ ถ.บางนา ต.บางแก้ว อ.บางพลี จ.สมุทรปราการ 10540"
-                                  className="bg-background resize-none border-primary/20 focus-visible:ring-primary/30"
-                                  rows={2}
-                                  onChange={(e) => {
-                                    const text = e.target.value;
-                                    if (text.trim().length > 10) {
-                                      const extracted = extractThaiAddress(text);
-                                      if (extracted) {
-                                        setNewCustomer(prev => ({
-                                          ...prev,
-                                          shippingProvince: extracted.province,
-                                          shippingDistrict: extracted.district,
-                                          shippingSubdistrict: extracted.subdistrict,
-                                          shippingPostcode: extracted.zipcode,
-                                          shippingAddress: extracted.address
-                                        }));
-                                        toast({
-                                          title: "กระจายที่อยู่จัดส่งสำเร็จ",
-                                          description: `จ.${extracted.province} อ.${extracted.district} ต.${extracted.subdistrict} ${extracted.zipcode}`,
-                                        });
-                                        e.target.value = ""; // clear after success
-                                      }
-                                    }
-                                  }}
-                                />
-                                <p className="text-xs text-muted-foreground">ระบบจะแยก จังหวัด อำเภอ ตำบล รหัสไปรษณีย์ และบ้านเลขที่ให้โดยอัตโนมัติ</p>
-                              </div>
 
-                              <div className="space-y-2">
-                                <Label>รายละเอียดที่อยู่ (บ้านเลขที่, หมู่, ซอย, ถนน)</Label>
-                                <Textarea
-                                  value={newCustomer.shippingAddress}
-                                  onChange={(e) => setNewCustomer({ ...newCustomer, shippingAddress: e.target.value })}
-                                  placeholder="พิมพ์บ้านเลขที่และถนน..."
-                                  className="bg-background resize-none"
-                                  rows={2}
-                                />
-                              </div>
-                            </div>
                           </div>
                         )}
                         {sameAddress && (

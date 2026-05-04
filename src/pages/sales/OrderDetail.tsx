@@ -545,7 +545,8 @@ export default function OrderDetail() {
               apiData.notes || null
             ].filter(Boolean).join(' | ') || "-",
             quantity: parseInt(item.quantity) || 1,
-            currentStatus: apiData.order_status || "สร้างคำสั่งซื้อใหม่",
+            // Use item-specific status first, fallback to order status
+            currentStatus: item.status || item.item_status || apiData.order_status || "สร้างคำสั่งซื้อใหม่",
             statusHistory: [],
             productType: isReadymade ? "readymade" : "madeToOrder",
             material: item.material || details.material || "-",
@@ -597,6 +598,16 @@ export default function OrderDetail() {
           originBranch: apiData.origin_branch,
           destinationBranch: apiData.destination_branch,
           preferredTimeSlot: apiData.preferred_time_slot,
+          // Product details from API
+          productDetails: {
+            size: apiData.product_size || apiData.size || null,
+            thickness: apiData.product_thickness || apiData.thickness || null,
+            platingColors: apiData.plating_colors ? (Array.isArray(apiData.plating_colors) ? apiData.plating_colors : JSON.parse(apiData.plating_colors || '[]')) : [],
+            frontDetails: apiData.front_details ? (Array.isArray(apiData.front_details) ? apiData.front_details : JSON.parse(apiData.front_details || '[]')) : [],
+            backDetails: apiData.back_details ? (Array.isArray(apiData.back_details) ? apiData.back_details : JSON.parse(apiData.back_details || '[]')) : [],
+            lanyard: apiData.lanyard_info || apiData.lanyard || null,
+            patternCount: apiData.pattern_count || apiData.patterns || null,
+          },
         });
 
         try {
@@ -970,46 +981,68 @@ export default function OrderDetail() {
             }
 
             // Default product details for other product types (made-to-order)
+            // Extract product details from order data
+            const productDetails = order?.productDetails || {};
+            const platingColors = productDetails.platingColors || order?.platingColors || [];
+            const frontDetails = productDetails.frontDetails || order?.frontDetails || [];
+            const backDetails = productDetails.backDetails || order?.backDetails || [];
+            const lanyardInfo = productDetails.lanyard || order?.lanyard || null;
+            const patternCount = productDetails.patternCount || order?.patternCount || null;
+
             return (
               <div className="bg-white rounded-lg shadow-sm border p-6">
                 <h2 className="text-lg font-semibold mb-4">รายละเอียดสินค้า</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                     <p className="text-sm text-muted-foreground">ขนาด</p>
-                    <p className="font-medium">5 ซม.</p>
+                    <p className="font-medium">{productDetails.size || order?.size || "-"}</p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">ความหนา</p>
-                    <p className="font-medium">5 มิล</p>
+                    <p className="font-medium">{productDetails.thickness || order?.thickness || "-"}</p>
                   </div>
-                  <div className="col-span-2">
-                    <p className="text-sm text-muted-foreground mb-2">สี (เลือกได้หลายรายการ)</p>
-                    <div className="flex flex-wrap gap-2">
-                      <Badge variant="outline" className="px-3 py-1">shinny gold (สีทองเงา)</Badge>
-                      <Badge variant="outline" className="px-3 py-1">shinny silver (สีเงินเงา)</Badge>
+                  {platingColors.length > 0 && (
+                    <div className="col-span-2">
+                      <p className="text-sm text-muted-foreground mb-2">สี (เลือกได้หลายรายการ)</p>
+                      <div className="flex flex-wrap gap-2">
+                        {platingColors.map((color: string, idx: number) => (
+                          <Badge key={idx} variant="outline" className="px-3 py-1">{color}</Badge>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                  <div className="col-span-2">
-                    <p className="text-sm text-muted-foreground mb-2">รายละเอียดด้านหน้า (เลือกได้หลายรายการ)</p>
-                    <div className="flex flex-wrap gap-2">
-                      <Badge variant="outline" className="px-3 py-1">พิมพ์โลโก้</Badge>
-                      <Badge variant="outline" className="px-3 py-1">แกะสลักข้อความ</Badge>
+                  )}
+                  {frontDetails.length > 0 && (
+                    <div className="col-span-2">
+                      <p className="text-sm text-muted-foreground mb-2">รายละเอียดด้านหน้า (เลือกได้หลายรายการ)</p>
+                      <div className="flex flex-wrap gap-2">
+                        {frontDetails.map((detail: string, idx: number) => (
+                          <Badge key={idx} variant="outline" className="px-3 py-1">{detail}</Badge>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                  <div className="col-span-2">
-                    <p className="text-sm text-muted-foreground mb-2">รายละเอียดด้านหลัง (เลือกได้หลายรายการ)</p>
-                    <div className="flex flex-wrap gap-2">
-                      <Badge variant="outline" className="px-3 py-1">ลงน้ำยาป้องกันสนิม</Badge>
+                  )}
+                  {backDetails.length > 0 && (
+                    <div className="col-span-2">
+                      <p className="text-sm text-muted-foreground mb-2">รายละเอียดด้านหลัง (เลือกได้หลายรายการ)</p>
+                      <div className="flex flex-wrap gap-2">
+                        {backDetails.map((detail: string, idx: number) => (
+                          <Badge key={idx} variant="outline" className="px-3 py-1">{detail}</Badge>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">สายคล้อง</p>
-                    <p className="font-medium">2 × 90 ซม</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">จำนวนลาย</p>
-                    <p className="font-medium">3 ลาย</p>
-                  </div>
+                  )}
+                  {lanyardInfo && (
+                    <div>
+                      <p className="text-sm text-muted-foreground">สายคล้อง</p>
+                      <p className="font-medium">{lanyardInfo}</p>
+                    </div>
+                  )}
+                  {patternCount && (
+                    <div>
+                      <p className="text-sm text-muted-foreground">จำนวนลาย</p>
+                      <p className="font-medium">{patternCount}</p>
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -1156,22 +1189,54 @@ export default function OrderDetail() {
 
             {/* Design Files */}
             <div>
-              <p className="text-sm text-muted-foreground mb-3">ไฟล์งานออกแบบ</p>
-              <div className="border rounded-lg p-4 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  {/* <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
-                    <FileText className="w-5 h-5 text-orange-600" />
-                  </div> */}
-                  <div>
-                    {/* <p className="font-medium">artwork_final_v3.ai</p>
-                    <p className="text-sm text-muted-foreground">18/1/2567 14:32:15 • สมชาย กราฟิก</p> */}
-                  </div>
+              <p className="text-sm text-muted-foreground mb-3">ไฟล์งานออกแบบจากกราฟิก</p>
+              {designJob?.design_files && designJob.design_files.length > 0 ? (
+                <div className="space-y-2">
+                  {designJob.design_files.map((file: any, idx: number) => (
+                    <div key={idx} className="border rounded-lg p-4 flex items-center justify-between hover:border-primary/50 transition-colors">
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                          <FileText className="w-5 h-5 text-orange-600" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium truncate">{file.file_name || file.name || `ไฟล์ ${idx + 1}`}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {file.uploaded_at && new Date(file.uploaded_at).toLocaleString('th-TH')}
+                            {file.uploaded_by && ` • ${file.uploaded_by}`}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {file.file_url && (
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => window.open(file.file_url, '_blank')}
+                          >
+                            <Eye className="w-4 h-4 mr-2" />
+                            ดูไฟล์
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="w-full mt-2"
+                    onClick={() => setShowUploadHistory(true)}
+                  >
+                    <History className="w-4 h-4 mr-2" />
+                    ประวัติการอัพโหลดทั้งหมด
+                  </Button>
                 </div>
-                <Button variant="outline" size="sm" onClick={() => setShowUploadHistory(true)}>
-                  <History className="w-4 h-4 mr-2" />
-                  ประวัติการอัพโหลด
-                </Button>
-              </div>
+              ) : (
+                <div className="border border-dashed rounded-lg p-8 flex flex-col items-center justify-center text-muted-foreground">
+                  <FileText className="w-12 h-12 mb-2 opacity-20" />
+                  <p className="text-sm">ยังไม่มีไฟล์งานออกแบบจากกราฟิก</p>
+                  <p className="text-xs mt-1">รอกราฟิกอัปโหลดไฟล์งานออกแบบ</p>
+                </div>
+              )}
             </div>
           </div>
 

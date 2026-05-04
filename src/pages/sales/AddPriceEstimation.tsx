@@ -556,6 +556,7 @@ export default function AddPriceEstimation({
   interface ColorQuantityRow {
     id: string;
     color: string;
+    customColor?: string; // สีที่ระบุเอง เมื่อเลือก "อื่นๆ"
     quantities: number[]; // Support multiple sets (ชุด A, B, C)
     note: string; // หมายเหตุ
   }
@@ -563,7 +564,7 @@ export default function AddPriceEstimation({
   // Quantity sets management
   const [quantitySets, setQuantitySets] = useState<string[]>(["A"]);
   const [colorQuantityRows, setColorQuantityRows] = useState<ColorQuantityRow[]>([
-    { id: crypto.randomUUID(), color: "", quantities: [0], note: "" }
+    { id: crypto.randomUUID(), color: "", customColor: "", quantities: [0], note: "" }
   ]);
 
   // ต้องการตัวอย่าง state
@@ -824,6 +825,7 @@ export default function AddPriceEstimation({
     { value: "gold", label: "Gold (ทอง)" },
     { value: "silver", label: "Silver (เงิน)" },
     { value: "copper", label: "Copper (ทองแดง)" },
+    { value: "other", label: "อื่นๆ (ระบุสี)" },
   ];
 
   const handleProductSelect = (category: string, product: string) => {
@@ -2006,7 +2008,7 @@ export default function AddPriceEstimation({
                       variant="outline"
                       size="sm"
                       className="h-7 text-xs gap-1"
-                      onClick={() => setColorQuantityRows(prev => [...prev, { id: crypto.randomUUID(), color: "", quantities: quantitySets.map(() => 0), note: "" }])}
+                      onClick={() => setColorQuantityRows(prev => [...prev, { id: crypto.randomUUID(), color: "", customColor: "", quantities: quantitySets.map(() => 0), note: "" }])}
                     >
                       <Plus className="h-3 w-3" /> เพิ่มสี
                     </Button>
@@ -2029,19 +2031,31 @@ export default function AddPriceEstimation({
                         {colorQuantityRows.map((row, rowIdx) => (
                           <TableRow key={row.id}>
                             <TableCell className="py-1.5">
-                              <Select
-                                value={row.color}
-                                onValueChange={(val) => {
-                                  setColorQuantityRows(prev => prev.map(r => r.id === row.id ? { ...r, color: val } : r));
-                                }}
-                              >
-                                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="เลือกสี" /></SelectTrigger>
-                                <SelectContent>
-                                  {metalColors.map(c => (
-                                    <SelectItem key={c.value} value={c.value} className="text-xs">{c.label}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
+                              <div className="space-y-1.5">
+                                <Select
+                                  value={row.color}
+                                  onValueChange={(val) => {
+                                    setColorQuantityRows(prev => prev.map(r => r.id === row.id ? { ...r, color: val, customColor: val === "other" ? r.customColor : "" } : r));
+                                  }}
+                                >
+                                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="เลือกสี" /></SelectTrigger>
+                                  <SelectContent>
+                                    {metalColors.map(c => (
+                                      <SelectItem key={c.value} value={c.value} className="text-xs">{c.label}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                {row.color === "other" && (
+                                  <Input
+                                    placeholder="ระบุสีที่ต้องการ"
+                                    value={row.customColor || ""}
+                                    onChange={(e) => {
+                                      setColorQuantityRows(prev => prev.map(r => r.id === row.id ? { ...r, customColor: e.target.value } : r));
+                                    }}
+                                    className="h-7 text-xs"
+                                  />
+                                )}
+                              </div>
                             </TableCell>
                             {quantitySets.map((_, setIdx) => (
                               <TableCell key={setIdx} className="py-1.5">
@@ -3732,26 +3746,44 @@ export default function AddPriceEstimation({
             {attachedFiles.length > 0 && (
               <div className="space-y-2">
                 <Label>ไฟล์ที่แนบ ({attachedFiles.length} ไฟล์)</Label>
-                <div className="space-y-2">
-                  {attachedFiles.map((file, index) => (
-                    <div key={index} className="flex items-center justify-between p-2 bg-muted/50 rounded-lg">
-                      <div className="flex items-center gap-2">
-                        <FileText className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-sm truncate max-w-xs">{file.name}</span>
-                        <span className="text-xs text-muted-foreground">
-                          ({(file.size / 1024).toFixed(1)} KB)
-                        </span>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {attachedFiles.map((file, index) => {
+                    const isImage = file.type.startsWith('image/');
+                    const imageUrl = isImage ? URL.createObjectURL(file) : null;
+                    
+                    return (
+                      <div key={index} className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border border-border hover:border-primary/50 transition-colors">
+                        {isImage && imageUrl ? (
+                          <div className="flex-shrink-0 w-16 h-16 rounded-md overflow-hidden bg-muted border border-border">
+                            <img 
+                              src={imageUrl} 
+                              alt={file.name}
+                              className="w-full h-full object-cover"
+                              onLoad={() => URL.revokeObjectURL(imageUrl)}
+                            />
+                          </div>
+                        ) : (
+                          <div className="flex-shrink-0 w-16 h-16 rounded-md bg-muted border border-border flex items-center justify-center">
+                            <FileText className="h-8 w-8 text-muted-foreground" />
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{file.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {(file.size / 1024).toFixed(1)} KB
+                          </p>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeFile(index)}
+                          className="h-8 w-8 p-0 text-destructive hover:text-destructive flex-shrink-0"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => removeFile(index)}
-                        className="h-8 w-8 p-0 text-destructive hover:text-destructive"
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}

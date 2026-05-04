@@ -184,8 +184,65 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
   const [employees, setEmployees] = useState<any[]>([]);
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
+  const [engravingFiles, setEngravingFiles] = useState<File[]>([]);
+  const [readymadeJobFiles, setReadymadeJobFiles] = useState<File[]>([]);
+  const [stickerFiles, setStickerFiles] = useState<File[]>([]);
 
   const [addressAutoFill, setAddressAutoFill] = useState("");
+
+  // Handle file upload for Engraving
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files) {
+      const newFiles = Array.from(files);
+      setEngravingFiles(prev => [...prev, ...newFiles]);
+      toast({
+        title: "เพิ่มไฟล์สำเร็จ",
+        description: `เพิ่ม ${newFiles.length} ไฟล์แล้ว`,
+      });
+    }
+  };
+
+  // Remove file for Engraving
+  const removeEngravingFile = (index: number) => {
+    setEngravingFiles(prev => prev.filter((_, i) => i !== index));
+    toast({
+      title: "ลบไฟล์สำเร็จ",
+      description: "ลบไฟล์ออกจากรายการแล้ว",
+    });
+  };
+
+  // Handle file upload for Readymade Job
+  const handleReadymadeFilesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files ? Array.from(e.target.files) : [];
+    if (!files.length) return;
+    
+    setReadymadeJobFiles(prev => [...prev, ...files]);
+    toast({ title: "เพิ่มไฟล์สำเร็จ", description: `เพิ่ม ${files.length} ไฟล์แล้ว` });
+    e.target.value = "";
+  };
+
+  // Remove file for Readymade Job
+  const removeReadymadeFile = (index: number) => {
+    setReadymadeJobFiles(prev => prev.filter((_, i) => i !== index));
+    toast({ title: "ลบไฟล์สำเร็จ", description: "ลบไฟล์ออกจากรายการแล้ว" });
+  };
+
+  // Handle file upload for Sticker
+  const handleStickerFilesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files ? Array.from(e.target.files) : [];
+    if (!files.length) return;
+    
+    setStickerFiles(prev => [...prev, ...files]);
+    toast({ title: "เพิ่มไฟล์สำเร็จ", description: `เพิ่ม ${files.length} ไฟล์แล้ว` });
+    e.target.value = "";
+  };
+
+  // Remove file for Sticker
+  const removeStickerFile = (index: number) => {
+    setStickerFiles(prev => prev.filter((_, i) => i !== index));
+    toast({ title: "ลบไฟล์สำเร็จ", description: "ลบไฟล์ออกจากรายการแล้ว" });
+  };
 
   const renderCatalogPriceFields = () => {
     if (getProductFlow(watchedProductType) !== "catalog") return null;
