@@ -186,7 +186,6 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [engravingFiles, setEngravingFiles] = useState<File[]>([]);
   const [readymadeJobFiles, setReadymadeJobFiles] = useState<File[]>([]);
-  const [stickerFiles, setStickerFiles] = useState<File[]>([]);
 
   const [addressAutoFill, setAddressAutoFill] = useState("");
 
