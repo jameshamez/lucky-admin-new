@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -52,6 +52,8 @@ const mockEmployees = [
   { id: "4", name: "สุดา ออกแบบดี" },
 ];
 
+const API_BASE = "https://nacres.co.th/api-lucky/admin";
+
 export function JobDetailDrawer({ 
   open, 
   onOpenChange, 
@@ -70,6 +72,102 @@ export function JobDetailDrawer({
   const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
   const [rejectReason, setRejectReason] = useState("");
   const [requestInfoMessage, setRequestInfoMessage] = useState("");
+  const [loadingDetails, setLoadingDetails] = useState(false);
+  const [salesDetails, setSalesDetails] = useState<any>(null);
+
+  // Fetch Sales Price Estimation details for this job (to show real files/images)
+  useEffect(() => {
+    const fetchDetails = async () => {
+      try {
+        if (!open) return;
+        const id = jobData?.job_id || jobId;
+        if (!id) return;
+        setLoadingDetails(true);
+        const res = await fetch(`${API_BASE}/price_estimations.php`);
+        if (!res.ok) throw new Error("fetch failed");
+        const json = await res.json();
+        const rows = json?.data || [];
+        const found = rows.find((it: any) => String(it.estimate_id || it.job_code || it.id) === String(id));
+        if (!found) {
+          setSalesDetails(null);
+          return;
+        }
+        let details: any = {};
+        try {
+          details = typeof found.details === 'string' ? JSON.parse(found.details) : (found.details || {});
+        } catch {
+          details = {};
+        }
+        setSalesDetails(details);
+      } catch (e) {
+        console.error(e);
+        setSalesDetails(null);
+      } finally {
+        setLoadingDetails(false);
+      }
+    };
+    fetchDetails();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, jobId, jobData?.job_id]);
+
+  const parseImageToken = (img: any): string | null => {
+    if (!img) return null;
+    if (typeof img === 'string') {
+      try {
+        const parsed = JSON.parse(img);
+        if (parsed?.data) return parsed.data as string; // base64 data URL
+      } catch {
+        // not JSON, assume plain URL
+        return img;
+      }
+      return img;
+    }
+    return img.url || null;
+  };
+
+  const referenceImages: string[] = useMemo(() => {
+    const list = (salesDetails?.customerReferenceImages && Array.isArray(salesDetails.customerReferenceImages))
+      ? salesDetails.customerReferenceImages
+      : (salesDetails?.artworkImages && Array.isArray(salesDetails.artworkImages))
+        ? salesDetails.artworkImages
+        : [];
+    return list.map(parseImageToken).filter(Boolean) as string[];
+  }, [salesDetails]);
+
+  type DocItem = { fileName: string; url: string };
+  const referenceFiles: DocItem[] = useMemo(() => {
+    const raw = (Array.isArray(salesDetails?.designFiles) ? salesDetails.designFiles : [])
+      .concat(Array.isArray(salesDetails?.referenceFiles) ? salesDetails.referenceFiles : []);
+    const toDoc = (f: any): DocItem | null => {
+      if (!f) return null;
+      if (typeof f === 'string') return { fileName: f.split('/').pop() || 'ไฟล์เอกสาร', url: f };
+      const url = f.url || f.link || '';
+      if (!url) return null;
+      return { fileName: f.fileName || f.name || (url.split('/').pop() || 'ไฟล์เอกสาร'), url };
+    };
+    const merged = (raw || []).map(toDoc).filter(Boolean) as DocItem[];
+    // If nothing, try to include any non-image tokens in customerReferenceImages as files
+    if (merged.length === 0 && Array.isArray(salesDetails?.customerReferenceImages)) {
+      const extra = salesDetails.customerReferenceImages
+        .map((v: any) => (typeof v === 'string' ? v : (v?.url || '')))
+        .filter((u: string) => u && !u.match(/\.(jpg|jpeg|png|gif|webp)$/i))
+        .map((u: string) => ({ fileName: u.split('/').pop() || 'ไฟล์เอกสาร', url: u }));
+      return extra;
+    }
+    return merged;
+  }, [salesDetails]);
+
+  const prodAiFile: DocItem | null = useMemo(() => {
+    const url = salesDetails?.designWorkflow?.aiFile || '';
+    if (!url) return null;
+    return { fileName: (String(url).split('/').pop() || 'AI/PDF'), url: String(url) };
+  }, [salesDetails]);
+
+  const prodArtworkImages: string[] = useMemo(() => {
+    const p = salesDetails?.designWorkflow?.productionArtwork;
+    const arr = Array.isArray(p) ? p : (p ? [p] : []);
+    return arr.map(parseImageToken).filter(Boolean) as string[];
+  }, [salesDetails]);
 
   // Mock employee workload data
   const mockEmployeeWorkload: Record<string, { jobType: string; quantity: number }[]> = {
@@ -473,18 +571,15 @@ export function JobDetailDrawer({
             <FileText className="h-4 w-4" />
             ไฟล์เอกสาร
           </p>
-          {jobData?.reference_files && jobData.reference_files.length > 0 ? (
+          {referenceFiles.length > 0 ? (
             <div className="space-y-2">
-              {jobData.reference_files.map((file: string, idx: number) => (
-                <div
-                  key={idx}
-                  className="flex items-center justify-between p-3 bg-muted/50 rounded-md hover:bg-muted transition-colors"
-                >
+              {referenceFiles.map((f, idx) => (
+                <div key={idx} className="flex items-center justify-between p-3 bg-muted/50 rounded-md hover:bg-muted transition-colors">
                   <div className="flex items-center gap-2">
                     <FileText className="h-5 w-5 text-primary" />
-                    <span className="text-sm font-medium">{file}</span>
+                    <span className="text-sm font-medium">{f.fileName}</span>
                   </div>
-                  <Button size="sm" variant="ghost" className="gap-1">
+                  <Button size="sm" variant="ghost" className="gap-1" onClick={() => { const a = document.createElement('a'); a.href = f.url; a.download = f.fileName; document.body.appendChild(a); a.click(); document.body.removeChild(a); }}>
                     <Download className="h-4 w-4" />
                     ดาวน์โหลด
                   </Button>
@@ -492,24 +587,7 @@ export function JobDetailDrawer({
               ))}
             </div>
           ) : (
-            <div className="space-y-2">
-              {/* Mock files for demo */}
-              {["Brief_ABC_Company.pdf", "Logo_Guidelines.ai"].map((file, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center justify-between p-3 bg-muted/50 rounded-md hover:bg-muted transition-colors"
-                >
-                  <div className="flex items-center gap-2">
-                    <FileText className="h-5 w-5 text-primary" />
-                    <span className="text-sm font-medium">{file}</span>
-                  </div>
-                  <Button size="sm" variant="ghost" className="gap-1">
-                    <Download className="h-4 w-4" />
-                    ดาวน์โหลด
-                  </Button>
-                </div>
-              ))}
-            </div>
+            <div className="text-sm text-muted-foreground">ไม่มีไฟล์เอกสาร</div>
           )}
         </div>
 
@@ -519,29 +597,16 @@ export function JobDetailDrawer({
             <ImageIcon className="h-4 w-4" />
             รูปภาพอ้างอิง
           </p>
-          {jobData?.reference_images && jobData.reference_images.length > 0 ? (
+          {referenceImages.length > 0 ? (
             <div className="grid grid-cols-3 gap-2">
-              {jobData.reference_images.map((img: string, idx: number) => (
-                <div
-                  key={idx}
-                  className="aspect-video bg-muted rounded-md overflow-hidden hover:opacity-80 cursor-pointer transition-opacity"
-                >
+              {referenceImages.map((img, idx) => (
+                <div key={idx} className="aspect-video bg-muted rounded-md overflow-hidden hover:opacity-80 cursor-pointer transition-opacity">
                   <img src={img} alt={`รูปอ้างอิง ${idx + 1}`} className="w-full h-full object-cover" />
                 </div>
               ))}
             </div>
           ) : (
-            <div className="grid grid-cols-3 gap-2">
-              {/* Mock images for demo */}
-              {[1, 2, 3].map((idx) => (
-                <div
-                  key={idx}
-                  className="aspect-video bg-muted/50 rounded-md overflow-hidden flex items-center justify-center border-2 border-dashed"
-                >
-                  <ImageIcon className="h-8 w-8 text-muted-foreground/50" />
-                </div>
-              ))}
-            </div>
+            <div className="text-sm text-muted-foreground">ไม่มีรูปภาพอ้างอิง</div>
           )}
         </div>
       </CardContent>
@@ -566,22 +631,20 @@ export function JobDetailDrawer({
       <CardContent className="space-y-4">
         {/* Production files - files ready for manufacturing */}
         <div className="space-y-2">
-          {/* Mock production files */}
-          {["Artwork_Final.ai", "Production_Specs.pdf"].map((file, idx) => (
-            <div
-              key={idx}
-              className="flex items-center justify-between p-3 bg-muted/50 rounded-md hover:bg-muted transition-colors"
-            >
+          {prodAiFile ? (
+            <div className="flex items-center justify-between p-3 bg-muted/50 rounded-md hover:bg-muted transition-colors">
               <div className="flex items-center gap-2">
                 <FileText className="h-5 w-5 text-primary" />
-                <span className="text-sm font-medium">{file}</span>
+                <span className="text-sm font-medium">{prodAiFile.fileName}</span>
               </div>
-              <Button size="sm" variant="ghost" className="gap-1">
+              <Button size="sm" variant="ghost" className="gap-1" onClick={() => { const a = document.createElement('a'); a.href = prodAiFile.url; a.download = prodAiFile.fileName; document.body.appendChild(a); a.click(); document.body.removeChild(a); }}>
                 <Download className="h-4 w-4" />
                 ดาวน์โหลด
               </Button>
             </div>
-          ))}
+          ) : (
+            <div className="text-sm text-muted-foreground">ยังไม่มีไฟล์ AI/PDF</div>
+          )}
         </div>
 
         {/* Production Artwork Images */}
@@ -590,17 +653,17 @@ export function JobDetailDrawer({
             <ImageIcon className="h-4 w-4" />
             รูป Artwork สำหรับผลิต
           </p>
-          <div className="grid grid-cols-2 gap-2">
-            {/* Mock production artwork */}
-            {[1, 2].map((idx) => (
-              <div
-                key={idx}
-                className="aspect-video bg-muted/50 rounded-md overflow-hidden flex items-center justify-center border-2 border-dashed"
-              >
-                <ImageIcon className="h-8 w-8 text-muted-foreground/50" />
-              </div>
-            ))}
-          </div>
+          {prodArtworkImages.length > 0 ? (
+            <div className="grid grid-cols-2 gap-2">
+              {prodArtworkImages.map((img, idx) => (
+                <div key={idx} className="aspect-video bg-muted rounded-md overflow-hidden">
+                  <img src={img} alt={`Production Artwork ${idx + 1}`} className="w-full h-full object-cover" />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-sm text-muted-foreground">ยังไม่มีรูป Artwork สำหรับผลิต</div>
+          )}
         </div>
       </CardContent>
     </Card>

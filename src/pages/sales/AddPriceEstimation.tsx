@@ -283,6 +283,7 @@ export default function AddPriceEstimation({
           setProductCategory(item.product_category || "");
           setSelectedProductType(item.product_type || "");
           setQuantity(item.quantity?.toString() || "");
+          setPrice(item.price?.toString() || "");
           setEstimateDate(item.estimation_date || "");
           setEstimateNote(item.notes || "");
 
@@ -311,6 +312,13 @@ export default function AddPriceEstimation({
             setInscriptionPlate(details.inscriptionPlate || "");
             setInscriptionDetails(details.inscriptionDetails || "");
             setEventDate(details.usage_date || "");
+
+            // Load existing file URLs
+            if (details.customerReferenceImages && Array.isArray(details.customerReferenceImages)) {
+              setExistingFileUrls(details.customerReferenceImages);
+            } else if (details.artworkImages && Array.isArray(details.artworkImages)) {
+              setExistingFileUrls(details.artworkImages);
+            }
 
             // Load procurement specific data
             if (details.supplierEntries) {
@@ -579,6 +587,12 @@ export default function AddPriceEstimation({
   const [backColorCount, setBackColorCount] = useState("");
   const [frontOtherText, setFrontOtherText] = useState("");
   const [backOtherText, setBackOtherText] = useState("");
+  
+  // Detail dropdown selections
+  const [frontDetailSelection, setFrontDetailSelection] = useState("");
+  const [backDetailSelection, setBackDetailSelection] = useState("");
+  const [frontDetailCustomText, setFrontDetailCustomText] = useState("");
+  const [backDetailCustomText, setBackDetailCustomText] = useState("");
 
   // Multi-select for sizes and thicknesses
   const [selectedMedalSizes, setSelectedMedalSizes] = useState<string[]>([]);
@@ -624,6 +638,7 @@ export default function AddPriceEstimation({
 
   // File attachments
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
+  const [existingFileUrls, setExistingFileUrls] = useState<string[]>([]);
 
   // Sales employees options (from API)
   const [salesOptions, setSalesOptions] = useState<{ value: string; label: string }[]>([]);
@@ -1336,8 +1351,54 @@ export default function AddPriceEstimation({
     setShowLanyardSummaryPopup(false);
 
     try {
+      // Convert files to base64 data URLs (temporary solution until FTP upload API is ready)
+      const uploadedFileUrls: string[] = [];
+      if (attachedFiles.length > 0) {
+        toast({
+          title: "กำลังประมวลผลไฟล์...",
+          description: `กำลังประมวลผล ${attachedFiles.length} ไฟล์`,
+        });
+
+        for (let i = 0; i < attachedFiles.length; i++) {
+          const file = attachedFiles[i];
+          console.log(`Processing file ${i + 1}/${attachedFiles.length}:`, file.name);
+
+          try {
+            // Convert file to base64 data URL
+            const base64 = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result as string);
+              reader.onerror = reject;
+              reader.readAsDataURL(file);
+            });
+
+            // Store as object with filename and data
+            uploadedFileUrls.push(JSON.stringify({
+              name: file.name,
+              type: file.type,
+              data: base64
+            }));
+            console.log('File processed successfully:', file.name);
+          } catch (error) {
+            console.error('Error processing file:', error);
+            toast({
+              title: "เกิดข้อผิดพลาด",
+              description: `ไม่สามารถประมวลผลไฟล์ ${file.name}`,
+              variant: "destructive"
+            });
+          }
+        }
+
+        if (uploadedFileUrls.length > 0) {
+          toast({
+            title: "ประมวลผลสำเร็จ",
+            description: `ประมวลผลไฟล์สำเร็จ ${uploadedFileUrls.length} ไฟล์`,
+          });
+        }
+      }
+
       let finalStatus = status === "รอประเมินราคา" ? "ยื่นคำขอประเมิน" : status;
-      let finalPrice = 0;
+      let finalPrice = parseFloat(price) || 0;
       let finalFactoryLabel = "";
       let winnerValue = "";
 
@@ -1423,6 +1484,9 @@ export default function AddPriceEstimation({
           eventDate: eventDate || "-",
           productType: selectedProductType || "custom",
           usage_date: eventDate || "",
+          // Customer reference images (artwork/attached files) - combine existing and new
+          customerReferenceImages: [...existingFileUrls, ...uploadedFileUrls],
+          artworkImages: [...existingFileUrls, ...uploadedFileUrls],
           // Procurement specific data
           supplierEntries: mode === "procurement" ? supplierEntries : undefined,
           globalHeader: mode === "procurement" ? globalHeader : undefined,
@@ -1956,7 +2020,7 @@ export default function AddPriceEstimation({
                         </SelectContent>
                       </Select>
                     ) : (
-                      <Input placeholder="ระบุวัสดุ" value={productColor} onChange={(e) => setProductColor(e.target.value)} className="h-9" />
+                      <Input placeholder="ระบุวัสดุ" value={material} onChange={(e) => setMaterial(e.target.value)} className="h-9" />
                     )}
                     {material === "other" && (
                       <Input placeholder="ระบุวัสดุ" value={customMaterial} onChange={(e) => setCustomMaterial(e.target.value)} className="h-9 mt-1" />
@@ -2117,54 +2181,140 @@ export default function AddPriceEstimation({
                   </div>
                 </div>
 
-                {/* Row 3: รายละเอียดด้านหน้า | ด้านหลัง - Chip Multi-Select */}
+                {/* Row 3: รายละเอียดด้านหน้า | ด้านหลัง - Dropdown Select */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label className="text-xs text-muted-foreground">รายละเอียดด้านหน้า</Label>
-                    <div className="flex flex-wrap gap-1.5">
-                      {detailOptions.map((opt) => (
-                        <div
-                          key={`front-${opt}`}
-                          onClick={() => toggleDetail(opt, 'front')}
-                          className={cn(
-                            "px-2.5 py-1 rounded-md border text-xs cursor-pointer transition-colors",
-                            frontDetails.includes(opt)
-                              ? "bg-primary text-primary-foreground border-primary"
-                              : "bg-background border-border hover:bg-muted"
-                          )}
-                        >
-                          {opt}
-                        </div>
-                      ))}
-                    </div>
+                    <Select 
+                      value={frontDetailSelection} 
+                      onValueChange={(value) => {
+                        setFrontDetailSelection(value);
+                        if (value !== "อื่นๆ") {
+                          setFrontDetailCustomText("");
+                          if (value && !frontDetails.includes(value)) {
+                            setFrontDetails(prev => [...prev, value]);
+                          }
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="h-9">
+                        <SelectValue placeholder="เลือกรายละเอียด" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {detailOptions.map((opt) => (
+                          <SelectItem key={`front-${opt}`} value={opt}>
+                            {opt}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    
+                    {frontDetailSelection === "อื่นๆ" && (
+                      <div className="space-y-1.5">
+                        <Input
+                          type="text"
+                          placeholder="ระบุรายละเอียดอื่นๆ"
+                          value={frontDetailCustomText}
+                          onChange={(e) => setFrontDetailCustomText(e.target.value)}
+                          onBlur={() => {
+                            if (frontDetailCustomText.trim()) {
+                              setFrontDetails(prev => [...prev, frontDetailCustomText.trim()]);
+                              setFrontDetailCustomText("");
+                              setFrontDetailSelection("");
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && frontDetailCustomText.trim()) {
+                              setFrontDetails(prev => [...prev, frontDetailCustomText.trim()]);
+                              setFrontDetailCustomText("");
+                              setFrontDetailSelection("");
+                            }
+                          }}
+                          className="h-9"
+                        />
+                      </div>
+                    )}
+                    
                     {frontDetails.length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-1">
-                        {frontDetails.map(d => <Badge key={d} variant="secondary" className="text-[10px]">{d}</Badge>)}
+                        {frontDetails.map((d, idx) => (
+                          <Badge 
+                            key={`${d}-${idx}`} 
+                            variant="secondary" 
+                            className="text-[10px] cursor-pointer hover:bg-destructive hover:text-destructive-foreground"
+                            onClick={() => setFrontDetails(prev => prev.filter((_, i) => i !== idx))}
+                          >
+                            {d} <X className="h-2.5 w-2.5 ml-1" />
+                          </Badge>
+                        ))}
                       </div>
                     )}
                   </div>
 
                   <div className="space-y-2">
                     <Label className="text-xs text-muted-foreground">รายละเอียดด้านหลัง</Label>
-                    <div className="flex flex-wrap gap-1.5">
-                      {detailOptions.map((opt) => (
-                        <div
-                          key={`back-${opt}`}
-                          onClick={() => toggleDetail(opt, 'back')}
-                          className={cn(
-                            "px-2.5 py-1 rounded-md border text-xs cursor-pointer transition-colors",
-                            backDetails.includes(opt)
-                              ? "bg-primary text-primary-foreground border-primary"
-                              : "bg-background border-border hover:bg-muted"
-                          )}
-                        >
-                          {opt}
-                        </div>
-                      ))}
-                    </div>
+                    <Select 
+                      value={backDetailSelection} 
+                      onValueChange={(value) => {
+                        setBackDetailSelection(value);
+                        if (value !== "อื่นๆ") {
+                          setBackDetailCustomText("");
+                          if (value && !backDetails.includes(value)) {
+                            setBackDetails(prev => [...prev, value]);
+                          }
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="h-9">
+                        <SelectValue placeholder="เลือกรายละเอียด" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {detailOptions.map((opt) => (
+                          <SelectItem key={`back-${opt}`} value={opt}>
+                            {opt}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    
+                    {backDetailSelection === "อื่นๆ" && (
+                      <div className="space-y-1.5">
+                        <Input
+                          type="text"
+                          placeholder="ระบุรายละเอียดอื่นๆ"
+                          value={backDetailCustomText}
+                          onChange={(e) => setBackDetailCustomText(e.target.value)}
+                          onBlur={() => {
+                            if (backDetailCustomText.trim()) {
+                              setBackDetails(prev => [...prev, backDetailCustomText.trim()]);
+                              setBackDetailCustomText("");
+                              setBackDetailSelection("");
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && backDetailCustomText.trim()) {
+                              setBackDetails(prev => [...prev, backDetailCustomText.trim()]);
+                              setBackDetailCustomText("");
+                              setBackDetailSelection("");
+                            }
+                          }}
+                          className="h-9"
+                        />
+                      </div>
+                    )}
+                    
                     {backDetails.length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-1">
-                        {backDetails.map(d => <Badge key={d} variant="secondary" className="text-[10px]">{d}</Badge>)}
+                        {backDetails.map((d, idx) => (
+                          <Badge 
+                            key={`${d}-${idx}`} 
+                            variant="secondary" 
+                            className="text-[10px] cursor-pointer hover:bg-destructive hover:text-destructive-foreground"
+                            onClick={() => setBackDetails(prev => prev.filter((_, i) => i !== idx))}
+                          >
+                            {d} <X className="h-2.5 w-2.5 ml-1" />
+                          </Badge>
+                        ))}
                       </div>
                     )}
                   </div>
@@ -3717,8 +3867,8 @@ export default function AddPriceEstimation({
         </Card>
       )}
 
-      {/* File Attachment - แสดงเมื่อเลือกสินค้าและเลือก มีแบบ/ไม่มีแบบ แล้ว หรือเลือกโมเดลเดิมแล้ว */}
-      {((!usePreviousModel && selectedProductType && hasDesign) || isFieldLocked) && (
+      {/* File Attachment - แสดงเมื่อเลือกสินค้าแล้ว */}
+      {selectedProductType && (
         <Card className="max-w-4xl">
           <CardHeader>
             <CardTitle>แนบไฟล์</CardTitle>
@@ -3742,17 +3892,74 @@ export default function AddPriceEstimation({
               </Button>
             </div>
 
-            {/* แสดงรายการไฟล์ที่แนบ */}
+            {/* แสดงรายการไฟล์ที่มีอยู่แล้ว (จาก server) */}
+            {existingFileUrls.length > 0 && (
+              <div className="space-y-2">
+                <Label>ไฟล์ที่มีอยู่แล้ว ({existingFileUrls.length} ไฟล์)</Label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {existingFileUrls.map((urlOrData, index) => {
+                    // Try to parse as JSON (base64 encoded file)
+                    let fileData: { name: string; type: string; data: string } | null = null;
+                    let displayUrl = urlOrData;
+                    let fileName = `ไฟล์ ${index + 1}`;
+                    let isImage = false;
+
+                    try {
+                      fileData = JSON.parse(urlOrData);
+                      fileName = fileData.name;
+                      displayUrl = fileData.data;
+                      isImage = fileData.type.startsWith('image/');
+                    } catch {
+                      // Not JSON, treat as regular URL
+                      isImage = urlOrData.match(/\.(jpg|jpeg|png|gif|webp)$/i) !== null;
+                      fileName = urlOrData.split('/').pop() || fileName;
+                    }
+                    
+                    return (
+                      <div key={`existing-${index}`} className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg border border-blue-200 hover:border-blue-300 transition-colors">
+                        {isImage ? (
+                          <div className="flex-shrink-0 w-16 h-16 rounded-md overflow-hidden bg-muted border border-border">
+                            <img 
+                              src={displayUrl} 
+                              alt={fileName}
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                        ) : (
+                          <div className="flex-shrink-0 w-16 h-16 rounded-md bg-muted border border-border flex items-center justify-center">
+                            <FileText className="h-8 w-8 text-muted-foreground" />
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{fileName}</p>
+                          <p className="text-xs text-blue-600">ไฟล์ที่มีอยู่แล้ว</p>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setExistingFileUrls(prev => prev.filter((_, i) => i !== index))}
+                          className="h-8 w-8 p-0 text-destructive hover:text-destructive flex-shrink-0"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* แสดงรายการไฟล์ที่แนบใหม่ */}
             {attachedFiles.length > 0 && (
               <div className="space-y-2">
-                <Label>ไฟล์ที่แนบ ({attachedFiles.length} ไฟล์)</Label>
+                <Label>ไฟล์ใหม่ที่แนบ ({attachedFiles.length} ไฟล์)</Label>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {attachedFiles.map((file, index) => {
                     const isImage = file.type.startsWith('image/');
                     const imageUrl = isImage ? URL.createObjectURL(file) : null;
                     
                     return (
-                      <div key={index} className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border border-border hover:border-primary/50 transition-colors">
+                      <div key={`new-${index}`} className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border border-border hover:border-primary/50 transition-colors">
                         {isImage && imageUrl ? (
                           <div className="flex-shrink-0 w-16 h-16 rounded-md overflow-hidden bg-muted border border-border">
                             <img 

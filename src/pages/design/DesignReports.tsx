@@ -20,7 +20,7 @@ const statusConfig = {
   unassigned: { label: "ยังไม่ได้รับมอบหมาย", color: "#888888" },
   designing: { label: "กำลังออกแบบ", color: "#007BFF" },
   review: { label: "รอตรวจสอบ", color: "#F9A825" },
-  feedback: { label: "แก้ไขตาม Feedback", color: "#FF7043" },
+  // feedback: { label: "แก้ไขตาม Feedback", color: "#FF7043" },
   production: { label: "อยู่ระหว่างการผลิต", color: "#29B6F6" },
   completed: { label: "เสร็จสิ้น", color: "#2ECC71" },
 };

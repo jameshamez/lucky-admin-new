@@ -123,19 +123,111 @@ function logStatus($conn, $job_id, $old_status, $new_status, $changed_by, $note 
     $stmt->execute();
 }
 
+function translateProductTypeName(string $value): string
+{
+    $trimmed = trim($value);
+    if ($trimmed === '') {
+        return '';
+    }
+
+    $lower = mb_strtolower($trimmed, 'UTF-8');
+    $contains = static function (string $needle) use ($lower): bool {
+        return mb_stripos($lower, $needle, 0, 'UTF-8') !== false;
+    };
+
+    if ($contains('ready') || $contains('สำเร็จ')) {
+        return 'เหรียญสำเร็จรูป';
+    }
+    if ($contains('medal') || $contains('เหรียญ')) {
+        return 'เหรียญสั่งผลิต';
+    }
+    if ($contains('trophy') || $contains('ถ้วย')) {
+        return 'ถ้วยรางวัล';
+    }
+    if ($contains('plaque') || $contains('award') || $contains('โล่') || $contains('ป้าย')) {
+        return 'โล่';
+    }
+    if ($contains('lanyard') || $contains('สายคล้อง')) {
+        return 'สายคล้อง';
+    }
+    if ($contains('pin') || $contains('เข็มกลัด')) {
+        return 'เข็มกลัด';
+    }
+    if ($contains('crystal') || $contains('คริสตัล')) {
+        return 'คริสตัล';
+    }
+    if ($contains('acrylic') || $contains('อะคริลิค')) {
+        return 'อะคริลิค';
+    }
+
+    return $trimmed;
+}
+
+function formatDesignJobRow(array $row): array
+{
+    $row['medal_colors'] = !empty($row['medal_colors']) ? (json_decode($row['medal_colors'], true) ?: []) : [];
+    $row['medal_front_details'] = !empty($row['medal_front_details']) ? (json_decode($row['medal_front_details'], true) ?: []) : [];
+    $row['medal_back_details'] = !empty($row['medal_back_details']) ? (json_decode($row['medal_back_details'], true) ?: []) : [];
+
+    $salesDetails = [];
+    if (!empty($row['sales_details_json'])) {
+        if (is_array($row['sales_details_json'])) {
+            $salesDetails = $row['sales_details_json'];
+        } else {
+            $decoded = json_decode($row['sales_details_json'], true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                $salesDetails = $decoded;
+            }
+        }
+    }
+
+    $rawType = $row['sales_product_type'] ?? '';
+    if (!$rawType) {
+        $candidates = [
+            $salesDetails['productType'] ?? null,
+            $salesDetails['product_type'] ?? null,
+            $salesDetails['type'] ?? null,
+            $salesDetails['category'] ?? null,
+            $salesDetails['product']['type'] ?? null,
+            $row['sales_product_category'] ?? null,
+            $row['order_product_category'] ?? null,
+        ];
+
+        foreach ($candidates as $candidate) {
+            if (is_string($candidate) && trim($candidate) !== '') {
+                $rawType = $candidate;
+                break;
+            }
+        }
+    }
+
+    $rawType = is_string($rawType) ? trim($rawType) : '';
+    $row['product_type_raw'] = $rawType;
+    $row['product_type_display'] = $rawType !== ''
+        ? translateProductTypeName($rawType)
+        : ($row['job_type'] ?? '-');
+
+    unset($row['sales_details_json'], $row['sales_product_type'], $row['sales_product_category'], $row['order_product_category']);
+
+    return $row;
+}
+
 // ─── GET ─────────────────────────────────────────────────────────────────────
 if ($method === 'GET') {
     if ($id) {
         // Single job
-        $stmt = $conn->prepare("SELECT * FROM design_jobs WHERE id = ?");
+        $stmt = $conn->prepare("SELECT dj.id, dj.job_code, dj.client_name, dj.job_type, dj.description, dj.urgency, dj.priority, dj.designer, dj.ordered_by, dj.quotation_no, dj.status, dj.progress, dj.google_drive_link, dj.layout_image, dj.artwork_image, dj.artwork_status, dj.production_artwork, dj.ai_file, dj.due_date, dj.order_date, dj.assigned_at, dj.started_at, dj.finish_date, dj.revision_rounds, dj.qc_pass, dj.feedback, dj.internal_notes, dj.specs, dj.medal_size, dj.medal_thickness, dj.medal_colors, dj.medal_front_details, dj.medal_back_details, dj.lanyard_size, dj.lanyard_patterns, dj.quantity, dj.created_at, dj.updated_at,
+            pes.product_type AS sales_product_type, pes.product_category AS sales_product_category, pes.details AS sales_details_json,
+            o.product_category AS order_product_category
+            FROM design_jobs dj
+            LEFT JOIN price_estimations_sales pes ON pes.estimate_id = dj.quotation_no
+            LEFT JOIN orders o ON o.job_id = dj.job_code
+            WHERE dj.id = ?");
         $stmt->bind_param("i", $id);
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
         if ($row) {
-            // Parse JSON fields
-            $row['medal_colors'] = $row['medal_colors'] ? json_decode($row['medal_colors']) : [];
-            $row['medal_front_details'] = $row['medal_front_details'] ? json_decode($row['medal_front_details']) : [];
-            $row['medal_back_details'] = $row['medal_back_details'] ? json_decode($row['medal_back_details']) : [];
+            $row = formatDesignJobRow($row);
             echo json_encode(["status" => "success", "data" => $row]);
         } else {
             http_response_code(404);
@@ -182,38 +274,38 @@ if ($method === 'GET') {
     $types = '';
 
     if ($search) {
-        $where[] = "(job_code LIKE ? OR client_name LIKE ? OR description LIKE ? OR designer LIKE ?)";
+        $where[] = "(dj.job_code LIKE ? OR dj.client_name LIKE ? OR dj.description LIKE ? OR dj.designer LIKE ?)";
         $s = "%$search%";
         $params = array_merge($params, [$s, $s, $s, $s]);
         $types .= 'ssss';
     }
     if ($status) {
-        $where[] = "status = ?";
+        $where[] = "dj.status = ?";
         $params[] = $status;
         $types .= 's';
     }
     if ($urgency) {
-        $where[] = "urgency = ?";
+        $where[] = "dj.urgency = ?";
         $params[] = $urgency;
         $types .= 's';
     }
     if ($designer) {
-        $where[] = "designer = ?";
+        $where[] = "dj.designer = ?";
         $params[] = $designer;
         $types .= 's';
     }
     if ($job_type) {
-        $where[] = "job_type = ?";
+        $where[] = "dj.job_type = ?";
         $params[] = $job_type;
         $types .= 's';
     }
     if ($date_from) {
-        $where[] = "due_date >= ?";
+        $where[] = "dj.due_date >= ?";
         $params[] = $date_from;
         $types .= 's';
     }
     if ($date_to) {
-        $where[] = "due_date <= ?";
+        $where[] = "dj.due_date <= ?";
         $params[] = $date_to;
         $types .= 's';
     }
@@ -221,7 +313,7 @@ if ($method === 'GET') {
     $where_sql = implode(" AND ", $where);
 
     // Count
-    $count_sql = "SELECT COUNT(*) as total FROM design_jobs WHERE $where_sql";
+    $count_sql = "SELECT COUNT(DISTINCT dj.id) as total FROM design_jobs dj LEFT JOIN price_estimations_sales pes ON pes.estimate_id = dj.quotation_no LEFT JOIN orders o ON o.job_id = dj.job_code WHERE $where_sql";
     if ($params) {
         $cs = $conn->prepare($count_sql);
         if (!$cs) {
@@ -243,22 +335,32 @@ if ($method === 'GET') {
     }
 
     // Data
-    $sql = "SELECT * FROM design_jobs WHERE $where_sql ORDER BY created_at DESC LIMIT ? OFFSET ?";
+    $sql = "SELECT dj.id, dj.job_code, dj.client_name, dj.job_type, dj.description, dj.urgency, dj.priority, dj.designer, dj.ordered_by, dj.quotation_no, dj.status, dj.progress, dj.google_drive_link, dj.layout_image, dj.artwork_image, dj.artwork_status, dj.production_artwork, dj.ai_file, dj.due_date, dj.order_date, dj.assigned_at, dj.started_at, dj.finish_date, dj.revision_rounds, dj.qc_pass, dj.feedback, dj.internal_notes, dj.specs, dj.medal_size, dj.medal_thickness, dj.medal_colors, dj.medal_front_details, dj.medal_back_details, dj.lanyard_size, dj.lanyard_patterns, dj.quantity, dj.created_at, dj.updated_at,
+            pes.product_type AS sales_product_type, pes.product_category AS sales_product_category, pes.details AS sales_details_json,
+            o.product_category AS order_product_category
+        FROM design_jobs dj
+        LEFT JOIN price_estimations_sales pes ON pes.estimate_id = dj.quotation_no
+        LEFT JOIN orders o ON o.job_id = dj.job_code
+        WHERE $where_sql
+        ORDER BY dj.created_at DESC
+        LIMIT ? OFFSET ?";
     $params[] = $limit;
     $params[] = $offset;
     $types .= 'ii';
 
     $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        http_response_code(500);
+        echo json_encode(["status" => "error", "message" => "Prepare failed: " . $conn->error]);
+        exit();
+    }
     $stmt->bind_param($types, ...$params);
     $stmt->execute();
     $result = $stmt->get_result();
 
     $jobs = [];
     while ($row = $result->fetch_assoc()) {
-        $row['medal_colors'] = $row['medal_colors'] ? json_decode($row['medal_colors']) : [];
-        $row['medal_front_details'] = $row['medal_front_details'] ? json_decode($row['medal_front_details']) : [];
-        $row['medal_back_details'] = $row['medal_back_details'] ? json_decode($row['medal_back_details']) : [];
-        $jobs[] = $row;
+        $jobs[] = formatDesignJobRow($row);
     }
 
     echo json_encode([

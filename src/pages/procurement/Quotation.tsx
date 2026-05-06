@@ -516,7 +516,30 @@ Project : ${project}
             lanyardPatterns: parseInt(detailObj?.lanyardPatterns || item.lanyard_patterns || 0),
             customerBudget: item.budget || 0,
             designFiles: detailObj?.designFiles || [],
-            artworkImages: detailObj?.artworkImages || [],
+            artworkImages: (() => {
+              const parseImage = (img: any) => {
+                if (typeof img === 'string') {
+                  try {
+                    // Try to parse as JSON (base64 encoded file)
+                    const parsed = JSON.parse(img);
+                    return parsed.data || img; // Return base64 data URL
+                  } catch {
+                    // Not JSON, return as is (regular URL)
+                    return img.url || img;
+                  }
+                }
+                return img.url || img;
+              };
+
+              if (detailObj?.customerReferenceImages && Array.isArray(detailObj.customerReferenceImages)) {
+                return detailObj.customerReferenceImages.map(parseImage);
+              } else if (detailObj?.referenceImages && Array.isArray(detailObj.referenceImages)) {
+                return detailObj.referenceImages.map(parseImage);
+              } else if (detailObj?.artworkImages && Array.isArray(detailObj.artworkImages)) {
+                return detailObj.artworkImages.map(parseImage);
+              }
+              return [];
+            })(),
             notes: item.notes || "-",
             rejectionLogs: detailObj?.rejectionLogs || [],
             winnerFactoryValue: detailObj?.winnerFactoryValue || item.factory,
@@ -1877,9 +1900,9 @@ Project : ${project}
               {tabValue !== "pending" && tabValue !== "info-needed" && (
                 <>
                   <TableHead>โรงงาน</TableHead>
-                  <TableHead className="text-right">ต้นทุนรวม</TableHead>
-                  <TableHead className="text-right">ราคาขาย</TableHead>
-                  <TableHead className="text-right">กำไร</TableHead>
+                  <TableHead className="text-right">ต้นทุน/ชิ้น</TableHead>
+                  <TableHead className="text-right">ราคาขาย/ชิ้น</TableHead>
+                  <TableHead className="text-right">กำไรรวม</TableHead>
                 </>
               )}
               <TableHead>สถานะ</TableHead>
@@ -1952,8 +1975,16 @@ Project : ${project}
                 {tabValue !== "pending" && tabValue !== "info-needed" && (
                   <>
                     <TableCell>{quotation.factoryLabel}</TableCell>
-                    <TableCell className="text-right">{quotation.totalCost.toLocaleString()}</TableCell>
-                    <TableCell className="text-right">{quotation.totalSellingPrice.toLocaleString()}</TableCell>
+                    <TableCell className="text-right">
+                      {quotation.quantity > 0 
+                        ? (quotation.totalCost / quotation.quantity).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                        : '0.00'}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {quotation.quantity > 0 
+                        ? (quotation.totalSellingPrice / quotation.quantity).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                        : '0.00'}
+                    </TableCell>
                     <TableCell className={`text-right font-medium ${quotation.profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                       {quotation.profit.toLocaleString()}
                     </TableCell>
@@ -2714,42 +2745,98 @@ Project : ${project}
                       {/* Design Files Section */}
                       <div>
                         <p className="text-sm text-muted-foreground mb-2">ไฟล์งานออกแบบ</p>
-                        {latestDesignFile ? (
-                          <div className="bg-muted/50 rounded-lg p-4 border">
-                            <div className="flex items-center justify-between flex-wrap gap-3">
-                              <div className="flex items-center gap-3">
-                                <div className="p-2 bg-primary/10 rounded-lg">
-                                  <FileText className="h-5 w-5 text-primary" />
-                                </div>
-                                <div>
-                                  <p className="font-medium text-sm">{latestDesignFile.fileName}</p>
-                                  <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
-                                    <span>{new Date(latestDesignFile.uploadDate).toLocaleDateString('th-TH')} {latestDesignFile.uploadTime}</span>
-                                    <span>•</span>
-                                    <span className="flex items-center gap-1">
-                                      <User className="h-3 w-3" />
-                                      {latestDesignFile.uploadedBy}
-                                    </span>
+                        {(() => {
+                          const raw = Array.isArray((selectedQuotation as any)?.designFiles)
+                            ? (selectedQuotation as any).designFiles
+                            : Array.isArray((selectedQuotation as any)?.rawDetails?.designFiles)
+                              ? (selectedQuotation as any).rawDetails.designFiles
+                              : [];
+
+                          const mapFile = (f: any) => {
+                            if (typeof f === 'string') {
+                              return {
+                                fileName: f.split('/').pop() || 'ไฟล์งานออกแบบ',
+                                url: f,
+                                uploadedBy: '-',
+                                uploadDate: '',
+                                uploadTime: ''
+                              };
+                            }
+                            return {
+                              fileName: f.fileName || f.name || 'ไฟล์งานออกแบบ',
+                              url: f.url || f.link || '',
+                              uploadedBy: f.uploadedBy || f.user || '-',
+                              uploadDate: f.uploadDate || f.date || '',
+                              uploadTime: f.uploadTime || f.time || ''
+                            };
+                          };
+
+                          const files = (raw || []).map(mapFile).filter((x: any) => x.url);
+                          const latest = files.length > 0 ? files[files.length - 1] : null;
+
+                          if (!latest) {
+                            return (
+                              <div className="border-2 border-dashed border-muted-foreground/30 rounded-lg p-6 flex flex-col items-center justify-center bg-muted/30">
+                                <FileText className="h-8 w-8 text-muted-foreground/50 mb-2" />
+                                <p className="text-muted-foreground text-sm">ยังไม่มีไฟล์งานออกแบบ</p>
+                              </div>
+                            );
+                          }
+
+                          const dateText = latest.uploadDate ? new Date(latest.uploadDate).toLocaleDateString('th-TH') : '';
+
+                          return (
+                            <div className="bg-muted/50 rounded-lg p-4 border">
+                              <div className="flex items-center justify-between flex-wrap gap-3">
+                                <div className="flex items-center gap-3">
+                                  <div className="p-2 bg-primary/10 rounded-lg">
+                                    <FileText className="h-5 w-5 text-primary" />
+                                  </div>
+                                  <div>
+                                    <p className="font-medium text-sm">{latest.fileName}</p>
+                                    <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+                                      <span>{dateText} {latest.uploadTime}</span>
+                                      <span>•</span>
+                                      <span className="flex items-center gap-1">
+                                        <User className="h-3 w-3" />
+                                        {latest.uploadedBy}
+                                      </span>
+                                    </div>
                                   </div>
                                 </div>
+                                <div className="flex items-center gap-2">
+                                  {latest.url && (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => {
+                                        const link = document.createElement('a');
+                                        link.href = latest.url;
+                                        link.download = latest.fileName;
+                                        document.body.appendChild(link);
+                                        link.click();
+                                        document.body.removeChild(link);
+                                      }}
+                                      className="gap-1.5"
+                                    >
+                                      <Download className="h-4 w-4" />
+                                      ดาวน์โหลด
+                                    </Button>
+                                  )}
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setIsUploadHistoryOpen(true)}
+                                    className="gap-1.5"
+                                  >
+                                    <History className="h-4 w-4" />
+                                    ประวัติการอัพโหลด
+                                  </Button>
+                                </div>
                               </div>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setIsUploadHistoryOpen(true)}
-                                className="gap-1.5"
-                              >
-                                <History className="h-4 w-4" />
-                                ประวัติการอัพโหลด
-                              </Button>
                             </div>
-                          </div>
-                        ) : (
-                          <div className="border-2 border-dashed border-muted-foreground/30 rounded-lg p-6 flex flex-col items-center justify-center bg-muted/30">
-                            <FileText className="h-8 w-8 text-muted-foreground/50 mb-2" />
-                            <p className="text-muted-foreground text-sm">ยังไม่มีไฟล์งานออกแบบ</p>
-                          </div>
-                        )}
+                          );
+                        })()}
                       </div>
                     </div>
                   </div>

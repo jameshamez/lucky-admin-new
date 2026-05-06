@@ -19,7 +19,7 @@ const statusConfig = {
   unassigned: { label: "ยังไม่ได้รับมอบหมาย", color: "#888888", bgColor: "bg-gray-500" },
   designing: { label: "กำลังออกแบบ", color: "#007BFF", bgColor: "bg-blue-500" },
   review: { label: "รอตรวจสอบ", color: "#F9A825", bgColor: "bg-yellow-500" },
-  feedback: { label: "แก้ไขตาม Feedback", color: "#FF7043", bgColor: "bg-orange-500" },
+  // feedback: { label: "แก้ไขตาม Feedback", color: "#FF7043", bgColor: "bg-orange-500" },
   production: { label: "อยู่ระหว่างการผลิต", color: "#29B6F6", bgColor: "bg-cyan-500" },
   completed: { label: "เสร็จสิ้น", color: "#2ECC71", bgColor: "bg-green-500" },
 };

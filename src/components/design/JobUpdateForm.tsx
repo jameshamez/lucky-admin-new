@@ -14,7 +14,7 @@ interface JobUpdateFormProps {
   jobId: string;
   quotationNo?: string;
   clientName: string;
-  jobType: string;
+  productTypeDisplay?: string;
   onSubmit: (data: any) => void;
 }
 
@@ -39,7 +39,7 @@ interface ArtworkFeedback {
 
 type ArtworkStatus = 'draft' | 'pending_review' | 'approved' | 'rejected';
 
-export function JobUpdateForm({ jobId, quotationNo, clientName, jobType, onSubmit }: JobUpdateFormProps) {
+export function JobUpdateForm({ jobId, quotationNo, clientName, productTypeDisplay, onSubmit }: JobUpdateFormProps) {
   // Mock current user - ในระบบจริงจะดึงจาก auth
   const currentUser = "สมชาย ใจดี";
   // Mock role - จำลองสิทธิ์ (graphic / sales)
