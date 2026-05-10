@@ -146,6 +146,34 @@ interface CreateOrderFormProps {
   customerData?: any;
 }
 
+type DesignFileUpload = {
+  file: File;
+  url: string;
+  name: string;
+  size: number;
+  type?: string;
+};
+
+const previewImagePattern = /\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i;
+
+const isPreviewableDesignImage = (item: { name?: string; url?: string; type?: string }) => {
+  if (item.type?.startsWith("image/") && item.type !== "image/vnd.adobe.photoshop") {
+    return true;
+  }
+
+  return previewImagePattern.test(item.name || "") || previewImagePattern.test(item.url || "");
+};
+
+const formatUploadSize = (size: number) => {
+  if (!Number.isFinite(size) || size <= 0) return "";
+  if (size >= 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(size / 1024).toFixed(1)} KB`;
+};
+
+const getUploadedFileUrl = (json: any): string | null => {
+  return json?.data?.fileUrl || json?.data?.url || json?.url || json?.fileUrl || json?.file_url || null;
+};
+
 // Master Subcategories with their parent category (IDs match API subcategoryId)
 const SUBCATEGORY_MAP: Record<string, { id: string; name: string }> = {
   // ถ้วยรางวัลสำเร็จ
@@ -655,7 +683,7 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
 
   // Graphics connection info
   const [graphicsNotes, setGraphicsNotes] = useState("");
-  const [designFiles, setDesignFiles] = useState<{ file: File; url: string; name: string; size: number }[]>([]);
+  const [designFiles, setDesignFiles] = useState<DesignFileUpload[]>([]);
 
   // Receiving bank options
   const bankOptions = [
@@ -1225,26 +1253,58 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
   const uploadFile = async (file: File, category: string = 'general'): Promise<string | null> => {
     try {
       setIsUploading(true);
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("category", category);
+      const folderByCategory: Record<string, string> = {
+        slip: "orders/slips",
+        design: "orders/designs",
+        quotation: "orders/quotations",
+        general: "orders/general",
+      };
 
-      const response = await fetch(`${LOCAL_API}order_upload.php`, {
-        method: "POST",
-        body: formData,
-      });
+      const uploadAttempts = [
+        {
+          url: `${LOCAL_API}order_upload.php`,
+          body: () => {
+            const formData = new FormData();
+            formData.append("file", file);
+            formData.append("category", category);
+            return formData;
+          },
+        },
+        {
+          url: `${LOCAL_API}upload.php`,
+          body: () => {
+            const formData = new FormData();
+            formData.append("file", file);
+            formData.append("folder", folderByCategory[category] || folderByCategory.general);
+            return formData;
+          },
+        },
+      ];
 
-      const json = await response.json();
-      if (json.status === "success") {
-        return json.data.fileUrl; // We store full URL for convenience
-      } else {
-        toast({
-          title: "อัปโหลดไฟล์ไม่สำเร็จ",
-          description: json.message || "เกิดข้อผิดพลาดในการอัปโหลด",
-          variant: "destructive",
+      let lastErrorMessage = "เกิดข้อผิดพลาดในการอัปโหลด";
+
+      for (const attempt of uploadAttempts) {
+        const response = await fetch(attempt.url, {
+          method: "POST",
+          body: attempt.body(),
         });
-        return null;
+
+        const json = await response.json().catch(() => null);
+        const uploadedUrl = getUploadedFileUrl(json);
+
+        if (response.ok && json?.status === "success" && uploadedUrl) {
+          return uploadedUrl;
+        }
+
+        lastErrorMessage = json?.message || `Upload failed (${response.status})`;
       }
+
+      toast({
+        title: "อัปโหลดไฟล์ไม่สำเร็จ",
+        description: lastErrorMessage,
+        variant: "destructive",
+      });
+      return null;
     } catch (err) {
       console.error("Upload error:", err);
       toast({
@@ -3247,7 +3307,7 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
             <div>
               <Label className="text-sm font-medium">แนบไฟล์แบบ (Design Files)</Label>
               <div className="mt-2 border-2 border-dashed border-border rounded-lg p-4">
-                <label className="cursor-pointer flex flex-col items-center gap-2 text-muted-foreground hover:text-foreground transition-colors">
+                <label className={cn("cursor-pointer flex flex-col items-center gap-2 text-muted-foreground hover:text-foreground transition-colors", isUploading && "pointer-events-none opacity-70")}>
                   <Upload className="w-8 h-8" />
                   <span className="text-sm text-center">
                     {isUploading ? "กำลังอัปโหลดไฟล์..." : "คลิกเพื่ออัปโหลดไฟล์แบบ (AI, PSD, PDF, รูปภาพ)"}
@@ -3265,18 +3325,21 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                         const uploads = await Promise.all(
                           files.map(async (file) => {
                             const url = await uploadFile(file, 'design');
-                            return url ? { file, url, name: file.name, size: file.size } : null;
+                            return url ? { file, url, name: file.name, size: file.size, type: file.type } : null;
                           })
                         );
 
-                        const successfulUploads = uploads.filter((u): u is { file: File; url: string; name: string; size: number } => u !== null);
+                        const successfulUploads = uploads.filter((u): u is DesignFileUpload => u !== null);
 
-                        setDesignFiles(prev => [...prev, ...successfulUploads]);
-                        toast({
-                          title: `อัปโหลด ${successfulUploads.length} ไฟล์สำเร็จแล้ว`,
-                          description: successfulUploads.map(f => f.name).join(", "),
-                        });
+                        if (successfulUploads.length > 0) {
+                          setDesignFiles(prev => [...prev, ...successfulUploads]);
+                          toast({
+                            title: `อัปโหลด ${successfulUploads.length} ไฟล์สำเร็จแล้ว`,
+                            description: successfulUploads.map(f => f.name).join(", "),
+                          });
+                        }
                       }
+                      e.currentTarget.value = "";
                     }}
                   />
                 </label>
@@ -3285,37 +3348,60 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
               {designFiles.length > 0 && (
                 <div className="mt-3 space-y-2">
                   <Label className="text-xs text-muted-foreground">ไฟล์ที่แนบ ({designFiles.length} ไฟล์)</Label>
-                  {designFiles.map((item, index) => (
-                    <div key={index} className="flex items-center justify-between p-2 bg-muted/50 rounded-lg">
-                      <div className="flex items-center gap-2">
-                        <FileText className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-sm truncate max-w-xs">{item.name}</span>
-                        <span className="text-xs text-muted-foreground">
-                          ({(item.size / 1024).toFixed(1)} KB)
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => window.open(item.url, '_blank')}
-                          className="h-8 w-8 p-0"
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setDesignFiles(prev => prev.filter((_, i) => i !== index))}
-                          className="h-8 w-8 p-0 text-destructive hover:text-destructive"
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {designFiles.map((item, index) => {
+                      const canPreview = isPreviewableDesignImage(item);
+
+                      return (
+                        <div key={`${item.url}-${index}`} className="space-y-3 p-3 border rounded-lg bg-muted/20">
+                          <div className="w-full h-32 border rounded-lg overflow-hidden bg-background flex items-center justify-center">
+                            {canPreview ? (
+                              <img
+                                src={item.url}
+                                alt={item.name}
+                                className="w-full h-full object-contain"
+                              />
+                            ) : (
+                              <div className="flex flex-col items-center text-muted-foreground px-3 text-center">
+                                <FileText className="h-8 w-8 mb-1" />
+                                <span className="text-xs">ไฟล์แบบ</span>
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium truncate" title={item.name}>{item.name}</p>
+                              <p className="text-xs text-muted-foreground">{formatUploadSize(item.size)}</p>
+                            </div>
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => window.open(item.url, '_blank')}
+                                className="h-8 w-8 p-0"
+                                title="เปิดดูไฟล์"
+                                aria-label="เปิดดูไฟล์"
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setDesignFiles(prev => prev.filter((_, i) => i !== index))}
+                                className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                                title="ลบไฟล์"
+                                aria-label="ลบไฟล์"
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>

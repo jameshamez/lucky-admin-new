@@ -31,6 +31,8 @@ import {
 import artworkSample from "@/assets/artwork-sample.png";
 import { toast } from "sonner";
 
+const API_BASE_URL = "https://nacres.co.th/api-lucky/admin";
+
 // QC Step Interface
 interface QCPhotoUpload {
   url: string;
@@ -74,6 +76,25 @@ interface ProcurementStatusUpdateProps {
   filterStep?: string;
   hideSections?: ("qc" | "shipping" | "logistics")[];
 }
+
+type StepGroup = "qc" | "shipping" | "logistics";
+type ProgressStep = QCStep | ShippingStep | LogisticsStep;
+type ProgressStepStatus = ProgressStep["status"];
+
+const ORDER_STATUS_BY_STEP: Record<string, string> = {
+  artwork: "ตรวจสอบ Artwork จากโรงงาน",
+  cnc: "ตรวจสอบ CNC",
+  production: "ผลิตชิ้นงาน",
+  color_check: "ตรวจสอบลงสี",
+  lanyard: "ตรวจสอบสายคล้อง",
+  final: "อัปเดตชิ้นงานก่อนจัดส่ง",
+  factory_ship: "โรงงานส่งออก",
+  in_transit: "ระหว่างขนส่ง",
+  arrived_th: "ถึงไทย",
+  warehouse_to_store: "ส่งจากโกดัง → ร้าน",
+  store_qc: "ตรวจนับ & QC ที่ร้าน",
+  delivery_success: "จัดส่งสำเร็จ",
+};
 
 export default function ProcurementStatusUpdate({ orderId, filterStep = "all", hideSections = [] }: ProcurementStatusUpdateProps) {
   // Determine which sections to show based on filterStep
@@ -198,6 +219,39 @@ export default function ProcurementStatusUpdate({ orderId, filterStep = "all", h
     setLightboxOpen(true);
   };
 
+  const updateStepsForAction = <T extends ProgressStep>(
+    steps: T[],
+    stepKey: string,
+    targetStatus: ProgressStepStatus,
+    actorName: string,
+    now: string
+  ): T[] => {
+    return steps.map((step, idx) => {
+      if (step.key === stepKey) {
+        return { ...step, status: targetStatus as T["status"], completedBy: actorName, completedAt: now };
+      }
+      if (idx > 0 && steps[idx - 1].key === stepKey && step.status === "locked") {
+        return { ...step, status: "pending" as T["status"] };
+      }
+      return step;
+    });
+  };
+
+  const persistOrderStatus = async (orderStatus: string) => {
+    const response = await fetch(`${API_BASE_URL}/orders.php?id=${encodeURIComponent(orderId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        order_status: orderStatus,
+      }),
+    });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok || json.status === "error") {
+      throw new Error(json.message || "Update order status failed");
+    }
+    return json;
+  };
+
   // Upload photo handler
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>, stepKey: string, type: "qc" | "shipping" | "logistics") => {
     const file = e.target.files?.[0];
@@ -210,7 +264,6 @@ export default function ProcurementStatusUpdate({ orderId, filterStep = "all", h
       uploadedBy: "จัดซื้อ สมชาย",
       uploadedAt: new Date().toLocaleString("th-TH")
     };
-
     if (type === "qc") {
       setQcSteps(prev => prev.map(step => 
         step.key === stepKey 
@@ -258,51 +311,34 @@ export default function ProcurementStatusUpdate({ orderId, filterStep = "all", h
   };
 
   // Action step: complete or skip
-  const handleStepAction = (stepKey: string, type: "qc" | "shipping" | "logistics", action: "complete" | "skip" | "sales_approve") => {
+  const handleStepAction = async (stepKey: string, type: StepGroup, action: "complete" | "skip" | "sales_approve") => {
     const now = new Date().toLocaleString("th-TH");
     const targetStatus = action === "skip" ? "skipped" : (action === "sales_approve" ? "sales_approved" : "completed");
-    const actorName = action === "sales_approve" ? "ฝ่ายขาย (ยืนยันแบบ)" : "จัดซื้อ สมชาย";
+    const actionActorName = action === "sales_approve" ? "ฝ่ายขาย (ยืนยันแบบ)" : "จัดซื้อ สมชาย";
+    const previousQcSteps = qcSteps;
+    const previousShippingSteps = shippingSteps;
+    const previousLogisticsSteps = logisticsSteps;
+    const nextQcSteps = type === "qc" ? updateStepsForAction(qcSteps, stepKey, targetStatus, actionActorName, now) : qcSteps;
+    const nextShippingSteps = type === "shipping" ? updateStepsForAction(shippingSteps, stepKey, targetStatus, actionActorName, now) : shippingSteps;
+    const nextLogisticsSteps = type === "logistics" ? updateStepsForAction(logisticsSteps, stepKey, targetStatus, actionActorName, now) : logisticsSteps;
     
     if (type === "qc") {
-      setQcSteps(prev => {
-        const newSteps = prev.map((step, idx) => {
-          if (step.key === stepKey) {
-            return { ...step, status: targetStatus, completedBy: actorName, completedAt: now };
-          }
-          // Unlock next step
-          if (idx > 0 && prev[idx - 1].key === stepKey && step.status === "locked") {
-            return { ...step, status: "pending" as const };
-          }
-          return step;
-        });
-        return newSteps;
-      });
+      setQcSteps(nextQcSteps);
     } else if (type === "shipping") {
-      setShippingSteps(prev => {
-        const newSteps = prev.map((step, idx) => {
-          if (step.key === stepKey) {
-            return { ...step, status: targetStatus, completedBy: actorName, completedAt: now };
-          }
-          if (idx > 0 && prev[idx - 1].key === stepKey && step.status === "locked") {
-            return { ...step, status: "pending" as const };
-          }
-          return step;
-        });
-        return newSteps;
-      });
+      setShippingSteps(nextShippingSteps);
     } else {
-      setLogisticsSteps(prev => {
-        const newSteps = prev.map((step, idx) => {
-          if (step.key === stepKey) {
-            return { ...step, status: targetStatus, completedBy: actorName, completedAt: now };
-          }
-          if (idx > 0 && prev[idx - 1].key === stepKey && step.status === "locked") {
-            return { ...step, status: "pending" as const };
-          }
-          return step;
-        });
-        return newSteps;
-      });
+      setLogisticsSteps(nextLogisticsSteps);
+    }
+
+    try {
+      await persistOrderStatus(ORDER_STATUS_BY_STEP[stepKey] || stepKey);
+    } catch (error) {
+      setQcSteps(previousQcSteps);
+      setShippingSteps(previousShippingSteps);
+      setLogisticsSteps(previousLogisticsSteps);
+      toast.error("ไม่สามารถอัพเดทสถานะคำสั่งซื้อได้");
+      console.error("Failed to persist procurement status", error);
+      return;
     }
 
     toast.success(action === "sales_approve" ? "เซลล์ยืนยันแบบสำเร็จ" : (action === "complete" ? "อัพเดทสถานะสำเร็จ" : "ข้ามขั้นตอนสำเร็จ"));

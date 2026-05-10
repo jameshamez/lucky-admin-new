@@ -24,7 +24,11 @@ export const productionService = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ order_status: status })
         });
-        return await res.json();
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || json.status === 'error') {
+            throw new Error(json.message || `Update status failed (${res.status})`);
+        }
+        return json;
     },
 
     updateProductionWorkflow: async (id: number | string, workflow: any) => {
@@ -33,7 +37,11 @@ export const productionService = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ production_workflow: workflow })
         });
-        return await res.json();
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || json.status === 'error') {
+            throw new Error(json.message || `Update workflow failed (${res.status})`);
+        }
+        return json;
     },
 
     // Vehicle Management

@@ -85,7 +85,7 @@ if ($file['size'] > $maxSize) {
 }
 
 // Allowed types
-$allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf', 'ai', 'psd', 'eps', 'svg'];
+$allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf', 'ai', 'psd', 'eps', 'svg', 'cdr'];
 $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
 if (!in_array($ext, $allowedExtensions, true)) {
   http_response_code(400);

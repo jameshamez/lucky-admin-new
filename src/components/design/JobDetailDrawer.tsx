@@ -54,6 +54,55 @@ const mockEmployees = [
 
 const API_BASE = "https://nacres.co.th/api-lucky/admin";
 
+type ReferenceFileItem = { fileName: string; url: string };
+
+const referenceImagePattern = /\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i;
+
+const toReferenceFileItem = (file: any): ReferenceFileItem | null => {
+  if (!file) return null;
+  if (typeof file === 'string') return { fileName: file.split('?')[0].split('/').pop() || 'ไฟล์เอกสาร', url: file };
+
+  const url = file.url || file.link || file.file_url || '';
+  if (!url) return null;
+
+  return {
+    fileName: file.fileName || file.file_name || file.name || (url.split('?')[0].split('/').pop() || 'ไฟล์เอกสาร'),
+    url,
+  };
+};
+
+const isReferenceImageFile = (file: ReferenceFileItem) => {
+  return referenceImagePattern.test(file.url) || referenceImagePattern.test(file.fileName);
+};
+
+const getFirstText = (...values: any[]) => {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+};
+
+const normalizeJobTypeDisplay = (value: string) => {
+  const text = value.trim();
+  if (!text) return "";
+
+  const lower = text.toLowerCase();
+  const includes = (needle: string) => lower.includes(needle.toLowerCase());
+
+  if (includes("ป้ายจารึก")) return "ป้ายจารึก";
+  if ((includes("ready") || includes("สำเร็จ")) && (includes("medal") || includes("เหรียญ"))) return "เหรียญสำเร็จรูป";
+  if (includes("plaque") || includes("award") || includes("shield") || includes("โล่")) return "โล่";
+  if (includes("medal") || includes("เหรียญ")) return "เหรียญสั่งผลิต";
+  if (includes("trophy") || includes("ถ้วย")) return "ถ้วยรางวัล";
+  if (includes("lanyard") || includes("สายคล้อง")) return "สายคล้อง";
+  if (includes("shirt") || includes("เสื้อ")) return "เสื้อ";
+  if (includes("bib") || includes("บิบ")) return "บิบ";
+  if (includes("crystal") || includes("คริสตัล")) return "คริสตัล";
+  if (includes("acrylic") || includes("อะคริลิค")) return "อะคริลิค";
+
+  return text;
+};
+
 export function JobDetailDrawer({ 
   open, 
   onOpenChange, 
@@ -131,21 +180,22 @@ export function JobDetailDrawer({
       : (salesDetails?.artworkImages && Array.isArray(salesDetails.artworkImages))
         ? salesDetails.artworkImages
         : [];
-    return list.map(parseImageToken).filter(Boolean) as string[];
+    const attachedImageFiles = (Array.isArray(salesDetails?.designFiles) ? salesDetails.designFiles : [])
+      .concat(Array.isArray(salesDetails?.referenceFiles) ? salesDetails.referenceFiles : [])
+      .map(toReferenceFileItem)
+      .filter((file): file is ReferenceFileItem => Boolean(file) && isReferenceImageFile(file))
+      .map(file => file.url);
+
+    return [...list.map(parseImageToken).filter(Boolean), ...attachedImageFiles] as string[];
   }, [salesDetails]);
 
-  type DocItem = { fileName: string; url: string };
+  type DocItem = ReferenceFileItem;
   const referenceFiles: DocItem[] = useMemo(() => {
     const raw = (Array.isArray(salesDetails?.designFiles) ? salesDetails.designFiles : [])
       .concat(Array.isArray(salesDetails?.referenceFiles) ? salesDetails.referenceFiles : []);
-    const toDoc = (f: any): DocItem | null => {
-      if (!f) return null;
-      if (typeof f === 'string') return { fileName: f.split('/').pop() || 'ไฟล์เอกสาร', url: f };
-      const url = f.url || f.link || '';
-      if (!url) return null;
-      return { fileName: f.fileName || f.name || (url.split('/').pop() || 'ไฟล์เอกสาร'), url };
-    };
-    const merged = (raw || []).map(toDoc).filter(Boolean) as DocItem[];
+    const merged = (raw || [])
+      .map(toReferenceFileItem)
+      .filter((file): file is DocItem => Boolean(file) && !isReferenceImageFile(file));
     // If nothing, try to include any non-image tokens in customerReferenceImages as files
     if (merged.length === 0 && Array.isArray(salesDetails?.customerReferenceImages)) {
       const extra = salesDetails.customerReferenceImages
@@ -158,16 +208,56 @@ export function JobDetailDrawer({
   }, [salesDetails]);
 
   const prodAiFile: DocItem | null = useMemo(() => {
-    const url = salesDetails?.designWorkflow?.aiFile || '';
+    const url = jobData?.ai_file || salesDetails?.designWorkflow?.aiFile || '';
     if (!url) return null;
     return { fileName: (String(url).split('/').pop() || 'AI/PDF'), url: String(url) };
-  }, [salesDetails]);
+  }, [jobData?.ai_file, salesDetails]);
 
   const prodArtworkImages: string[] = useMemo(() => {
-    const p = salesDetails?.designWorkflow?.productionArtwork;
+    const p = jobData?.production_artwork || salesDetails?.designWorkflow?.productionArtwork;
     const arr = Array.isArray(p) ? p : (p ? [p] : []);
     return arr.map(parseImageToken).filter(Boolean) as string[];
-  }, [salesDetails]);
+  }, [jobData?.production_artwork, salesDetails]);
+
+  const savedLayoutImage = useMemo(() => parseImageToken(jobData?.layout_image), [jobData?.layout_image]);
+  const savedArtworkImage = useMemo(() => parseImageToken(jobData?.artwork_image), [jobData?.artwork_image]);
+
+  const getArtworkStatusLabel = (status?: string) => {
+    switch (status) {
+      case "pending_review":
+        return "รอเซลล์ตรวจ";
+      case "approved":
+        return "แบบผ่าน";
+      case "rejected":
+        return "แบบไม่ผ่าน";
+      case "draft":
+        return "ร่าง";
+      default:
+        return "ยังไม่ระบุ";
+    }
+  };
+
+  const jobTypeDisplay = normalizeJobTypeDisplay(getFirstText(
+    jobData?.product_type_display,
+    salesDetails?.productCategoryText,
+    salesDetails?.productTypeLabel,
+    jobData?.product_type_label,
+    jobData?.productTypeLabel,
+    jobData?.product_type_raw,
+    jobData?.product_type,
+    jobData?.productType,
+    salesDetails?.productType,
+    salesDetails?.product_type,
+    salesDetails?.type,
+    salesDetails?.category,
+    salesDetails?.product?.type,
+    jobData?.product_category,
+    jobData?.productCategory,
+    salesDetails?.product_category,
+    salesDetails?.productCategory,
+    jobData?.job_type,
+    "ป้ายจารึก"
+  ));
 
   // Mock employee workload data
   const mockEmployeeWorkload: Record<string, { jobType: string; quantity: number }[]> = {
@@ -195,7 +285,7 @@ export function JobDetailDrawer({
     lineId: jobData?.line_id ?? "@customer_line",
     facebook: jobData?.facebook ?? "ABC Company",
     salesperson: jobData?.ordered_by ?? "สมชาย",
-    jobType: jobData?.job_type ?? "ป้ายจารึก",
+    jobType: jobTypeDisplay,
     urgencyLabel: jobData?.urgency ?? "เร่งด่วน",
     orderDate: jobData?.order_date ? new Date(jobData.order_date) : new Date("2024-11-28"),
     dueDate: jobData?.due_date ? new Date(jobData.due_date) : new Date("2024-12-01"),
@@ -255,7 +345,7 @@ export function JobDetailDrawer({
   };
 
   const renderJobSpecifications = () => {
-    const currentJobType = jobData?.job_type || "ป้ายจารึก";
+    const currentJobType = data.jobType || "ป้ายจารึก";
     
     // Common specs for all job types
     const commonSpecs = (
@@ -345,6 +435,10 @@ export function JobDetailDrawer({
         );
 
       case "โล่/ถ้วย/คริสตัล":
+      case "ถ้วยรางวัล":
+      case "โล่":
+      case "โล่สั่งผลิต":
+      case "คริสตัล":
         return (
           <>
             {commonSpecs}
@@ -555,6 +649,79 @@ export function JobDetailDrawer({
     </Card>
   );
 
+  const SavedDesignWorkflowCard = () => {
+    const hasSavedData = Boolean(
+      jobData?.google_drive_link ||
+      savedLayoutImage ||
+      savedArtworkImage ||
+      jobData?.artwork_status
+    );
+
+    return (
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <ImageIcon className="h-4 w-4 text-primary" />
+            ข้อมูลที่กราฟิกบันทึก
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {!hasSavedData ? (
+            <div className="text-sm text-muted-foreground">ยังไม่มีข้อมูลอัปเดตจากกราฟิก</div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold text-muted-foreground">สถานะ Artwork</p>
+                  <Badge variant="outline">{getArtworkStatusLabel(jobData?.artwork_status)}</Badge>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold text-muted-foreground">Google Drive</p>
+                  {jobData?.google_drive_link ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-2"
+                      onClick={() => window.open(jobData.google_drive_link, "_blank", "noopener,noreferrer")}
+                    >
+                      <Download className="h-4 w-4" />
+                      เปิดลิงก์
+                    </Button>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">-</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-muted-foreground">รูปวางแบบ</p>
+                  {savedLayoutImage ? (
+                    <div className="aspect-video bg-muted rounded-md overflow-hidden border">
+                      <img src={savedLayoutImage} alt="รูปวางแบบ" className="w-full h-full object-contain" />
+                    </div>
+                  ) : (
+                    <div className="text-sm text-muted-foreground">ยังไม่มีรูปวางแบบ</div>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-muted-foreground">รูป Artwork</p>
+                  {savedArtworkImage ? (
+                    <div className="aspect-video bg-muted rounded-md overflow-hidden border">
+                      <img src={savedArtworkImage} alt="Artwork" className="w-full h-full object-contain" />
+                    </div>
+                  ) : (
+                    <div className="text-sm text-muted-foreground">ยังไม่มีรูป Artwork</div>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+    );
+  };
+
   // Customer Reference Files Card
   const CustomerReferenceCard = () => (
     <Card>
@@ -683,6 +850,7 @@ export function JobDetailDrawer({
               <div className="space-y-6">
                 <CustomerInfoCard />
                 <JobSpecificationsCard />
+                <SavedDesignWorkflowCard />
                 <CustomerReferenceCard />
                 <ProductionFilesCard />
               </div>

@@ -38,6 +38,7 @@ interface ShippingInfo {
 
 interface Order {
   id: string;
+  dbId?: number | string;
   orderDate: string;
   lineName: string;
   customerName: string;
@@ -76,7 +77,7 @@ interface LogEntry {
 }
 
 interface StepData {
-  status: "pending" | "in_progress" | "issue" | "complete";
+  status: "pending" | "in_progress" | "issue" | "waiting_sales" | "complete";
   remark: string;
   images: File[];
   imagePreviews: string[];
@@ -91,7 +92,7 @@ interface StepData {
 interface ProductionWorkspaceProps {
   order: Order;
   onBack: () => void;
-  onStatusChange: (orderId: string, newStatus: string) => void;
+  onStatusChange: (orderId: string, newStatus: string) => void | Promise<void>;
   currentUserDepartment?: string; // "production" | "design" | "sales" etc.
 }
 
@@ -123,6 +124,7 @@ const PRODUCTION_STEPS = [
     icon: <Tag className="w-4 h-4" />,
     completedStatus: "รอตรวจ QC",
     requiresGraphicDepartment: true, // Only Graphic Department can update this step
+    requiresSalesApproval: true,
   },
   {
     key: "qc",
@@ -176,6 +178,7 @@ const WORKFLOW_STEPPER_STEPS = [
 export function ProductionWorkspace({ order, onBack, onStatusChange, currentUserDepartment = "production" }: ProductionWorkspaceProps) {
   const isFactoryExportOrder = order.status === "โรงงานส่งออก" || !!order.procurementInfo;
   const [activeWorkflowStep, setActiveWorkflowStep] = useState<string>("all");
+  const orderRecordId = order.dbId || order.id;
 
   // Initialize steps data from order.productionWorkflow if available
   const getInitialStepsData = (): Record<string, StepData> => {
@@ -197,7 +200,7 @@ export function ProductionWorkspace({ order, onBack, onStatusChange, currentUser
         if (defaultSteps[key]) {
           defaultSteps[key] = {
             ...defaultSteps[key],
-            status: workflowStep.status as "pending" | "in_progress" | "issue" | "complete",
+            status: workflowStep.status as "pending" | "in_progress" | "issue" | "waiting_sales" | "complete",
             remark: workflowStep.remark || "",
             updatedAt: workflowStep.updatedAt || "",
             updatedBy: workflowStep.updatedBy || "",
@@ -226,10 +229,31 @@ export function ProductionWorkspace({ order, onBack, onStatusChange, currentUser
     setStepsData(updatedSteps);
 
     try {
-      await productionService.updateProductionWorkflow(order.id, updatedSteps);
+      await productionService.updateProductionWorkflow(orderRecordId, updatedSteps);
       toast.success(`อัปเดตขั้นตอน ${stepKey} สำเร็จ`);
     } catch (error) {
       toast.error("ไม่สามารถบันทึกข้อมูลขั้นตอนการผลิตได้");
+      return;
+    }
+
+    if (data.status === "waiting_sales") {
+      try {
+        await onStatusChange(order.id, "รอเซลล์ตรวจแบบป้าย");
+        setCurrentOrderStatus("รอเซลล์ตรวจแบบป้าย");
+      } catch (error) {
+        toast.error("บันทึกขั้นตอนแล้ว แต่ไม่สามารถแจ้งสถานะรอเซลล์ได้");
+      }
+      return;
+    }
+
+    if (data.status === "issue" && stepKey === "labeling") {
+      try {
+        await onStatusChange(order.id, "รอกราฟิกแก้ไขแบบป้าย");
+        setCurrentOrderStatus("รอกราฟิกแก้ไขแบบป้าย");
+      } catch (error) {
+        toast.error("บันทึกขั้นตอนแล้ว แต่ไม่สามารถอัปเดตสถานะแก้ไขแบบป้ายได้");
+      }
+      return;
     }
 
     // Auto-advance logic
@@ -238,16 +262,30 @@ export function ProductionWorkspace({ order, onBack, onStatusChange, currentUser
       const step = PRODUCTION_STEPS[stepIndex];
 
       // Update main order status
-      setCurrentOrderStatus(step.completedStatus);
-      onStatusChange(order.id, step.completedStatus);
+      try {
+        await onStatusChange(order.id, step.completedStatus);
+        setCurrentOrderStatus(step.completedStatus);
+      } catch (error) {
+        toast.error("บันทึกขั้นตอนแล้ว แต่ไม่สามารถอัปเดตสถานะหลักได้");
+        return;
+      }
 
       // Unlock next step
       if (stepIndex < PRODUCTION_STEPS.length - 1) {
         const nextStepKey = PRODUCTION_STEPS[stepIndex + 1].key;
+        const nextSteps = {
+          ...updatedSteps,
+          [nextStepKey]: { ...updatedSteps[nextStepKey], status: "in_progress" as const },
+        };
         setStepsData((prev) => ({
           ...prev,
           [nextStepKey]: { ...prev[nextStepKey], status: "in_progress" },
         }));
+        try {
+          await productionService.updateProductionWorkflow(orderRecordId, nextSteps);
+        } catch (error) {
+          toast.error("ปลดล็อกขั้นตอนถัดไปแล้ว แต่บันทึกสถานะขั้นถัดไปไม่สำเร็จ");
+        }
       }
     }
   };
@@ -270,7 +308,7 @@ export function ProductionWorkspace({ order, onBack, onStatusChange, currentUser
     return PRODUCTION_STEPS.map((step) => ({
       key: step.key,
       title: step.title,
-      status: stepsData[step.key].status as "pending" | "in_progress" | "issue" | "complete",
+      status: stepsData[step.key].status as "pending" | "in_progress" | "issue" | "waiting_sales" | "complete",
     }));
   }, [stepsData]);
 
@@ -469,6 +507,7 @@ export function ProductionWorkspace({ order, onBack, onStatusChange, currentUser
                       hasShippingInfo={step.hasShippingInfo}
                       isDeliverySlipStep={step.isDeliverySlipStep}
                       requiresGraphicDepartment={step.requiresGraphicDepartment}
+                      requiresSalesApproval={step.requiresSalesApproval}
                       currentUserDepartment={currentUserDepartment}
                       onPrintDeliverySlip={step.isDeliverySlipStep ? () => setDeliverySlipOpen(true) : undefined}
                       compact

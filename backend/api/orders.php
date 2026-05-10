@@ -36,17 +36,61 @@ $conn->set_charset("utf8mb4");
 
 $method = $_SERVER['REQUEST_METHOD'];
 
+function normalize_order_status_value($order_status, $legacy_status) {
+    $order_status = is_string($order_status) ? trim($order_status) : $order_status;
+    $legacy_status = is_string($legacy_status) ? trim($legacy_status) : $legacy_status;
+
+    if (!empty($legacy_status) && (empty($order_status) || $order_status === 'สร้างคำสั่งซื้อใหม่')) {
+        return $legacy_status;
+    }
+
+    return !empty($order_status) ? $order_status : 'สร้างคำสั่งซื้อใหม่';
+}
+
+function has_order_identifier($id, $job_id) {
+    return !empty($id) || !empty($job_id);
+}
+
+function order_identifier_where($id, $job_id) {
+    return !empty($id) ? "order_id = ?" : "job_id = ?";
+}
+
+function bind_order_identifier($stmt, &$id, &$job_id) {
+    if (!empty($id)) {
+        $stmt->bind_param("i", $id);
+    } else {
+        $stmt->bind_param("s", $job_id);
+    }
+}
+
 // Parse ID from URL or query string
 $request_uri = $_SERVER['REQUEST_URI'];
 $path_parts = explode('/', trim(parse_url($request_uri, PHP_URL_PATH), '/'));
 $id = null;
+$job_id = null;
 foreach ($path_parts as $key => $part) {
     if (($part === 'orders.php') && isset($path_parts[$key + 1]) && is_numeric($path_parts[$key + 1])) {
         $id = intval($path_parts[$key + 1]);
     }
 }
 if (!$id && isset($_GET['id'])) {
-    $id = intval($_GET['id']);
+    $raw_id = trim($_GET['id']);
+    if (is_numeric($raw_id)) {
+        $id = intval($raw_id);
+    } elseif ($raw_id !== '') {
+        $job_id = $raw_id;
+    }
+}
+if (!$id && !$job_id && isset($_GET['order_id'])) {
+    $raw_order_id = trim($_GET['order_id']);
+    if (is_numeric($raw_order_id)) {
+        $id = intval($raw_order_id);
+    } elseif ($raw_order_id !== '') {
+        $job_id = $raw_order_id;
+    }
+}
+if (!$id && !$job_id && isset($_GET['job_id'])) {
+    $job_id = trim($_GET['job_id']);
 }
 
 // ==================== GET ====================
@@ -65,11 +109,11 @@ if ($method === 'GET') {
         exit();
     }
 
-    if ($id) {
+    if (has_order_identifier($id, $job_id)) {
         // ดึงคำสั่งซื้อเดี่ยว พร้อม items และ payments
-        $sql = "SELECT * FROM orders WHERE order_id = ?";
+        $sql = "SELECT * FROM orders WHERE " . order_identifier_where($id, $job_id);
         $stmt = $conn->prepare($sql);
-        $stmt->bind_param("i", $id);
+        bind_order_identifier($stmt, $id, $job_id);
         $stmt->execute();
         $order = $stmt->get_result()->fetch_assoc();
 
@@ -80,10 +124,11 @@ if ($method === 'GET') {
         }
 
         // === Compatibility: merge legacy columns → ชื่อใหม่ ===
-        $order['order_status'] = $order['order_status'] ?? ($order['status'] ?? 'สร้างคำสั่งซื้อใหม่');
+        $order['order_status'] = normalize_order_status_value($order['order_status'] ?? null, $order['status'] ?? null);
         $order['total_price'] = $order['total_price'] ?? ($order['total_amount'] ?? 0);
         $order['require_tax_invoice'] = $order['require_tax_invoice'] ?? ($order['needs_tax_invoice'] ?? 0);
         $order['paid_amount'] = $order['paid_amount'] ?? 0;
+        $order_id_for_children = intval($order['order_id']);
 
         // order items
         // รองรับทั้ง PK ชื่อ `id` และ `item_id` (เดิม)
@@ -93,7 +138,7 @@ if ($method === 'GET') {
              COALESCE(total_price_item, price * quantity, 0) AS total_price
              FROM order_items WHERE order_id = ? ORDER BY item_id ASC"
         );
-        $items_stmt->bind_param("i", $id);
+        $items_stmt->bind_param("i", $order_id_for_children);
         $items_stmt->execute();
         $items_result = $items_stmt->get_result();
         $items = [];
@@ -110,7 +155,7 @@ if ($method === 'GET') {
 
         // order payments
         $pay_stmt = $conn->prepare("SELECT * FROM order_payments WHERE order_id = ? ORDER BY id ASC");
-        $pay_stmt->bind_param("i", $id);
+        $pay_stmt->bind_param("i", $order_id_for_children);
         $pay_stmt->execute();
         $payments = [];
         while ($row = $pay_stmt->get_result()->fetch_assoc()) {
@@ -131,7 +176,7 @@ if ($method === 'GET') {
         }
 
         foreach ($items as &$item) {
-            if (!empty($item['details'])) {
+            if (!empty($item['details']) && is_string($item['details'])) {
                 $item['details'] = json_decode($item['details'], true);
             }
         }
@@ -257,7 +302,7 @@ if ($method === 'GET') {
         $row['customer_created_at'] = $row['cust_created_at'] ?? null;
 
         // Compatibility: ใช้คอลัมน์ใหม่ก่อน fallback คอลัมน์เดิม
-        $row['order_status'] = $row['order_status'] ?? ($row['status'] ?? 'สร้างคำสั่งซื้อใหม่');
+        $row['order_status'] = normalize_order_status_value($row['order_status'] ?? null, $row['status'] ?? null);
         $row['total_price'] = $row['total_price'] ?? ($row['total_amount'] ?? 0);
         $row['require_tax_invoice'] = $row['require_tax_invoice'] ?? ($row['needs_tax_invoice'] ?? 0);
         $row['paid_amount'] = $row['paid_amount'] ?? 0;
@@ -344,7 +389,7 @@ if ($data === null) {
 }
 
 // Redirect POST to UPDATE if ID is present
-if ($method === 'POST' && $id) {
+if ($method === 'POST' && has_order_identifier($id, $job_id)) {
     $method = 'PATCH';
 }
 
@@ -614,7 +659,7 @@ if ($method === 'POST') {
 
 // ==================== PUT (Update) ====================
 if ($method === 'PUT') {
-    if (!$id) {
+    if (!has_order_identifier($id, $job_id)) {
         http_response_code(400);
         echo json_encode(["status" => "error", "message" => "Order ID is required"]);
         exit();
@@ -624,6 +669,13 @@ if ($method === 'PUT') {
         http_response_code(400);
         echo json_encode(["status" => "error", "message" => "Request body is empty"]);
         exit();
+    }
+
+    if (array_key_exists('order_status', $data) && !array_key_exists('status', $data)) {
+        $data['status'] = $data['order_status'];
+    }
+    if (array_key_exists('status', $data) && !array_key_exists('order_status', $data)) {
+        $data['order_status'] = $data['status'];
     }
 
     // Build dynamic update
@@ -641,6 +693,7 @@ if ($method === 'PUT') {
         'payment_status',
         'paid_amount',
         'status',
+        'order_status',
         'job_created',
         'departments',
         'responsible_person',
@@ -703,10 +756,15 @@ if ($method === 'PUT') {
         exit();
     }
 
-    $params[] = $id;
-    $types .= 'i';
+    if (!empty($id)) {
+        $params[] = $id;
+        $types .= 'i';
+    } else {
+        $params[] = $job_id;
+        $types .= 's';
+    }
 
-    $sql = "UPDATE orders SET " . implode(", ", $fields) . " WHERE order_id = ?";
+    $sql = "UPDATE orders SET " . implode(", ", $fields) . " WHERE " . order_identifier_where($id, $job_id);
     $stmt = $conn->prepare($sql);
     $stmt->bind_param($types, ...$params);
 
@@ -721,9 +779,12 @@ if ($method === 'PUT') {
         if (isset($data['departments'])) {
             $depts = is_array($data['departments']) ? $data['departments'] : json_decode($data['departments'], true);
             if (is_array($depts) && in_array('ฝ่ายกราฟฟิก', $depts)) {
-                $ordQuery = $conn->query("SELECT * FROM orders WHERE order_id = " . intval($id));
-                if ($ordQuery && $ordQuery->num_rows > 0) {
-                    $ord = $ordQuery->fetch_assoc();
+                $ordStmt = $conn->prepare("SELECT * FROM orders WHERE " . order_identifier_where($id, $job_id));
+                bind_order_identifier($ordStmt, $id, $job_id);
+                $ordStmt->execute();
+                $ordResult = $ordStmt->get_result();
+                if ($ordResult && $ordResult->num_rows > 0) {
+                    $ord = $ordResult->fetch_assoc();
                     $job_code = $conn->real_escape_string($ord['job_id']);
                     
                     $c_name_es = $conn->real_escape_string($ord['customer_name'] ?: 'ไม่ระบุชื่อ');
@@ -744,7 +805,7 @@ if ($method === 'PUT') {
 
 // ==================== PATCH (สร้างงาน / เปลี่ยน status) ====================
 if ($method === 'PATCH') {
-    if (!$id) {
+    if (!has_order_identifier($id, $job_id)) {
         http_response_code(400);
         echo json_encode(["status" => "error", "message" => "Order ID is required"]);
         exit();
@@ -755,9 +816,13 @@ if ($method === 'PATCH') {
     $params = [];
     $types = '';
 
-    if (isset($data['order_status'])) {
+    $status_update = $data['order_status'] ?? ($data['status'] ?? null);
+    if ($status_update !== null) {
+        $fields[] = "order_status = ?";
+        $params[] = $status_update;
+        $types .= 's';
         $fields[] = "status = ?";
-        $params[] = $data['order_status'];
+        $params[] = $status_update;
         $types .= 's';
     }
     if (isset($data['payment_status'])) {
@@ -792,9 +857,14 @@ if ($method === 'PATCH') {
         exit();
     }
 
-    $params[] = $id;
-    $types .= 'i';
-    $sql = "UPDATE orders SET " . implode(", ", $fields) . " WHERE order_id = ?";
+    if (!empty($id)) {
+        $params[] = $id;
+        $types .= 'i';
+    } else {
+        $params[] = $job_id;
+        $types .= 's';
+    }
+    $sql = "UPDATE orders SET " . implode(", ", $fields) . " WHERE " . order_identifier_where($id, $job_id);
     $stmt = $conn->prepare($sql);
     $stmt->bind_param($types, ...$params);
 
@@ -803,9 +873,12 @@ if ($method === 'PATCH') {
         if (isset($data['departments'])) {
             $depts = is_array($data['departments']) ? $data['departments'] : json_decode($data['departments'], true);
             if (is_array($depts) && in_array('ฝ่ายกราฟฟิก', $depts)) {
-                $ordQuery = $conn->query("SELECT * FROM orders WHERE order_id = " . intval($id));
-                if ($ordQuery && $ordQuery->num_rows > 0) {
-                    $ord = $ordQuery->fetch_assoc();
+                $ordStmt = $conn->prepare("SELECT * FROM orders WHERE " . order_identifier_where($id, $job_id));
+                bind_order_identifier($ordStmt, $id, $job_id);
+                $ordStmt->execute();
+                $ordResult = $ordStmt->get_result();
+                if ($ordResult && $ordResult->num_rows > 0) {
+                    $ord = $ordResult->fetch_assoc();
                     $job_code = $conn->real_escape_string($ord['job_id']);
                     
                     $c_name_es = $conn->real_escape_string($ord['customer_name'] ?: 'ไม่ระบุชื่อ');
@@ -829,15 +902,15 @@ if ($method === 'PATCH') {
 
 // ==================== DELETE ====================
 if ($method === 'DELETE') {
-    if (!$id) {
+    if (!has_order_identifier($id, $job_id)) {
         http_response_code(400);
         echo json_encode(["status" => "error", "message" => "Order ID is required"]);
         exit();
     }
 
     // cascade delete handles order_items and order_payments automatically
-    $stmt = $conn->prepare("DELETE FROM orders WHERE order_id = ?");
-    $stmt->bind_param("i", $id);
+    $stmt = $conn->prepare("DELETE FROM orders WHERE " . order_identifier_where($id, $job_id));
+    bind_order_identifier($stmt, $id, $job_id);
 
     if ($stmt->execute()) {
         echo json_encode(["status" => "success", "message" => "Order deleted successfully"]);

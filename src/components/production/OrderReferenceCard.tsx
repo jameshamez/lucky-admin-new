@@ -90,6 +90,8 @@ export function OrderReferenceCard({ order, onShippingFeeChange }: OrderReferenc
       "รอประกอบ": "bg-yellow-100 text-yellow-700",
       "รอผูกโบว์": "bg-purple-100 text-purple-700",
       "รอติดป้ายจารึก": "bg-indigo-100 text-indigo-700",
+      "รอเซลล์ตรวจแบบป้าย": "bg-blue-100 text-blue-700",
+      "รอกราฟิกแก้ไขแบบป้าย": "bg-red-100 text-red-700",
       "ประกอบเสร็จ": "bg-green-100 text-green-700",
     };
     return <Badge className={config[status] || "bg-gray-100 text-gray-700"}>{status}</Badge>;

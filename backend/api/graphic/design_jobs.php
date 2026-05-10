@@ -513,7 +513,7 @@ if ($method === 'PUT') {
     $data = getBody();
 
     // Get current job for logging
-    $cur = $conn->prepare("SELECT status FROM design_jobs WHERE id = ?");
+    $cur = $conn->prepare("SELECT status, job_code FROM design_jobs WHERE id = ?");
     $cur->bind_param("i", $id);
     $cur->execute();
     $current = $cur->get_result()->fetch_assoc();
@@ -603,6 +603,24 @@ if ($method === 'PUT') {
         $changed_by = $data['changed_by'] ?? $data['designer'] ?? 'system';
         $log_note = $data['log_note'] ?? '';
         logStatus($conn, $id, $old_status, $new_status, $changed_by, $log_note);
+
+        $linked_order_status = null;
+        $artwork_status_update = $data['artwork_status'] ?? null;
+        if ($artwork_status_update === 'pending_review' || $new_status === 'รอตรวจสอบ') {
+            $linked_order_status = 'รอเซลล์ตรวจแบบป้าย';
+        } elseif ($artwork_status_update === 'approved') {
+            $linked_order_status = 'ไฟล์ผลิตพร้อมสั่งผลิต';
+        } elseif ($artwork_status_update === 'rejected' || $new_status === 'แก้ไข') {
+            $linked_order_status = 'รอกราฟิกแก้ไขแบบป้าย';
+        }
+
+        if ($linked_order_status !== null && !empty($current['job_code'])) {
+            $order_stmt = $conn->prepare("UPDATE orders SET order_status = ?, status = ? WHERE job_id = ?");
+            if ($order_stmt) {
+                $order_stmt->bind_param("sss", $linked_order_status, $linked_order_status, $current['job_code']);
+                $order_stmt->execute();
+            }
+        }
 
         echo json_encode(["status" => "success", "message" => "Job updated"]);
     } else {

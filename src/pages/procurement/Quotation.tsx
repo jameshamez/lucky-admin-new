@@ -820,6 +820,69 @@ Project : ${project}
     }).join(", ");
   };
 
+  const getPlatingColorLabel = (color: unknown, customColor?: unknown): string => {
+    const normalize = (value: unknown): string => {
+      if (value === null || value === undefined) return "";
+      if (typeof value === "string") return value.trim();
+      if (typeof value === "number") return String(value);
+      if (typeof value === "object") {
+        const record = value as Record<string, unknown>;
+        return normalize(record.label ?? record.name ?? record.text ?? record.color ?? record.value);
+      }
+      return "";
+    };
+
+    const raw = normalize(color);
+    const custom = normalize(customColor);
+    if (!raw || raw === "-") return "";
+    if (raw.toLowerCase() === "other") return custom || "อื่นๆ";
+
+    const labelMap: Record<string, string> = {
+      gold: "Gold (ทอง)",
+      silver: "Silver (เงิน)",
+      copper: "Copper (ทองแดง)",
+    };
+
+    return labelMap[raw.toLowerCase()] || raw;
+  };
+
+  const getQuotationPlatingColorsText = (quotation?: MockQuotation | null): string => {
+    if (!quotation) return "-";
+
+    const rawDetails = (quotation as any)?.rawDetails || {};
+    const colors: string[] = [];
+    const rows = rawDetails?.colorQuantityRows;
+
+    if (Array.isArray(rows)) {
+      rows.forEach((row: any) => {
+        const label = getPlatingColorLabel(row?.color, row?.customColor);
+        if (label) colors.push(label);
+      });
+    }
+
+    const addColors = (value: unknown) => {
+      if (Array.isArray(value)) {
+        value.forEach((item) => {
+          const label = getPlatingColorLabel(item);
+          if (label) colors.push(label);
+        });
+        return;
+      }
+
+      const label = getPlatingColorLabel(value);
+      if (label) colors.push(label);
+    };
+
+    if (colors.length === 0) addColors(rawDetails?.colors);
+    if (colors.length === 0) addColors(quotation.colors);
+
+    const uniqueColors = colors.filter((color, index, all) => (
+      all.findIndex((item) => item.toLowerCase() === color.toLowerCase()) === index
+    ));
+
+    return uniqueColors.length > 0 ? translateColors(uniqueColors) : "-";
+  };
+
   // Factory code mapping for job code generation
   const getFactoryCode = (factoryValue: string): string => {
     const factoryCodeMap: Record<string, string> = {
@@ -1541,8 +1604,8 @@ Project : ${project}
                 <p style="font-size:13px;font-weight:600;color:#1f2937;margin:0;">${q.thickness}</p>
               </div>
               <div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;">
-                <p style="font-size:11px;color:#9ca3af;margin:0 0 4px 0;">ชนิดการชุบ</p>
-                <p style="font-size:13px;font-weight:600;color:#1f2937;margin:0;">${q.colors?.[0]?.includes('gold') ? 'Shiny Gold (เงา)' : q.colors?.[0]?.includes('silver') ? 'Shiny Silver (เงา)' : 'Shiny (เงา)'}</p>
+                <p style="font-size:11px;color:#9ca3af;margin:0 0 4px 0;">สีชุบ</p>
+                <p style="font-size:13px;font-weight:600;color:#1f2937;margin:0;">${getQuotationPlatingColorsText(q)}</p>
               </div>
               <div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;">
                 <p style="font-size:11px;color:#9ca3af;margin:0 0 4px 0;">จำนวนรวม</p>
@@ -1563,16 +1626,16 @@ Project : ${project}
             <thead>
               <tr>
                 <th style="padding:12px 16px;text-align:left;background:#eff6ff;color:#1d4ed8;font-weight:600;font-size:12px;border-bottom:1px solid #e5e7eb;">โรงงาน</th>
-                <th style="padding:12px 16px;text-align:right;background:#ecfdf5;color:#059669;font-weight:600;font-size:12px;border-bottom:1px solid #e5e7eb;">ทุนรวม (THB)</th>
-                <th style="padding:12px 16px;text-align:right;background:#ecfdf5;color:#059669;font-weight:600;font-size:12px;border-bottom:1px solid #e5e7eb;">ราคาขายรวม (THB)</th>
+                <th style="padding:12px 16px;text-align:right;background:#ecfdf5;color:#059669;font-weight:600;font-size:12px;border-bottom:1px solid #e5e7eb;">ต้นทุน/ชิ้น (THB)</th>
+                <th style="padding:12px 16px;text-align:right;background:#ecfdf5;color:#059669;font-weight:600;font-size:12px;border-bottom:1px solid #e5e7eb;">ราคาขาย/ชิ้น (THB)</th>
                 <th style="padding:12px 16px;text-align:right;background:#fefce8;color:#ca8a04;font-weight:600;font-size:12px;border-bottom:1px solid #e5e7eb;">กำไร (THB)</th>
               </tr>
             </thead>
             <tbody>
               <tr style="background:#ffffff;">
                 <td style="padding:12px 16px;font-weight:600;color:#1f2937;">${entry.factoryLabel}</td>
-                <td style="padding:12px 16px;text-align:right;font-weight:600;color:#1f2937;">${(entry.totalCostPerUnit * quantity).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
-                <td style="padding:12px 16px;text-align:right;font-weight:600;color:#059669;">${(entry.totalSellingPricePerUnit * quantity).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+                <td style="padding:12px 16px;text-align:right;font-weight:600;color:#1f2937;">${(entry.totalCostPerUnit || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td style="padding:12px 16px;text-align:right;font-weight:600;color:#059669;">${(entry.totalSellingPricePerUnit || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                 <td style="padding:12px 16px;text-align:right;font-weight:700;color:${(entry.totalProfit || 0) >= 0 ? '#059669' : '#dc2626'};">${entry.totalProfit?.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 }) || '0'}</td>
               </tr>
             </tbody>
@@ -3368,8 +3431,8 @@ Quantity: ${quantityFormatted}`;
                                   <div className="text-orange-700 font-bold">ต้นทุนหยวน</div>
                                   <div className="text-xs font-normal text-orange-600">(ทุน/หน่วย, ค่าโมล)</div>
                                 </TableHead>
-                                <TableHead className="w-[100px] text-center bg-cyan-50 font-bold">ทุนรวม/หน่วย<br /><span className="text-xs font-normal">(THB)</span></TableHead>
-                                <TableHead className="w-[100px] text-center bg-green-50 font-bold">ราคาขายรวม/หน่วย<br /><span className="text-xs font-normal">(THB)</span></TableHead>
+                                <TableHead className="w-[100px] text-center bg-cyan-50 font-bold">ต้นทุน/ชิ้น<br /><span className="text-xs font-normal">(THB)</span></TableHead>
+                                <TableHead className="w-[100px] text-center bg-green-50 font-bold">ราคาขาย/ชิ้น<br /><span className="text-xs font-normal">(THB)</span></TableHead>
                                 <TableHead className="w-[100px] text-center bg-amber-50 font-bold">กำไรรวม<br /><span className="text-xs font-normal">(THB)</span></TableHead>
                                 <TableHead className="w-[100px] text-center bg-purple-50 font-bold">ค่าโมล(เพิ่มเติม)<br /><span className="text-xs font-normal">(THB)</span></TableHead>
                                 <TableHead className="min-w-[130px] text-center">หลักฐาน</TableHead>
@@ -3949,8 +4012,8 @@ Quantity: ${quantityFormatted}`;
                     </div>
                     {/* Row 2 */}
                     <div className="border rounded-lg p-3 bg-muted/30">
-                      <p className="text-xs text-muted-foreground">ชนิดการชุบ</p>
-                      <p className="font-medium">{selectedQuotation.colors && selectedQuotation.colors.length > 0 ? translateColors(selectedQuotation.colors) : '-'}</p>
+                      <p className="text-xs text-muted-foreground">สีชุบ</p>
+                      <p className="font-medium">{getQuotationPlatingColorsText(selectedQuotation)}</p>
                     </div>
                     <div className="border rounded-lg p-3 bg-muted/30">
                       <p className="text-xs text-muted-foreground">จำนวนรวม</p>
@@ -3977,11 +4040,11 @@ Quantity: ${quantityFormatted}`;
                           <div className="text-xs text-orange-500">(ทุน/หน่วย, ค่าโมล)</div>
                         </TableHead>
                         <TableHead className="text-center bg-cyan-50">
-                          <div className="text-cyan-600">ทุนรวม</div>
+                          <div className="text-cyan-600">ต้นทุน/ชิ้น</div>
                           <div className="text-xs text-cyan-500">(THB)</div>
                         </TableHead>
                         <TableHead className="text-center bg-green-50">
-                          <div className="text-green-600">ราคาขายรวม</div>
+                          <div className="text-green-600">ราคาขาย/ชิ้น</div>
                           <div className="text-xs text-green-500">(THB)</div>
                         </TableHead>
                         <TableHead className="text-center bg-amber-50">
@@ -4193,8 +4256,8 @@ Quantity: ${quantityFormatted}`;
                     </div>
                     {/* Row 2 */}
                     <div className="border rounded-lg p-3 bg-muted/30">
-                      <p className="text-xs text-muted-foreground">ชนิดการชุบ</p>
-                      <p className="font-medium">Shiny (เงา)</p>
+                      <p className="text-xs text-muted-foreground">สีชุบ</p>
+                      <p className="font-medium">{getQuotationPlatingColorsText(summaryQuotation)}</p>
                     </div>
                     <div className="border rounded-lg p-3 bg-muted/30">
                       <p className="text-xs text-muted-foreground">จำนวนรวม</p>
@@ -4222,11 +4285,11 @@ Quantity: ${quantityFormatted}`;
                           <div className="text-xs text-orange-500">(ทุน/หน่วย, ค่าโมล)</div>
                         </TableHead>
                         <TableHead className="text-center bg-cyan-50">
-                          <div className="text-cyan-600">ทุนรวม</div>
+                          <div className="text-cyan-600">ต้นทุน/ชิ้น</div>
                           <div className="text-xs text-cyan-500">(THB)</div>
                         </TableHead>
                         <TableHead className="text-center bg-green-50">
-                          <div className="text-green-600">ราคาขายรวม</div>
+                          <div className="text-green-600">ราคาขาย/ชิ้น</div>
                           <div className="text-xs text-green-500">(THB)</div>
                         </TableHead>
                         <TableHead className="text-center bg-amber-50">

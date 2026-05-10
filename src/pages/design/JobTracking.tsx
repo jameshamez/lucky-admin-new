@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, type ReactNode } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -562,13 +562,15 @@ export default function JobTracking() {
     );
   };
 
-  const renderDetailDialog = (job: JobTracking) => (
+  const renderDetailDialog = (job: JobTracking, trigger?: ReactNode) => (
     <Dialog>
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm">
-          <Eye className="h-4 w-4 mr-1" />
-          ดูรายละเอียด
-        </Button>
+        {trigger || (
+          <Button variant="outline" size="sm">
+            <Eye className="h-4 w-4 mr-1" />
+            ดูรายละเอียด
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
@@ -1219,14 +1221,15 @@ export default function JobTracking() {
                         }`}
                       >
                         <TableCell className="font-mono text-center">
-                          <a
-                            href={`/design/tracking/${job.job_id}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:underline hover:text-blue-800 cursor-pointer"
-                          >
-                            {highlightText(job.job_id, searchTerm)}
-                          </a>
+                          {renderDetailDialog(
+                            job,
+                            <button
+                              type="button"
+                              className="text-blue-600 hover:underline hover:text-blue-800 cursor-pointer font-mono"
+                            >
+                              {highlightText(job.job_id, searchTerm)}
+                            </button>
+                          )}
                         </TableCell>
                         <TableCell className="text-center">
                           {highlightText(job.client_name, searchTerm)}

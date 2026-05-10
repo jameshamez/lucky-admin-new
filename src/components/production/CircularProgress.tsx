@@ -9,7 +9,7 @@ import { CheckCircle, Clock, AlertCircle } from "lucide-react";
 interface StepProgress {
   key: string;
   title: string;
-  status: "pending" | "in_progress" | "issue" | "complete" | "skipped";
+  status: "pending" | "in_progress" | "issue" | "waiting_sales" | "complete" | "skipped";
 }
 
 interface CircularProgressProps {
@@ -37,6 +37,8 @@ export function CircularProgress({ percentage, steps, size = 56 }: CircularProgr
         return <AlertCircle className="w-3.5 h-3.5 text-red-600" />;
       case "in_progress":
         return <Clock className="w-3.5 h-3.5 text-yellow-600" />;
+      case "waiting_sales":
+        return <Clock className="w-3.5 h-3.5 text-blue-600" />;
       case "skipped":
         return <span className="w-3.5 h-3.5 text-muted-foreground text-center">—</span>;
       default:
@@ -49,6 +51,7 @@ export function CircularProgress({ percentage, steps, size = 56 }: CircularProgr
       case "complete": return "เสร็จสิ้น";
       case "issue": return "มีปัญหา";
       case "in_progress": return "กำลังทำ";
+      case "waiting_sales": return "รอเซลล์";
       case "skipped": return "ข้าม";
       default: return "รอ";
     }
@@ -112,6 +115,7 @@ export function CircularProgress({ percentage, steps, size = 56 }: CircularProgr
                 className={`flex items-center gap-2 p-2 rounded-md text-sm ${
                   step.status === "complete" ? "bg-green-50" :
                   step.status === "issue" ? "bg-red-50" :
+                  step.status === "waiting_sales" ? "bg-blue-50" :
                   step.status === "in_progress" ? "bg-yellow-50" :
                   step.status === "skipped" ? "bg-muted/30 opacity-50" :
                   "bg-muted/20"
@@ -127,6 +131,7 @@ export function CircularProgress({ percentage, steps, size = 56 }: CircularProgr
                 <span className={`text-xs ${
                   step.status === "complete" ? "text-green-600" :
                   step.status === "issue" ? "text-red-600" :
+                  step.status === "waiting_sales" ? "text-blue-600" :
                   step.status === "in_progress" ? "text-yellow-600" :
                   "text-muted-foreground"
                 }`}>

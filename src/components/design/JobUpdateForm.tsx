@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,6 +15,7 @@ interface JobUpdateFormProps {
   quotationNo?: string;
   clientName: string;
   productTypeDisplay?: string;
+  initialData?: any;
   onSubmit: (data: any) => void;
 }
 
@@ -39,7 +40,15 @@ interface ArtworkFeedback {
 
 type ArtworkStatus = 'draft' | 'pending_review' | 'approved' | 'rejected';
 
-export function JobUpdateForm({ jobId, quotationNo, clientName, productTypeDisplay, onSubmit }: JobUpdateFormProps) {
+const API_BASE = "https://nacres.co.th/api-lucky/admin";
+const imageFilePattern = /\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i;
+
+const getFileNameFromUrl = (url: string, fallback: string) => {
+  if (!url) return fallback;
+  return url.split("?")[0].split("/").pop() || fallback;
+};
+
+export function JobUpdateForm({ jobId, quotationNo, clientName, productTypeDisplay, initialData, onSubmit }: JobUpdateFormProps) {
   // Mock current user - ในระบบจริงจะดึงจาก auth
   const currentUser = "สมชาย ใจดี";
   // Mock role - จำลองสิทธิ์ (graphic / sales)
@@ -69,6 +78,7 @@ export function JobUpdateForm({ jobId, quotationNo, clientName, productTypeDispl
   const [productionArtworkLogs, setProductionArtworkLogs] = useState<FileLog[]>([]);
   const [aiFileLogs, setAiFileLogs] = useState<FileLog[]>([]);
   const [aiFilePreview, setAiFilePreview] = useState<string | null>(null);
+  const [uploadingFields, setUploadingFields] = useState<Record<string, boolean>>({});
 
   // Image modal state
   const [modalImage, setModalImage] = useState<string | null>(null);
@@ -93,21 +103,97 @@ export function JobUpdateForm({ jobId, quotationNo, clientName, productTypeDispl
     version,
   });
 
+  const createSavedFileLog = (url: string, label: string, version?: number): FileLog => ({
+    id: `${label}-${url}`,
+    fileName: getFileNameFromUrl(url, label),
+    timestamp: "บันทึกไว้แล้ว",
+    uploadedBy: "ระบบ",
+    previewUrl: url,
+    version,
+  });
+
+  useEffect(() => {
+    const savedLayoutImage = initialData?.layout_image || "";
+    const savedArtworkImage = initialData?.artwork_image || "";
+    const savedProductionArtwork = initialData?.production_artwork || "";
+    const savedAiFile = initialData?.ai_file || "";
+
+    setFormData({
+      googleDriveLink: initialData?.google_drive_link || "",
+    });
+    setLayoutLogs(savedLayoutImage ? [createSavedFileLog(savedLayoutImage, "รูปวางแบบ")] : []);
+    setLayoutPreview(savedLayoutImage || null);
+    setArtworkLogs(savedArtworkImage ? [createSavedFileLog(savedArtworkImage, "Artwork", artworkVersion)] : []);
+    setArtworkPreview(savedArtworkImage || null);
+    setArtworkStatus(initialData?.artwork_status || "draft");
+    setProductionArtworkLogs(savedProductionArtwork ? [createSavedFileLog(savedProductionArtwork, "Artwork สำหรับผลิต")] : []);
+    setAiFileLogs(savedAiFile ? [createSavedFileLog(savedAiFile, "ไฟล์ AI")] : []);
+    setAiFilePreview(imageFilePattern.test(savedAiFile) ? savedAiFile : null);
+  }, [
+    jobId,
+    initialData?.google_drive_link,
+    initialData?.layout_image,
+    initialData?.artwork_image,
+    initialData?.artwork_status,
+    initialData?.production_artwork,
+    initialData?.ai_file,
+  ]);
+
+  const uploadDesignFile = async (file: File, folderKey: string) => {
+    setUploadingFields(prev => ({ ...prev, [folderKey]: true }));
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("folder", `design-jobs/${jobId}/${folderKey}`);
+
+      const res = await fetch(`${API_BASE}/upload.php`, {
+        method: "POST",
+        body: form,
+      });
+      const json = await res.json().catch(() => ({}));
+
+      if (!res.ok || json?.status !== "success" || !json?.url) {
+        throw new Error(json?.message || `Upload failed (${res.status})`);
+      }
+
+      return String(json.url);
+    } finally {
+      setUploadingFields(prev => ({ ...prev, [folderKey]: false }));
+    }
+  };
+
+  const isUploading = Object.values(uploadingFields).some(Boolean);
+
   const toggleDropdown = (key: string) => {
     setOpenDropdowns(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const handleLayoutImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLayoutImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const previewUrl = URL.createObjectURL(file);
+      const pendingLog = createFileLog(file, previewUrl);
       setLayoutPreview(previewUrl);
-      setLayoutLogs([createFileLog(file, previewUrl), ...layoutLogs]);
+      setLayoutLogs([pendingLog, ...layoutLogs]);
+      try {
+        const uploadedUrl = await uploadDesignFile(file, "layout");
+        setLayoutPreview(uploadedUrl);
+        setLayoutLogs(prev => prev.map(log => (
+          log.id === pendingLog.id ? { ...log, previewUrl: uploadedUrl } : log
+        )));
+        toast.success("อัปโหลดรูปวางแบบสำเร็จ");
+      } catch (err: any) {
+        setLayoutPreview(null);
+        setLayoutLogs(prev => prev.filter(log => log.id !== pendingLog.id));
+        toast.error(`อัปโหลดรูปวางแบบล้มเหลว: ${err?.message || ""}`);
+      } finally {
+        URL.revokeObjectURL(previewUrl);
+      }
     }
     e.target.value = '';
   };
 
-  const handleArtworkUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleArtworkUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const previewUrl = URL.createObjectURL(file);
@@ -117,7 +203,22 @@ export function JobUpdateForm({ jobId, quotationNo, clientName, productTypeDispl
         setArtworkVersion(newVersion);
         setArtworkStatus('draft');
       }
-      setArtworkLogs([createFileLog(file, previewUrl, newVersion), ...artworkLogs]);
+      const pendingLog = createFileLog(file, previewUrl, newVersion);
+      setArtworkLogs([pendingLog, ...artworkLogs]);
+      try {
+        const uploadedUrl = await uploadDesignFile(file, "artwork");
+        setArtworkPreview(uploadedUrl);
+        setArtworkLogs(prev => prev.map(log => (
+          log.id === pendingLog.id ? { ...log, previewUrl: uploadedUrl } : log
+        )));
+        toast.success("อัปโหลด Artwork สำเร็จ");
+      } catch (err: any) {
+        setArtworkPreview(null);
+        setArtworkLogs(prev => prev.filter(log => log.id !== pendingLog.id));
+        toast.error(`อัปโหลด Artwork ล้มเหลว: ${err?.message || ""}`);
+      } finally {
+        URL.revokeObjectURL(previewUrl);
+      }
     }
     e.target.value = '';
   };
@@ -172,29 +273,59 @@ export function JobUpdateForm({ jobId, quotationNo, clientName, productTypeDispl
     });
   };
 
-  const handleProductionArtworkChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleProductionArtworkChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      setProductionArtworkLogs([createFileLog(file), ...productionArtworkLogs]);
+      const pendingLog = createFileLog(file);
+      setProductionArtworkLogs([pendingLog, ...productionArtworkLogs]);
+      try {
+        const uploadedUrl = await uploadDesignFile(file, "production-artwork");
+        setProductionArtworkLogs(prev => prev.map(log => (
+          log.id === pendingLog.id ? { ...log, previewUrl: uploadedUrl } : log
+        )));
+        toast.success("อัปโหลด Artwork สำหรับผลิตสำเร็จ");
+      } catch (err: any) {
+        setProductionArtworkLogs(prev => prev.filter(log => log.id !== pendingLog.id));
+        toast.error(`อัปโหลด Artwork สำหรับผลิตล้มเหลว: ${err?.message || ""}`);
+      }
     }
     e.target.value = '';
   };
 
-  const handleAiFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAiFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : "";
+      const pendingLog = createFileLog(file, previewUrl || undefined);
       if (file.type.startsWith('image/') || file.type === 'application/pdf') {
-        const previewUrl = URL.createObjectURL(file);
-        setAiFilePreview(previewUrl);
-        setAiFileLogs([createFileLog(file, previewUrl), ...aiFileLogs]);
+        setAiFilePreview(previewUrl || null);
+        setAiFileLogs([pendingLog, ...aiFileLogs]);
       } else {
-        setAiFileLogs([createFileLog(file), ...aiFileLogs]);
+        setAiFileLogs([pendingLog, ...aiFileLogs]);
+      }
+      try {
+        const uploadedUrl = await uploadDesignFile(file, "ai-files");
+        setAiFilePreview(file.type.startsWith('image/') ? uploadedUrl : null);
+        setAiFileLogs(prev => prev.map(log => (
+          log.id === pendingLog.id ? { ...log, previewUrl: uploadedUrl } : log
+        )));
+        toast.success("อัปโหลดไฟล์ AI สำเร็จ");
+      } catch (err: any) {
+        setAiFilePreview(null);
+        setAiFileLogs(prev => prev.filter(log => log.id !== pendingLog.id));
+        toast.error(`อัปโหลดไฟล์ AI ล้มเหลว: ${err?.message || ""}`);
+      } finally {
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
       }
     }
     e.target.value = '';
   };
 
   const handleSubmit = () => {
+    if (isUploading) {
+      toast.error("กรุณารอให้อัปโหลดไฟล์เสร็จก่อนบันทึก");
+      return;
+    }
     const submitData = {
       ...formData,
       layoutLogs,
@@ -209,6 +340,10 @@ export function JobUpdateForm({ jobId, quotationNo, clientName, productTypeDispl
   };
 
   const handleFinishSubmit = () => {
+    if (isUploading) {
+      toast.error("กรุณารอให้อัปโหลดไฟล์เสร็จก่อนบันทึก");
+      return;
+    }
     const submitData = {
       ...formData,
       layoutLogs,
@@ -744,13 +879,13 @@ export function JobUpdateForm({ jobId, quotationNo, clientName, productTypeDispl
 
       {/* ปุ่มบันทึก */}
       <div className="flex justify-end gap-2 pt-4 border-t">
-        <Button type="button" variant="outline" onClick={handleSubmit}>
-          บันทึกอัปเดต
+        <Button type="button" variant="outline" onClick={handleSubmit} disabled={isUploading}>
+          {isUploading ? "กำลังอัปโหลด..." : "บันทึกอัปเดต"}
         </Button>
         {(aiFileLogs.length > 0 || productionArtworkLogs.length > 0) && (
-          <Button type="button" onClick={handleFinishSubmit} className="bg-green-600 hover:bg-green-700">
+          <Button type="button" onClick={handleFinishSubmit} disabled={isUploading} className="bg-green-600 hover:bg-green-700">
             <CheckCircle className="mr-2 h-4 w-4" />
-            เสร็จสิ้นการส่งไฟล์
+            {isUploading ? "กำลังอัปโหลด..." : "เสร็จสิ้นการส่งไฟล์"}
           </Button>
         )}
       </div>

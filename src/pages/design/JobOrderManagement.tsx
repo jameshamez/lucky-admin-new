@@ -56,6 +56,8 @@ import { JobUpdateDrawer } from "@/components/design/JobUpdateDrawer";
 import { JobDetailDrawer } from "@/components/design/JobDetailDrawer";
 import { designJobService } from "@/services/designJobService";
 
+const API_BASE_URL = "https://nacres.co.th/api-lucky/admin";
+
 interface JobOrder {
   id?: number;
   job_id: string;
@@ -81,6 +83,12 @@ interface JobOrder {
   ordered_by?: string;
   quotation_no?: string;
   description?: string;
+  google_drive_link?: string;
+  layout_image?: string;
+  artwork_image?: string;
+  artwork_status?: "draft" | "pending_review" | "approved" | "rejected";
+  production_artwork?: string;
+  ai_file?: string;
   reference_images?: string[];
   reference_files?: string[];
   finish_date?: string;
@@ -569,6 +577,18 @@ export default function JobOrderManagement() {
     }
   };
 
+  const syncOrderStatusByJobCode = async (jobId: string, orderStatus: string) => {
+    const response = await fetch(`${API_BASE_URL}/orders.php?job_id=${encodeURIComponent(jobId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ order_status: orderStatus }),
+    });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok || json.status === "error") {
+      throw new Error(json.message || "Update order status failed");
+    }
+  };
+
   const handleSubmitForReview = async (jobId: string, id?: number) => {
     if (!id) return;
     try {
@@ -576,6 +596,7 @@ export default function JobOrderManagement() {
         status: "รอตรวจสอบ",
         artwork_status: "pending_review",
       });
+      await syncOrderStatusByJobCode(jobId, "รอเซลล์ตรวจแบบป้าย");
       toast.success(`ส่งงาน ${jobId} เพื่อตรวจสอบเรียบร้อยแล้ว`);
       fetchJobs();
     } catch (e) {
@@ -592,6 +613,18 @@ export default function JobOrderManagement() {
     if (!selectedJobForUpdate?.id) return;
     try {
       const updatePayload = { ...data };
+      const getLatestFileUrl = (logs?: any[]) => logs?.[0]?.previewUrl || logs?.[0]?.fileUrl || logs?.[0]?.url;
+
+      if (data.googleDriveLink !== undefined) updatePayload.google_drive_link = data.googleDriveLink;
+      if (data.artworkStatus) updatePayload.artwork_status = data.artworkStatus;
+      const layoutImage = getLatestFileUrl(data.layoutLogs);
+      const artworkImage = getLatestFileUrl(data.artworkLogs);
+      const productionArtwork = getLatestFileUrl(data.productionArtworkLogs);
+      const aiFile = getLatestFileUrl(data.aiFileLogs);
+      if (layoutImage) updatePayload.layout_image = layoutImage;
+      if (artworkImage) updatePayload.artwork_image = artworkImage;
+      if (productionArtwork) updatePayload.production_artwork = productionArtwork;
+      if (aiFile) updatePayload.ai_file = aiFile;
 
       // Auto-progress status based on data
       if (data.isFinished) {
@@ -618,6 +651,13 @@ export default function JobOrderManagement() {
       }
 
       await designJobService.updateJob(selectedJobForUpdate.id, updatePayload);
+      if (data.artworkStatus === "pending_review") {
+        await syncOrderStatusByJobCode(selectedJobForUpdate.job_id, "รอเซลล์ตรวจแบบป้าย");
+      } else if (data.artworkStatus === "rejected") {
+        await syncOrderStatusByJobCode(selectedJobForUpdate.job_id, "รอกราฟิกแก้ไขแบบป้าย");
+      } else if (data.artworkStatus === "approved") {
+        await syncOrderStatusByJobCode(selectedJobForUpdate.job_id, "ไฟล์ผลิตพร้อมสั่งผลิต");
+      }
       toast.success(`อัพเดทงาน ${selectedJobForUpdate.job_id} เรียบร้อยแล้ว`);
       setIsUpdateDialogOpen(false);
       setSelectedJobForUpdate(null);
@@ -644,6 +684,19 @@ export default function JobOrderManagement() {
     setJobDetailMode(mode);
     setIsJobDetailDrawerOpen(true);
   };
+
+  const renderJobIdButton = (
+    job: JobOrder,
+    mode: "assign" | "action" | "view" = "view"
+  ) => (
+    <button
+      type="button"
+      onClick={() => handleOpenJobDetailDrawer(job, mode)}
+      className="text-primary hover:underline font-medium cursor-pointer"
+    >
+      {job.job_id}
+    </button>
+  );
 
   const handleAssignJob = async (employeeId: string) => {
     if (selectedJobForDetail?.id) {
@@ -885,9 +938,7 @@ export default function JobOrderManagement() {
                         }`}
                       >
                         <TableCell className="font-medium sticky left-0 bg-background whitespace-nowrap text-center">
-                          <a href="#" className="text-primary hover:underline">
-                            {job.job_id}
-                          </a>
+                          {renderJobIdButton(job, "assign")}
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-center">
                           {job.client_name}
@@ -968,9 +1019,7 @@ export default function JobOrderManagement() {
                         }`}
                       >
                         <TableCell className="font-medium sticky left-0 bg-background whitespace-nowrap text-center">
-                          <a href="#" className="text-primary hover:underline">
-                            {job.job_id}
-                          </a>
+                          {renderJobIdButton(job, "action")}
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-center">
                           {job.client_name}
@@ -1076,9 +1125,7 @@ export default function JobOrderManagement() {
                         }`}
                       >
                         <TableCell className="font-medium sticky left-0 bg-background whitespace-nowrap text-center">
-                          <a href="#" className="text-primary hover:underline">
-                            {job.job_id}
-                          </a>
+                          {renderJobIdButton(job, "view")}
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-center">
                           {job.client_name}
@@ -1179,9 +1226,7 @@ export default function JobOrderManagement() {
                     return (
                       <TableRow key={job.job_id} className={rowColorClass}>
                         <TableCell className="font-medium sticky left-0 bg-background whitespace-nowrap text-center">
-                          <a href="#" className="text-primary hover:underline">
-                            {job.job_id}
-                          </a>
+                          {renderJobIdButton(job, "view")}
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-center">
                           {job.client_name}
@@ -1628,6 +1673,7 @@ export default function JobOrderManagement() {
           quotationNo={selectedJobForUpdate.quotation_no}
           clientName={selectedJobForUpdate.client_name}
           productTypeDisplay={getProductTypeDisplay(selectedJobForUpdate)}
+          initialData={selectedJobForUpdate}
           onSubmit={handleUpdateJobSubmit}
         />
       )}

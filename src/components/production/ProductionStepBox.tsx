@@ -38,7 +38,7 @@ export interface LogEntry {
 }
 
 interface StepData {
-  status: "pending" | "in_progress" | "issue" | "complete";
+  status: "pending" | "in_progress" | "issue" | "waiting_sales" | "complete";
   remark: string;
   images: File[];
   imagePreviews: string[];
@@ -65,6 +65,7 @@ interface ProductionStepBoxProps {
   compact?: boolean;
   // Role-based access control
   requiresGraphicDepartment?: boolean;
+  requiresSalesApproval?: boolean;
   currentUserDepartment?: string;
   onPrintDeliverySlip?: () => void;
 }
@@ -82,6 +83,7 @@ export function ProductionStepBox({
   hasShippingInfo,
   isDeliverySlipStep,
   requiresGraphicDepartment = false,
+  requiresSalesApproval = false,
   currentUserDepartment = "production",
   onPrintDeliverySlip,
 }: ProductionStepBoxProps) {
@@ -185,8 +187,11 @@ export function ProductionStepBox({
 
     const timestamp = getTimestamp();
     const user = "สมชาย ใจดี";
-    const newStatus = selectedStatus === "issue" ? "issue" : "complete";
-    const actionLabel = newStatus === "issue" ? "รายงานปัญหา" : "อัปเดตเสร็จสิ้น";
+    const shouldWaitForSales = requiresSalesApproval && selectedStatus !== "issue";
+    const newStatus = selectedStatus === "issue" ? "issue" : (shouldWaitForSales ? "waiting_sales" : "complete");
+    const actionLabel = newStatus === "issue"
+      ? "รายงานปัญหา"
+      : (newStatus === "waiting_sales" ? "ส่งให้เซลล์ตรวจแบบป้าย" : "อัปเดตเสร็จสิ้น");
 
     const updatedData: StepData = {
       ...data,
@@ -199,10 +204,46 @@ export function ProductionStepBox({
     setData(updatedData);
     onUpdate(stepKey, updatedData);
 
-    if (selectedStatus === "in_progress") {
+    if (newStatus === "waiting_sales") {
+      toast.success("ส่งแบบป้ายให้เซลล์ตรวจแล้ว", {
+        description: "รอเซลล์ยืนยันก่อนปลดล็อกขั้นตอนถัดไป",
+      });
+    } else if (selectedStatus === "in_progress") {
       toast.success(`อัปเดตเสร็จ! สถานะเปลี่ยนเป็น "${completedStatus}"`);
     } else {
       toast.warning("บันทึกปัญหาแล้ว รอหัวหน้าตรวจสอบ");
+    }
+  };
+
+  const handleSalesApproval = (approved: boolean) => {
+    if (!approved && !data.remark.trim()) {
+      toast.error("กรุณาระบุเหตุผลที่ต้องการให้กราฟิกแก้ไข");
+      return;
+    }
+
+    const timestamp = getTimestamp();
+    const user = "ฝ่ายขาย";
+    const updatedData: StepData = {
+      ...data,
+      status: approved ? "complete" : "issue",
+      updatedAt: timestamp,
+      updatedBy: user,
+      updateLogs: addLog(
+        data.updateLogs,
+        approved ? "เซลล์ยืนยันแบบป้าย" : "เซลล์ส่งกลับแก้ไขแบบป้าย",
+        user,
+        timestamp,
+        data.remark || undefined
+      ),
+    };
+
+    setData(updatedData);
+    onUpdate(stepKey, updatedData);
+
+    if (approved) {
+      toast.success(`เซลล์ยืนยันแบบป้ายแล้ว สถานะเปลี่ยนเป็น "${completedStatus}"`);
+    } else {
+      toast.warning("ส่งกลับให้กราฟิกแก้ไขแบบป้ายแล้ว");
     }
   };
 
@@ -289,6 +330,14 @@ export function ProductionStepBox({
         </Badge>
       );
     }
+    if (data.status === "waiting_sales") {
+      return (
+        <Badge className="bg-blue-100 text-blue-700 text-[10px] py-0 px-1.5">
+          <Clock className="w-2.5 h-2.5 mr-0.5" />
+          รอเซลล์
+        </Badge>
+      );
+    }
     if (isLocked) {
       return (
         <Badge variant="secondary" className="text-[10px] py-0 px-1.5">
@@ -307,6 +356,7 @@ export function ProductionStepBox({
 
   const isCompleted = data.status === "complete";
   const hasIssue = data.status === "issue";
+  const isWaitingSales = data.status === "waiting_sales";
   const hasImages = data.imagePreviews.length > 0;
   const latestImage = hasImages ? data.imagePreviews[data.imagePreviews.length - 1] : null;
   const remainingCount = data.imagePreviews.length - 1;
@@ -329,6 +379,13 @@ export function ProductionStepBox({
       return (
         <Badge className="bg-red-100 text-red-700 border border-red-200 text-xs font-medium px-2 py-0.5 w-fit">
           มีปัญหา - รอตรวจสอบ
+        </Badge>
+      );
+    }
+    if (isWaitingSales) {
+      return (
+        <Badge className="bg-blue-100 text-blue-700 border border-blue-200 text-xs font-medium px-2 py-0.5 w-fit">
+          รอเซลล์ตรวจแบบป้าย
         </Badge>
       );
     }
@@ -423,7 +480,8 @@ export function ProductionStepBox({
   // Role-based access control: Check if current user can update this step
   const isGraphicOnlyStep = requiresGraphicDepartment;
   const canUserUpdateThisStep = !isGraphicOnlyStep || currentUserDepartment === "design";
-  const showGraphicWaitingState = isGraphicOnlyStep && currentUserDepartment !== "design" && !isCompleted && !isLocked;
+  const canSalesApproveThisStep = requiresSalesApproval && currentUserDepartment === "sales";
+  const showGraphicWaitingState = isGraphicOnlyStep && currentUserDepartment !== "design" && !isCompleted && !isLocked && !isWaitingSales;
 
   return (
     <>
@@ -432,6 +490,7 @@ export function ProductionStepBox({
         ${isLocked && !isSkipped ? "opacity-40 bg-muted/20 scale-[0.98]" : ""} 
         ${isSkipped ? "opacity-30 bg-muted/10 scale-[0.96]" : ""}
         ${hasIssue ? "border-red-500 border-2 bg-red-50/30 shadow-md" : ""} 
+        ${isWaitingSales ? "border-blue-500 border-2 bg-blue-50/30 shadow-md" : ""}
         ${isCompleted ? "border-green-500 border-2 bg-green-50/30 shadow-md" : "border shadow-sm"}
         transition-all flex flex-col w-full
       `}>
@@ -557,8 +616,82 @@ export function ProductionStepBox({
             </div>
           )}
 
+          {/* ===== WAITING FOR SALES APPROVAL ===== */}
+          {!isDeliverySlipStep && isWaitingSales && !isLocked && (
+            <div className="flex items-start gap-4">
+              {latestImage ? (
+                <div
+                  className="relative w-24 h-24 cursor-pointer group rounded-lg overflow-hidden border shadow-sm flex-shrink-0"
+                  onClick={() => openLightbox(data.imagePreviews.length - 1)}
+                >
+                  <img
+                    src={latestImage}
+                    alt="Uploaded"
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40">
+                    <ZoomIn className="w-5 h-5 text-white" />
+                  </div>
+                  {remainingCount > 0 && (
+                    <div className="absolute bottom-1 right-1 bg-black/70 text-white text-xs px-1.5 py-0.5 rounded font-medium">
+                      +{remainingCount}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="w-24 h-24 border rounded-lg flex items-center justify-center flex-shrink-0 bg-blue-50">
+                  <Clock className="w-10 h-10 text-blue-500" />
+                </div>
+              )}
+
+              <div className="flex flex-col gap-2 max-w-[280px]">
+                <ContentStatusBadge />
+                <p className="text-xs text-muted-foreground">
+                  กราฟิกส่งแบบป้ายจารึกแล้ว ต้องให้เซลล์ตรวจและยืนยันก่อนทำขั้นตอนถัดไป
+                </p>
+                <StaffInfoBlock showStatus={false} />
+
+                {canSalesApproveThisStep ? (
+                  <div className="space-y-2 mt-1">
+                    <Textarea
+                      placeholder="หมายเหตุกรณีต้องแก้ไข..."
+                      value={data.remark}
+                      onChange={(e) => setData((prev) => ({ ...prev, remark: e.target.value }))}
+                      className="min-h-[48px] text-sm resize-none w-[240px]"
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={() => handleSalesApproval(true)}
+                        className="h-9 text-xs bg-green-600 hover:bg-green-700 text-white"
+                      >
+                        <CheckCircle className="w-3.5 h-3.5 mr-1" />
+                        เซลล์ยืนยัน
+                      </Button>
+                      <Button
+                        onClick={() => handleSalesApproval(false)}
+                        variant="outline"
+                        className="h-9 text-xs border-red-200 text-red-600 hover:bg-red-50"
+                      >
+                        <AlertCircle className="w-3.5 h-3.5 mr-1" />
+                        ส่งกลับแก้ไข
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <Button
+                    disabled
+                    className="h-11 md:h-9 font-semibold text-sm w-fit px-8 md:px-6 min-w-[120px] opacity-50 cursor-not-allowed"
+                    variant="secondary"
+                  >
+                    รอเซลล์ยืนยัน
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* ===== REGULAR STEPS - ACTIVE STATE (Can update) ===== */}
-          {!isDeliverySlipStep && !isLocked && !isCompleted && !hasIssue && canUserUpdateThisStep && !showGraphicWaitingState && (
+          {!isDeliverySlipStep && !isLocked && !isCompleted && !hasIssue && !isWaitingSales && canUserUpdateThisStep && !showGraphicWaitingState && (
             <div className="flex items-start gap-4">
               {/* Left: Image */}
               <ImageThumbnail />

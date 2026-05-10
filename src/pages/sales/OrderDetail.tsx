@@ -43,6 +43,8 @@ import ProductionProgressBar from "@/components/sales/ProductionProgressBar";
 import { ProductionOrderInfoReadOnly, OrderShippingData } from "@/components/procurement/ProductionOrderInfo";
 import { designJobService, DesignJob } from "@/services/designJobService";
 
+const API_BASE_URL = "https://nacres.co.th/api-lucky/admin";
+
 // Status list for "เหรียญสั่งผลิต + ลูกค้ามีแบบแล้ว"
 const productStatusList = [
   { status: "รอจัดซื้อส่งประเมิน", department: "เซลล์" },
@@ -52,10 +54,13 @@ const productStatusList = [
   { status: "ลูกค้าอนุมัติราคา", department: "เซลล์" },
   { status: "รอกราฟิกปรับไฟล์เพื่อผลิต", department: "กราฟิก" },
   { status: "กำลังปรับไฟล์ผลิต", department: "กราฟิก" },
+  { status: "รอเซลล์ตรวจแบบป้าย", department: "เซลล์" },
+  { status: "รอกราฟิกแก้ไขแบบป้าย", department: "กราฟิก" },
   { status: "ไฟล์ผลิตพร้อมสั่งผลิต", department: "กราฟิก" },
   { status: "รอจัดซื้อออก PO / สั่งผลิต", department: "จัดซื้อ" },
   { status: "สั่งผลิตแล้ว", department: "จัดซื้อ" },
   { status: "กำลังผลิต", department: "โรงงาน" },
+  { status: "รอตรวจ QC", department: "QC" },
   { status: "ตรวจสอบ Artwork จากโรงงาน", department: "โรงงาน" },
   { status: "ตรวจสอบ CNC", department: "โรงงาน" },
   { status: "อัปเดทปั้มชิ้นงาน", department: "โรงงาน" },
@@ -95,13 +100,199 @@ interface OrderItem {
   };
 }
 
+type OrderDesignFile = string | {
+  url?: string;
+  file_url?: string;
+  fileName?: string;
+  file_name?: string;
+  name?: string;
+};
+
+const orderDesignPreviewPattern = /\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i;
+
+const getOrderDesignFileUrl = (file: OrderDesignFile): string => {
+  if (typeof file === "string") return file;
+  return file.url || file.file_url || "";
+};
+
+const getOrderDesignFileName = (file: OrderDesignFile, index: number): string => {
+  if (typeof file !== "string") {
+    return file.fileName || file.file_name || file.name || getOrderDesignFileName(file.url || file.file_url || "", index);
+  }
+
+  const cleanUrl = file.split("?")[0];
+  return cleanUrl.split("/").pop() || `ไฟล์ ${index + 1}`;
+};
+
+const isOrderDesignImage = (file: OrderDesignFile) => {
+  const url = getOrderDesignFileUrl(file);
+  const name = getOrderDesignFileName(file, 0);
+  return orderDesignPreviewPattern.test(url) || orderDesignPreviewPattern.test(name);
+};
+
+type GraphicFile = {
+  label: string;
+  url: string;
+  name: string;
+  uploadedAt?: string;
+  uploadedBy?: string;
+};
+
+const getFileNameFromUrl = (url: string, fallback: string) => {
+  const cleanUrl = url.split("?")[0];
+  return cleanUrl.split("/").pop() || fallback;
+};
+
+const addGraphicFile = (files: GraphicFile[], seen: Set<string>, label: string, url?: string | null, uploadedAt?: string, uploadedBy?: string) => {
+  if (!url || seen.has(url)) return;
+  seen.add(url);
+  files.push({
+    label,
+    url,
+    name: getFileNameFromUrl(url, label),
+    uploadedAt,
+    uploadedBy,
+  });
+};
+
+const getGraphicFilesFromDesignJob = (job: any | null): GraphicFile[] => {
+  if (!job) return [];
+
+  const files: GraphicFile[] = [];
+  const seen = new Set<string>();
+  const uploadedAt = job.updated_at || job.created_at;
+  const uploadedBy = job.designer || job.ordered_by;
+
+  addGraphicFile(files, seen, "Artwork", job.artwork_image, uploadedAt, uploadedBy);
+  addGraphicFile(files, seen, "Layout", job.layout_image, uploadedAt, uploadedBy);
+  addGraphicFile(files, seen, "ไฟล์ผลิต", job.production_artwork, uploadedAt, uploadedBy);
+  addGraphicFile(files, seen, "ไฟล์ AI", job.ai_file, uploadedAt, uploadedBy);
+  addGraphicFile(files, seen, "Google Drive", job.google_drive_link, uploadedAt, uploadedBy);
+
+  return files;
+};
+
+const getPrimaryArtworkFile = (files: GraphicFile[]) => {
+  return files.find((file) => isOrderDesignImage({ url: file.url, name: file.name }))
+    || files[0]
+    || null;
+};
+
+const safeParseJson = <T,>(value: unknown, fallback: T): T => {
+  if (value === null || value === undefined || value === "") return fallback;
+  if (typeof value !== "string") return value as T;
+
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+};
+
+const firstFilled = (...values: unknown[]) => {
+  for (const value of values) {
+    if (Array.isArray(value) && value.length > 0) return value;
+    if (value !== null && value !== undefined && value !== "") return value;
+  }
+  return null;
+};
+
+const toText = (value: unknown): string | null => {
+  if (value === null || value === undefined || value === "") return null;
+  if (Array.isArray(value)) return value.filter(Boolean).join(", ");
+  return String(value);
+};
+
+const toTextArray = (value: unknown): string[] => {
+  const parsed = safeParseJson<unknown>(value, value);
+  if (Array.isArray(parsed)) return parsed.map(toText).filter(Boolean) as string[];
+  if (typeof parsed === "string") {
+    return parsed
+      .split(/[,|\n]/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  return [];
+};
+
+const getItemDetails = (item: any) => {
+  const parsed = safeParseJson<Record<string, any>>(item?.details, {});
+  return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+};
+
+const fetchEstimationDetails = async (estimationId: string | number) => {
+  try {
+    const res = await fetch(`${API_BASE_URL}/price_estimations.php?id=${encodeURIComponent(String(estimationId))}`);
+    const json = await res.json();
+    const data = json?.status === "success" ? json.data : null;
+    if (!data) return {};
+
+    const details = safeParseJson<Record<string, any>>(data.details, {});
+    return {
+      ...details,
+      productSize: data.product_size,
+      productColor: data.product_color,
+      productDetailsText: data.product_details,
+      material: details.material || data.material,
+      quantity: data.quantity,
+    };
+  } catch (error) {
+    console.warn("Failed to load estimation details:", error);
+    return {};
+  }
+};
+
+const enrichOrderItemsWithEstimations = async (items: any[]) => {
+  return Promise.all(
+    items.map(async (item) => {
+      const details = getItemDetails(item);
+      const estimationId = details.estimation_id || details.estimationId;
+      if (!estimationId) return { ...item, details };
+
+      const estimationDetails = await fetchEstimationDetails(estimationId);
+      return {
+        ...item,
+        details: {
+          ...estimationDetails,
+          ...details,
+        },
+      };
+    })
+  );
+};
+
+const getOrderProductDetails = (apiData: any) => {
+  const items = Array.isArray(apiData.items) ? apiData.items : [];
+  const firstItem = items[0] || {};
+  const firstDetails = getItemDetails(firstItem);
+  const colorRows = Array.isArray(firstDetails.colorQuantityRows) ? firstDetails.colorQuantityRows : [];
+
+  const colorsFromRows = colorRows
+    .map((row: any) => firstFilled(row?.label, row?.colorLabel, row?.colorName, row?.color))
+    .filter(Boolean);
+
+  const itemColors = items.map((item: any) => item.color).filter(Boolean);
+
+  return {
+    size: toText(firstFilled(firstDetails.size, firstDetails.productSize, firstDetails.medalSize, firstDetails.selectedMedalSizes, firstItem.size, apiData.product_size, apiData.size)),
+    thickness: toText(firstFilled(firstDetails.thickness, firstDetails.medalThickness, firstDetails.selectedMedalThicknesses, apiData.product_thickness, apiData.thickness)),
+    platingColors: toTextArray(firstFilled(firstDetails.colors, firstDetails.platingColors, firstDetails.productColor, colorsFromRows, itemColors, apiData.plating_colors, apiData.product_color)),
+    frontDetails: toTextArray(firstFilled(firstDetails.frontDetails, apiData.front_details)),
+    backDetails: toTextArray(firstFilled(firstDetails.backDetails, apiData.back_details)),
+    lanyard: toText(firstFilled(firstDetails.lanyardSize, firstDetails.lanyard, firstDetails.lanyard_info, apiData.lanyard_info, apiData.lanyard)),
+    patternCount: toText(firstFilled(firstDetails.lanyardPatterns, firstDetails.lanyardQuantity, firstDetails.patternCount, apiData.pattern_count, apiData.patterns)),
+  };
+};
+
 interface Order {
   id: string;
+  numericId?: number | string;
   customer: string;
   items: string;
   orderDate: string;
   dueDate: string;
   status: string;
+  orderStatus?: string;
   value: number;
   progress: number;
   type: string;
@@ -114,13 +305,14 @@ interface Order {
   taxId: string;
   orderItems: OrderItem[];
   graphicsNotes?: string;
-  designFiles?: string[];
+  designFiles?: OrderDesignFile[];
   quotationUrl?: string;
   invoiceType?: string;
   payments?: any[];
   originBranch?: string;
   destinationBranch?: string;
   preferredTimeSlot?: string;
+  productionWorkflow?: Record<string, any> | null;
 }
 
 const mockOrders: Order[] = [
@@ -497,6 +689,7 @@ export default function OrderDetail() {
   const [designJob, setDesignJob] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [rejectionReason, setRejectionReason] = useState("");
+  const [labelRejectionReason, setLabelRejectionReason] = useState("");
 
   const fetchOrderDetail = async () => {
     if (!orderId) return;
@@ -505,7 +698,7 @@ export default function OrderDetail() {
       let finalOrderId = orderId;
 
       if (isNaN(Number(orderId))) {
-        const searchRes = await fetch(`https://nacres.co.th/api-lucky/admin/orders.php?search=${orderId}`);
+        const searchRes = await fetch(`${API_BASE_URL}/orders.php?search=${encodeURIComponent(orderId)}`);
         const searchJson = await searchRes.json();
         if (searchJson.status === "success" && searchJson.data && searchJson.data.length > 0) {
           const match = searchJson.data.find((d: any) => d.job_id === orderId);
@@ -515,15 +708,22 @@ export default function OrderDetail() {
         }
       }
 
-      const res = await fetch(`https://nacres.co.th/api-lucky/admin/orders.php?order_id=${finalOrderId}`);
+      if (isNaN(Number(finalOrderId))) {
+        setOrder(null);
+        return;
+      }
+
+      const res = await fetch(`${API_BASE_URL}/orders.php?id=${encodeURIComponent(finalOrderId)}`);
       const json = await res.json();
 
       if (json.status === "success" && json.data) {
         const apiData = Array.isArray(json.data) ? json.data[0] : json.data;
+        const apiItems = await enrichOrderItemsWithEstimations(Array.isArray(apiData.items) ? apiData.items : []);
+        const apiDataWithItems = { ...apiData, items: apiItems };
 
         let broadStatus = "pending_approval";
         const os = apiData.order_status;
-        if (["กำลังผลิต", "ตรวจสอบ Artwork จากโรงงาน", "ตรวจสอบ CNC", "อัปเดทปั้มชิ้นงาน", "อัปเดตสาย"].includes(os)) {
+        if (["กำลังผลิต", "รอเซลล์ตรวจแบบป้าย", "รอกราฟิกแก้ไขแบบป้าย", "รอตรวจ QC", "ตรวจสอบ Artwork จากโรงงาน", "ตรวจสอบ CNC", "อัปเดทปั้มชิ้นงาน", "อัปเดตสาย"].includes(os)) {
           broadStatus = "in_production";
         } else if (["อัปเดตชิ้นงานก่อนจัดส่ง", "งานเสร็จสมบูรณ์"].includes(os)) {
           broadStatus = "ready_to_ship";
@@ -532,9 +732,10 @@ export default function OrderDetail() {
         }
 
         // Map order items
-        const mappedItems: any[] = (apiData.items || []).map((item: any) => {
+        const orderCurrentStatus = apiData.order_status || apiData.status || "สร้างคำสั่งซื้อใหม่";
+        const mappedItems: any[] = apiItems.map((item: any) => {
           const isReadymade = item.item_type === 'readymade' || item.item_type === 'catalog';
-          const details = item.details || {};
+          const details = getItemDetails(item);
           return {
             id: item.id || item.item_id,
             name: item.product_name || apiData.job_name || "สินค้า",
@@ -545,13 +746,23 @@ export default function OrderDetail() {
               apiData.notes || null
             ].filter(Boolean).join(' | ') || "-",
             quantity: parseInt(item.quantity) || 1,
-            // Use item-specific status first, fallback to order status
-            currentStatus: item.status || item.item_status || apiData.order_status || "สร้างคำสั่งซื้อใหม่",
+            // Main order_status is the source of truth for cross-department updates.
+            currentStatus: orderCurrentStatus || item.status || item.item_status || "สร้างคำสั่งซื้อใหม่",
             statusHistory: [],
             productType: isReadymade ? "readymade" : "madeToOrder",
-            material: item.material || details.material || "-",
+            details,
+            color: item.color || details.color || null,
+            material: item.material || details.material || details.model || "-",
             model: item.product_code || details.model || "-",
             modelSize: item.size || details.size || "-",
+            size: item.size || details.size || null,
+            bowType: item.bow_type || details.bowType || null,
+            bowColors: toTextArray(item.bow_colors || details.bowColors),
+            engraving: details.engraving || {
+              number: details.engravingNumber || details.engraving_no || "",
+              color: details.engravingColor || details.engraving_color || "",
+            },
+            bow: details.bow || { number: details.bowNumber || details.bow_no || item.bow_type || "" },
           };
         });
 
@@ -563,7 +774,7 @@ export default function OrderDetail() {
             name: apiData.job_name || "สินค้า",
             description: apiData.notes || "-",
             quantity: 1,
-            currentStatus: apiData.order_status || "สร้างคำสั่งซื้อใหม่",
+            currentStatus: orderCurrentStatus,
             statusHistory: [],
             productType: isReadymade ? "readymade" : "madeToOrder",
             material: "-",
@@ -574,11 +785,13 @@ export default function OrderDetail() {
 
         setOrder({
           id: apiData.job_id || String(apiData.order_id),
+          numericId: apiData.order_id,
           customer: apiData.customer_name || "ไม่ระบุชื่อ",
           items: apiData.job_name || "ไม่ระบุรายการ",
           orderDate: (apiData.order_date || "").split(" ")[0],
           dueDate: apiData.delivery_date || apiData.usage_date || "-",
           status: broadStatus,
+          orderStatus: orderCurrentStatus,
           value: parseFloat(apiData.total_price ?? apiData.total_amount) || 0,
           progress: 0,
           type: apiData.product_category || "internal",
@@ -591,35 +804,34 @@ export default function OrderDetail() {
           taxId: apiData.tax_id || "-",
           orderItems: mappedItems,
           graphicsNotes: apiData.graphics_notes || null,
-          designFiles: apiData.design_files ? (typeof apiData.design_files === 'string' ? JSON.parse(apiData.design_files) : apiData.design_files) : [],
+          designFiles: safeParseJson<OrderDesignFile[]>(apiData.design_files, Array.isArray(apiData.design_files) ? apiData.design_files : []),
           quotationUrl: apiData.quotation_url || null,
           invoiceType: apiData.invoice_type || "no-tax-invoice",
           payments: apiData.payments || [],
           originBranch: apiData.origin_branch,
           destinationBranch: apiData.destination_branch,
           preferredTimeSlot: apiData.preferred_time_slot,
+          productionWorkflow: apiData.production_workflow || null,
           // Product details from API
-          productDetails: {
-            size: apiData.product_size || apiData.size || null,
-            thickness: apiData.product_thickness || apiData.thickness || null,
-            platingColors: apiData.plating_colors ? (Array.isArray(apiData.plating_colors) ? apiData.plating_colors : JSON.parse(apiData.plating_colors || '[]')) : [],
-            frontDetails: apiData.front_details ? (Array.isArray(apiData.front_details) ? apiData.front_details : JSON.parse(apiData.front_details || '[]')) : [],
-            backDetails: apiData.back_details ? (Array.isArray(apiData.back_details) ? apiData.back_details : JSON.parse(apiData.back_details || '[]')) : [],
-            lanyard: apiData.lanyard_info || apiData.lanyard || null,
-            patternCount: apiData.pattern_count || apiData.patterns || null,
-          },
+          productDetails: getOrderProductDetails(apiDataWithItems),
         });
 
         try {
-          const djRes = await designJobService.getJobs({ job_code: apiData.job_id || orderId });
+          const targetJobCode = apiData.job_id || orderId;
+          const djRes = await designJobService.getJobs({ search: targetJobCode, limit: 100 });
           if (djRes.status === "success" && djRes.data && djRes.data.length > 0) {
-            const match = djRes.data.find((j: any) => j.job_code === (apiData.job_id || orderId));
+            const match = djRes.data.find((j: any) => String(j.job_code || "").trim() === String(targetJobCode || "").trim());
             if (match) {
               setDesignJob(match);
+            } else {
+              setDesignJob(null);
             }
+          } else {
+            setDesignJob(null);
           }
         } catch (e) {
           console.error("Error fetching design job:", e);
+          setDesignJob(null);
         }
       }
     } catch (err) {
@@ -644,7 +856,7 @@ export default function OrderDetail() {
         feedback: 'เซลล์อนุมัติแบบแล้ว'
       });
 
-      await fetch(`https://nacres.co.th/api-lucky/admin/orders.php?id=${orderId}`, {
+      await fetch(`${API_BASE_URL}/orders.php?id=${encodeURIComponent(String(order?.numericId || orderId))}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ order_status: 'ไฟล์ผลิตพร้อมสั่งผลิต' })
@@ -673,11 +885,106 @@ export default function OrderDetail() {
         feedback: rejectionReason
       });
 
+      await fetch(`${API_BASE_URL}/orders.php?id=${encodeURIComponent(String(order?.numericId || orderId))}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_status: 'รอกราฟิกแก้ไขแบบป้าย' })
+      });
+
       toast.info("ส่งกลับให้กราฟิกแก้ไขเรียบร้อยแล้ว");
       setRejectionReason("");
       fetchOrderDetail();
     } catch (e) {
       toast.error("เกิดข้อผิดพลาดในการส่งกลับ");
+    }
+  };
+
+  const handleApproveProductionLabel = async () => {
+    if (!order?.productionWorkflow?.labeling) return;
+
+    const nextWorkflow = {
+      ...order.productionWorkflow,
+      labeling: {
+        ...order.productionWorkflow.labeling,
+        status: "complete",
+        updatedAt: new Date().toLocaleString("th-TH"),
+        updatedBy: "ฝ่ายขาย",
+        updateLogs: [
+          ...(order.productionWorkflow.labeling.updateLogs || []),
+          {
+            action: "เซลล์ยืนยันแบบป้าย",
+            timestamp: new Date().toLocaleString("th-TH"),
+            user: "ฝ่ายขาย",
+          },
+        ],
+      },
+      qc: {
+        ...(order.productionWorkflow.qc || {}),
+        status: "in_progress",
+      },
+    };
+
+    try {
+      await fetch(`${API_BASE_URL}/orders.php?id=${encodeURIComponent(String(order?.numericId || orderId))}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          order_status: "รอตรวจ QC",
+          production_workflow: nextWorkflow,
+        }),
+      });
+
+      toast.success("เซลล์ยืนยันแบบป้ายแล้ว", {
+        description: "ปลดล็อกขั้นตอน QC ให้ฝ่ายผลิตแล้ว",
+      });
+      fetchOrderDetail();
+    } catch (e) {
+      toast.error("เกิดข้อผิดพลาดในการยืนยันแบบป้าย");
+    }
+  };
+
+  const handleRejectProductionLabel = async () => {
+    if (!order?.productionWorkflow?.labeling) return;
+    if (!labelRejectionReason.trim()) {
+      toast.error("กรุณาระบุเหตุผลที่ต้องการให้กราฟิกแก้ไข");
+      return;
+    }
+
+    const nextWorkflow = {
+      ...order.productionWorkflow,
+      labeling: {
+        ...order.productionWorkflow.labeling,
+        status: "issue",
+        remark: labelRejectionReason,
+        updatedAt: new Date().toLocaleString("th-TH"),
+        updatedBy: "ฝ่ายขาย",
+        updateLogs: [
+          ...(order.productionWorkflow.labeling.updateLogs || []),
+          {
+            action: "เซลล์ส่งกลับแก้ไขแบบป้าย",
+            timestamp: new Date().toLocaleString("th-TH"),
+            user: "ฝ่ายขาย",
+            detail: labelRejectionReason,
+          },
+        ],
+      },
+    };
+
+    try {
+      await fetch(`${API_BASE_URL}/orders.php?id=${encodeURIComponent(String(order?.numericId || orderId))}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          order_status: "รอกราฟิกแก้ไขแบบป้าย",
+          production_workflow: nextWorkflow,
+        }),
+      });
+
+      toast.info("ส่งกลับให้กราฟิกแก้ไขแบบป้ายแล้ว");
+      setLabelRejectionReason("");
+      fetchOrderDetail();
+    } catch (e) {
+      toast.error("เกิดข้อผิดพลาดในการส่งกลับแก้ไขแบบป้าย");
     }
   };
 
@@ -745,6 +1052,25 @@ export default function OrderDetail() {
 
   const slowestItem = getSlowestItem(order.orderItems);
   const statusCounts = getStatusCounts(order.orderItems);
+  const graphicFiles = getGraphicFilesFromDesignJob(designJob);
+  const primaryArtworkFile = getPrimaryArtworkFile(graphicFiles);
+  const isArtworkWaitingReview = Boolean(
+    designJob
+    && designJob.artwork_status === "pending_review"
+  );
+  const displayDesignFiles = order.designFiles && order.designFiles.length > 0
+    ? order.designFiles
+    : graphicFiles.map((file) => ({ url: file.url, name: file.name }));
+  const labelReviewStep = order.productionWorkflow?.labeling || null;
+  const isLabelWaitingSales = labelReviewStep?.status === "waiting_sales";
+  const labelReviewImages = Array.isArray(labelReviewStep?.imagePreviews) ? labelReviewStep.imagePreviews : [];
+  const latestLabelReviewImage = labelReviewImages[labelReviewImages.length - 1] || null;
+  const graphicsDetail = order.graphicsNotes
+    || designJob?.description
+    || designJob?.internal_notes
+    || designJob?.specs
+    || designJob?.feedback
+    || "";
 
   return (
     <>
@@ -840,7 +1166,7 @@ export default function OrderDetail() {
                     : "วัสดุ"
                   }
                 </p>
-                <p className="font-medium">{(order.orderItems[0] as any)?.material || (order.orderItems[0] as any)?.productModel || 'ซิงค์อัลลอย'}</p>
+                <p className="font-medium">{(order.orderItems[0] as any)?.material || (order.orderItems[0] as any)?.productModel || '-'}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">จำนวน</p>
@@ -862,7 +1188,7 @@ export default function OrderDetail() {
             </div>
 
             {/* Production Progress Bar */}
-            <ProductionProgressBar currentStatus={order.orderItems[0]?.currentStatus || ""} />
+            <ProductionProgressBar currentStatus={order.orderStatus || order.orderItems[0]?.currentStatus || ""} />
           </div>
 
           {/* Product Details - Dynamic based on product type */}
@@ -871,12 +1197,11 @@ export default function OrderDetail() {
             const isReadymadeTrophy = currentItem?.productType === "readymade" && currentItem?.name?.includes("ถ้วยรางวัล");
 
             if (isReadymadeTrophy) {
-              // Trophy size details for table display
-              const trophySizes = [
-                { size: "A", quantity: 30 },
-                { size: "B", quantity: 30 },
-                { size: "C", quantity: 30 },
-              ];
+              const trophySizes = order.orderItems.map((item: any) => ({
+                name: item.name || "ถ้วยรางวัล",
+                size: item.size || item.modelSize || item.details?.size || "-",
+                quantity: item.quantity || 0,
+              }));
 
               return (
                 <div className="bg-white rounded-lg shadow-sm border p-6">
@@ -897,7 +1222,7 @@ export default function OrderDetail() {
                         {trophySizes.map((item, index) => (
                           <TableRow key={index}>
                             <TableCell className="text-center font-medium">{index + 1}</TableCell>
-                            <TableCell className="font-medium">ถ้วยรางวัลโลหะอิตาลี</TableCell>
+                            <TableCell className="font-medium">{item.name}</TableCell>
                             <TableCell className="text-muted-foreground">ขนาด {item.size}</TableCell>
                             <TableCell className="text-right">{item.quantity}</TableCell>
                           </TableRow>
@@ -935,11 +1260,10 @@ export default function OrderDetail() {
             const isReadymadeMedal = currentItem?.productType === "readymade" && currentItem?.name?.includes("เหรียญสำเร็จรูป");
 
             if (isReadymadeMedal) {
-              const colorQuantities = [
-                { color: "ทอง", quantity: 100 },
-                { color: "เงิน", quantity: 50 },
-                { color: "ทองแดง", quantity: 70 },
-              ];
+              const colorQuantities = order.orderItems.map((item: any) => ({
+                color: item.color || item.details?.color || item.name || "-",
+                quantity: item.quantity || 0,
+              }));
 
               return (
                 <div className="bg-white rounded-lg shadow-sm border p-6">
@@ -973,7 +1297,7 @@ export default function OrderDetail() {
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground mb-1">สายคล้อง</p>
-                      <p className="font-medium">สายชาติ</p>
+                      <p className="font-medium">{currentItem.details?.lanyardSize || currentItem.bowType || "-"}</p>
                     </div>
                   </div>
                 </div>
@@ -1059,8 +1383,8 @@ export default function OrderDetail() {
             <div className="mb-6">
               <p className="text-sm text-muted-foreground mb-1">รายละเอียดการเชื่อมกราฟิก</p>
               <div className="p-4 bg-muted/30 rounded-lg min-h-[60px]">
-                {order.graphicsNotes ? (
-                  <p className="whitespace-pre-wrap">{order.graphicsNotes}</p>
+                {graphicsDetail ? (
+                  <p className="whitespace-pre-wrap">{graphicsDetail}</p>
                 ) : (
                   <p className="text-muted-foreground italic text-sm">ไม่มีข้อมูลเพิ่มเติม</p>
                 )}
@@ -1069,25 +1393,39 @@ export default function OrderDetail() {
 
             {/* Design Files */}
             <div>
-              <p className="text-sm text-muted-foreground mb-3 font-medium">ไฟล์งานออกแบบ ({order.designFiles?.length || 0} ไฟล์)</p>
+              <p className="text-sm text-muted-foreground mb-3 font-medium">ไฟล์งานออกแบบ ({displayDesignFiles.length} ไฟล์)</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                {order.designFiles && order.designFiles.length > 0 ? (
-                  order.designFiles.map((fileUrl, idx) => (
-                    <div key={idx} className="border rounded-lg p-3 flex items-center justify-between hover:border-primary/50 transition-colors">
-                      <div className="flex items-center gap-3 overflow-hidden">
-                        <div className="w-10 h-10 bg-primary/10 rounded flex items-center justify-center flex-shrink-0">
-                          <FileText className="w-5 h-5 text-primary" />
+                {displayDesignFiles.length > 0 ? (
+                  displayDesignFiles.map((file, idx) => {
+                    const fileUrl = getOrderDesignFileUrl(file);
+                    const fileName = getOrderDesignFileName(file, idx);
+                    const canPreview = isOrderDesignImage(file);
+
+                    return (
+                      <div key={`${fileUrl}-${idx}`} className="border rounded-lg overflow-hidden hover:border-primary/50 transition-colors">
+                        <div className="h-28 bg-muted/30 flex items-center justify-center border-b">
+                          {canPreview ? (
+                            <img
+                              src={fileUrl}
+                              alt={fileName}
+                              className="w-full h-full object-contain"
+                            />
+                          ) : (
+                            <FileText className="w-8 h-8 text-primary" />
+                          )}
                         </div>
-                        <div className="truncate">
-                          <p className="font-medium text-sm truncate">{fileUrl.split('/').pop()}</p>
-                          <p className="text-[10px] text-muted-foreground truncate uppercase">{fileUrl.split('.').pop()}</p>
+                        <div className="p-3 flex items-center justify-between gap-2">
+                          <div className="truncate">
+                            <p className="font-medium text-sm truncate" title={fileName}>{fileName}</p>
+                            <p className="text-[10px] text-muted-foreground truncate uppercase">{fileName.split('.').pop()}</p>
+                          </div>
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0 flex-shrink-0" onClick={() => window.open(fileUrl, '_blank')}>
+                            <Eye className="w-4 h-4 text-primary" />
+                          </Button>
                         </div>
                       </div>
-                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => window.open(fileUrl, '_blank')}>
-                        <Eye className="w-4 h-4 text-primary" />
-                      </Button>
-                    </div>
-                  ))
+                    );
+                  })
                 ) : (
                   <div className="col-span-full border border-dashed rounded-lg p-8 flex flex-col items-center justify-center text-muted-foreground opacity-50">
                     <ImageIcon className="w-8 h-8 mb-2" />
@@ -1105,13 +1443,28 @@ export default function OrderDetail() {
               <p className="text-sm text-muted-foreground mb-3">รูป Artwork</p>
               <div className="border rounded-lg p-4 bg-muted/20">
                 <div className="flex justify-center">
-                  {designJob?.artwork_image ? (
+                  {primaryArtworkFile && isOrderDesignImage({ url: primaryArtworkFile.url, name: primaryArtworkFile.name }) ? (
                     <img
-                      src={designJob.artwork_image}
-                      alt="Artwork Preview"
+                      src={primaryArtworkFile.url}
+                      alt={primaryArtworkFile.name}
                       className="max-w-full h-auto max-h-96 object-contain cursor-pointer hover:opacity-90 transition-opacity"
-                      onClick={() => setEnlargedImage(designJob.artwork_image!)}
+                      onClick={() => setEnlargedImage(primaryArtworkFile.url)}
                     />
+                  ) : primaryArtworkFile ? (
+                    <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+                      <FileText className="w-12 h-12 mb-2 opacity-20" />
+                      <p className="font-medium text-foreground">{primaryArtworkFile.name}</p>
+                      <p className="text-sm mt-1">ไฟล์นี้ไม่ใช่รูปภาพ กดเปิดไฟล์เพื่อตรวจสอบ</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-4"
+                        onClick={() => window.open(primaryArtworkFile.url, "_blank")}
+                      >
+                        <Eye className="w-4 h-4 mr-2" />
+                        เปิดไฟล์
+                      </Button>
+                    </div>
                   ) : (
                     <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
                       <ImageIcon className="w-12 h-12 mb-2 opacity-20" />
@@ -1119,7 +1472,7 @@ export default function OrderDetail() {
                     </div>
                   )}
                 </div>
-                {designJob?.artwork_image && (
+                {primaryArtworkFile && isOrderDesignImage({ url: primaryArtworkFile.url, name: primaryArtworkFile.name }) && (
                   <p className="text-sm text-primary text-center mt-3 cursor-pointer hover:underline">
                     คลิกที่รูปเพื่อขยายเต็มจอ
                   </p>
@@ -1127,7 +1480,7 @@ export default function OrderDetail() {
               </div>
 
               {/* Artwork Approval Interface for Sales */}
-              {designJob?.artwork_status === 'pending_review' && (
+              {isArtworkWaitingReview && (
                 <div className="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-xl animate-in fade-in slide-in-from-top-2 duration-500">
                   <div className="flex items-center gap-3 mb-4">
                     <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center">
@@ -1172,6 +1525,62 @@ export default function OrderDetail() {
                 </div>
               )}
 
+              {isLabelWaitingSales && (
+                <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-xl animate-in fade-in slide-in-from-top-2 duration-500">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                      <MessageSquare className="w-5 h-5 text-blue-600" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-blue-900">ตรวจแบบป้ายจารึกจากกราฟิก</h3>
+                      <p className="text-xs text-blue-700">กราฟิกส่งแบบป้ายมาให้ตรวจ กรุณายืนยันก่อนปลดล็อกขั้นตอน QC</p>
+                    </div>
+                    <Badge className="ml-auto bg-blue-500 text-white border-none">รอเซลล์ยืนยัน</Badge>
+                  </div>
+
+                  {latestLabelReviewImage && (
+                    <div className="mb-4 border rounded-lg bg-white p-3">
+                      <img
+                        src={latestLabelReviewImage}
+                        alt="แบบป้ายจารึก"
+                        className="max-h-72 w-full object-contain cursor-pointer"
+                        onClick={() => setEnlargedImage(latestLabelReviewImage)}
+                      />
+                    </div>
+                  )}
+
+                  <div className="space-y-3">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-blue-800">ความคิดเห็น / เหตุผลที่ต้องการให้แก้ไข (กรณีไม่ผ่าน)</label>
+                      <textarea
+                        className="w-full min-h-[80px] p-3 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                        placeholder="ระบุสิ่งที่ต้องการให้กราฟิกแก้ไข..."
+                        value={labelRejectionReason}
+                        onChange={(e) => setLabelRejectionReason(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="flex gap-3">
+                      <Button
+                        onClick={handleApproveProductionLabel}
+                        className="flex-1 bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-200"
+                      >
+                        <CheckCircle2 className="w-4 h-4 mr-2" />
+                        เซลล์ยืนยันแบบป้าย
+                      </Button>
+                      <Button
+                        onClick={handleRejectProductionLabel}
+                        variant="outline"
+                        className="flex-1 border-red-200 text-red-600 hover:bg-red-50"
+                      >
+                        <XCircle className="w-4 h-4 mr-2" />
+                        ส่งกลับแก้ไข
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Status Badge for existing states */}
               {designJob?.artwork_status === 'approved' && (
                 <div className="mt-4 p-3 bg-green-50 border border-green-100 rounded-lg flex items-center gap-3 text-green-700">
@@ -1190,33 +1599,38 @@ export default function OrderDetail() {
             {/* Design Files */}
             <div>
               <p className="text-sm text-muted-foreground mb-3">ไฟล์งานออกแบบจากกราฟิก</p>
-              {designJob?.design_files && designJob.design_files.length > 0 ? (
+              {graphicFiles.length > 0 ? (
                 <div className="space-y-2">
-                  {designJob.design_files.map((file: any, idx: number) => (
+                  {graphicFiles.map((file, idx) => (
                     <div key={idx} className="border rounded-lg p-4 flex items-center justify-between hover:border-primary/50 transition-colors">
                       <div className="flex items-center gap-3 flex-1 min-w-0">
-                        <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                          <FileText className="w-5 h-5 text-orange-600" />
+                        <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden">
+                          {isOrderDesignImage({ url: file.url, name: file.name }) ? (
+                            <img src={file.url} alt={file.name} className="w-full h-full object-cover" />
+                          ) : (
+                            <FileText className="w-5 h-5 text-orange-600" />
+                          )}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <p className="font-medium truncate">{file.file_name || file.name || `ไฟล์ ${idx + 1}`}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium truncate">{file.name || `ไฟล์ ${idx + 1}`}</p>
+                            <Badge variant="outline" className="text-[10px] h-5">{file.label}</Badge>
+                          </div>
                           <p className="text-sm text-muted-foreground">
-                            {file.uploaded_at && new Date(file.uploaded_at).toLocaleString('th-TH')}
-                            {file.uploaded_by && ` • ${file.uploaded_by}`}
+                            {file.uploadedAt && new Date(file.uploadedAt).toLocaleString('th-TH')}
+                            {file.uploadedBy && ` • ${file.uploadedBy}`}
                           </p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
-                        {file.file_url && (
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => window.open(file.file_url, '_blank')}
-                          >
-                            <Eye className="w-4 h-4 mr-2" />
-                            ดูไฟล์
-                          </Button>
-                        )}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => window.open(file.url, '_blank')}
+                        >
+                          <Eye className="w-4 h-4 mr-2" />
+                          ดูไฟล์
+                        </Button>
                       </div>
                     </div>
                   ))}

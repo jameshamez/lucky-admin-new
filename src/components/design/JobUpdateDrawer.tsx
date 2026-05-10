@@ -15,6 +15,7 @@ interface JobUpdateDrawerProps {
   quotationNo?: string;
   clientName: string;
   productTypeDisplay?: string;
+  initialData?: any;
   onSubmit: (data: any) => void;
 }
 
@@ -25,6 +26,7 @@ export function JobUpdateDrawer({
   quotationNo,
   clientName,
   productTypeDisplay,
+  initialData,
   onSubmit,
 }: JobUpdateDrawerProps) {
   const handleSubmit = (data: any) => {
@@ -48,6 +50,7 @@ export function JobUpdateDrawer({
             quotationNo={quotationNo}
             clientName={clientName}
             productTypeDisplay={productTypeDisplay}
+            initialData={initialData}
             onSubmit={handleSubmit}
           />
         </ScrollArea>

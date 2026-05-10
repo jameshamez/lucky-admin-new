@@ -85,6 +85,17 @@ export default function OrderManagement() {
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
+  const getCurrentDepartmentKey = () => {
+    try {
+      const user = JSON.parse(localStorage.getItem("user") || "{}");
+      const department = String(user.department || "");
+      if (department.includes("ขาย")) return "sales";
+      if (department.includes("กราฟิก") || department.includes("กราฟฟิก")) return "design";
+      return "production";
+    } catch {
+      return "production";
+    }
+  };
 
   const fetchOrders = async () => {
     setLoading(true);
@@ -233,6 +244,7 @@ export default function OrderManagement() {
       toast.success("อัปเดตสถานะหลักสำเร็จ");
     } catch (error) {
       toast.error("ไม่สามารถอัปเดตสถานะได้");
+      throw error;
     }
   };
 
@@ -269,6 +281,8 @@ export default function OrderManagement() {
       "รอประกอบ": "bg-yellow-100 text-yellow-700",
       "รอผูกโบว์": "bg-purple-100 text-purple-700",
       "รอติดป้ายจารึก": "bg-indigo-100 text-indigo-700",
+      "รอเซลล์ตรวจแบบป้าย": "bg-blue-100 text-blue-700",
+      "รอกราฟิกแก้ไขแบบป้าย": "bg-red-100 text-red-700",
       "ประกอบเสร็จ": "bg-green-100 text-green-700",
       "โรงงานส่งออก": "bg-cyan-100 text-cyan-700",
     };
@@ -283,6 +297,7 @@ export default function OrderManagement() {
           order={selectedOrder}
           onBack={handleBack}
           onStatusChange={handleStatusChange}
+          currentUserDepartment={getCurrentDepartmentKey()}
         />
       </div>
     );
