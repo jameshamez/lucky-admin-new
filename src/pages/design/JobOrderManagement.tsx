@@ -63,8 +63,14 @@ interface JobOrder {
   job_id: string;
   client_name: string;
   job_type: string;
+  product_category?: string;
+  sales_product_category?: string;
+  order_product_category?: string;
+  product_type?: string;
+  product_type_label?: string;
   product_type_display?: string;
   product_type_raw?: string;
+  order_product_type?: string;
   urgency: "เร่งด่วน 3-5 ชั่วโมง" | "ด่วน 1 วัน" | "ด่วน 2 วัน" | "ปกติ";
   due_date: string;
   order_date: string;
@@ -104,6 +110,139 @@ interface JobOrder {
   lanyard_patterns?: string;
   quantity?: number;
 }
+
+const UNASSIGNED_ASSIGNEE_VALUE = "__unassigned__";
+
+const PRODUCT_TYPE_LABELS: Record<string, string> = {
+  readymade: "สินค้าสำเร็จรูป",
+  catalog: "สินค้าสำเร็จรูป",
+  custom: "สินค้าสั่งผลิต",
+  estimate: "สินค้าสั่งผลิต",
+  "made-to-order": "สินค้าสั่งผลิต",
+  textile: "สินค้าสั่งผลิต",
+  items: "สินค้าสั่งผลิต",
+  lanyard: "สินค้าสั่งผลิต",
+  premium: "สินค้าสั่งผลิต",
+};
+
+const KNOWN_PRODUCT_TYPE_LABELS = [
+  "สินค้าสำเร็จรูป",
+  "สินค้าสั่งผลิต",
+  "เหรียญสำเร็จรูป",
+  "เหรียญสั่งผลิต",
+  "ถ้วยรางวัล",
+  "โล่",
+  "โล่สั่งผลิต",
+  "ป้ายจารึก",
+  "โล่/ถ้วย/คริสตัล",
+  "สายคล้อง",
+  "เข็มกลัด",
+  "คริสตัล",
+  "อะคริลิค",
+  "เสื้อ",
+  "บิบ",
+];
+
+const PRODUCT_TYPE_KEYWORDS: Array<[string, string]> = [
+  ["ready", "สินค้าสำเร็จรูป"],
+  ["สำเร็จ", "สินค้าสำเร็จรูป"],
+  ["custom", "สินค้าสั่งผลิต"],
+  ["สั่งผลิต", "สินค้าสั่งผลิต"],
+  ["medal", "เหรียญสั่งผลิต"],
+  ["เหรียญ", "เหรียญสั่งผลิต"],
+  ["trophy", "ถ้วยรางวัล"],
+  ["ถ้วย", "ถ้วยรางวัล"],
+  ["plaque", "โล่"],
+  ["award", "โล่"],
+  ["โล่", "โล่"],
+  ["ป้าย", "ป้ายจารึก"],
+  ["lanyard", "สายคล้อง"],
+  ["สายคล้อง", "สายคล้อง"],
+  ["pin", "เข็มกลัด"],
+  ["เข็มกลัด", "เข็มกลัด"],
+  ["crystal", "คริสตัล"],
+  ["คริสตัล", "คริสตัล"],
+  ["acrylic", "อะคริลิค"],
+  ["อะคริลิค", "อะคริลิค"],
+  ["shirt", "เสื้อ"],
+  ["เสื้อ", "เสื้อ"],
+  ["bib", "บิบ"],
+  ["บิบ", "บิบ"],
+];
+
+const cleanDisplayValue = (value: unknown) => {
+  const text = String(value ?? "").trim();
+  const key = text.toLowerCase();
+  return ["", "0", "-", "null", "undefined", "n/a", "internal"].includes(key)
+    ? ""
+    : text;
+};
+
+const normalizeProductCategoryText = (value: unknown) => {
+  const text = cleanDisplayValue(value);
+  const key = text.toLowerCase();
+  if (!text) return "";
+  if (["สินค้าสำเร็จรูป", "สินค้าสั่งผลิต"].includes(text)) return text;
+  if (PRODUCT_TYPE_LABELS[key]) return PRODUCT_TYPE_LABELS[key];
+  if (key.includes("สำเร็จ")) return "สินค้าสำเร็จรูป";
+  if (key.includes("สั่งผลิต") || key.includes("custom")) return "สินค้าสั่งผลิต";
+  return "";
+};
+
+const normalizeKnownProductTypeText = (value: unknown) => {
+  const text = cleanDisplayValue(value);
+  const key = text.toLowerCase();
+  if (!text || /^\d+$/.test(text)) return "";
+  if (KNOWN_PRODUCT_TYPE_LABELS.includes(text)) return text;
+  if (PRODUCT_TYPE_LABELS[key]) return PRODUCT_TYPE_LABELS[key];
+
+  const matched = PRODUCT_TYPE_KEYWORDS.find(([keyword]) =>
+    key.includes(keyword.toLowerCase())
+  );
+  return matched?.[1] || "";
+};
+
+const normalizeExplicitProductTypeText = (value: unknown) => {
+  const text = cleanDisplayValue(value);
+  return normalizeKnownProductTypeText(text) || text;
+};
+
+const getProductTypeDisplay = (job: JobOrder): string => {
+  return (
+    normalizeProductCategoryText(job.product_category) ||
+    normalizeProductCategoryText(job.sales_product_category) ||
+    normalizeProductCategoryText(job.order_product_category) ||
+    normalizeKnownProductTypeText(job.product_type_display) ||
+    normalizeKnownProductTypeText(job.product_type_label) ||
+    normalizeExplicitProductTypeText(job.product_type) ||
+    normalizeExplicitProductTypeText(job.order_product_type) ||
+    normalizeKnownProductTypeText(job.product_type_raw) ||
+    normalizeKnownProductTypeText(job.job_type) ||
+    "-"
+  );
+};
+
+const fetchOrderProductLookup = async () => {
+  const ordersByJobId = new Map<string, any>();
+
+  try {
+    const orderRes = await fetch(
+      `${API_BASE_URL}/orders.php?limit=100&fields=job_product`
+    );
+    const orderJson = await orderRes.json();
+
+    if (orderJson?.status === "success" && Array.isArray(orderJson.data)) {
+      orderJson.data.forEach((order: any) => {
+        const key = String(order.job_id || order.order_id || "").trim();
+        if (key) ordersByJobId.set(key, order);
+      });
+    }
+  } catch (orderError) {
+    console.warn("Unable to load order product fallback", orderError);
+  }
+
+  return ordersByJobId;
+};
 
 // Mock Data
 const mockJobs: JobOrder[] = [
@@ -394,19 +533,60 @@ const mockJobs: JobOrder[] = [
 export default function JobOrderManagement() {
   const [jobs, setJobs] = useState<JobOrder[]>([]);
   const [loading, setLoading] = useState(true);
+  const [designerOptions, setDesignerOptions] = useState<string[]>([]);
 
   const fetchJobs = async () => {
     try {
       setLoading(true);
       const res = await designJobService.getJobs();
       if (res.status === "success") {
-        const mapped: JobOrder[] = (res.data || []).map((j: any) => ({
-          ...j,
-          job_id: j.job_id || j.job_code,
-          assignee: j.designer,
-          product_type_display: j.product_type_display || j.product_type_raw || j.product_type || j.job_type,
-          product_type_raw: j.product_type_raw || j.product_type || j.job_type,
-        }));
+        const ordersByJobId = await fetchOrderProductLookup();
+        const mapped: JobOrder[] = (res.data || []).map((j: any) => {
+          const jobId = j.job_id || j.job_code;
+          const linkedOrder = ordersByJobId.get(String(jobId || "").trim()) || {};
+          const productCategory =
+            normalizeProductCategoryText(j.product_category) ||
+            normalizeProductCategoryText(linkedOrder.product_category) ||
+            normalizeProductCategoryText(j.order_product_category) ||
+            normalizeProductCategoryText(j.sales_product_category);
+          const salesProductCategory = normalizeProductCategoryText(j.sales_product_category);
+          const orderProductCategory =
+            normalizeProductCategoryText(linkedOrder.product_category) ||
+            normalizeProductCategoryText(j.order_product_category);
+          const productType =
+            cleanDisplayValue(linkedOrder.product_type) ||
+            cleanDisplayValue(j.product_type) ||
+            cleanDisplayValue(j.order_product_type);
+          const orderProductType =
+            cleanDisplayValue(linkedOrder.product_type) ||
+            cleanDisplayValue(j.order_product_type);
+          const productTypeRaw = cleanDisplayValue(
+            j.product_type_raw || productType || orderProductType
+          );
+          const productTypeDisplay = getProductTypeDisplay({
+            ...j,
+            product_category: productCategory,
+            sales_product_category: salesProductCategory,
+            order_product_category: orderProductCategory,
+            product_type: productType,
+            order_product_type: orderProductType,
+            product_type_display: j.product_type_display,
+            product_type_raw: productTypeRaw,
+          });
+
+          return {
+            ...j,
+            job_id: jobId,
+            assignee: cleanDisplayValue(j.assignee || j.designer),
+            product_category: productCategory,
+            sales_product_category: salesProductCategory,
+            order_product_category: orderProductCategory,
+            product_type: productType,
+            order_product_type: orderProductType,
+            product_type_display: productTypeDisplay,
+            product_type_raw: productTypeRaw,
+          };
+        });
         setJobs(mapped);
       }
     } catch (e) {
@@ -418,6 +598,27 @@ export default function JobOrderManagement() {
 
   useEffect(() => {
     fetchJobs();
+  }, []);
+
+  useEffect(() => {
+    const fetchDesigners = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/employees.php?department=${encodeURIComponent("ฝ่ายกราฟฟิก")}`);
+        const json = await res.json();
+        const names = Array.isArray(json?.data)
+          ? json.data
+              .filter((emp: any) => String(emp.is_active ?? "1") !== "0")
+              .map((emp: any) => cleanDisplayValue(emp.full_name || emp.nickname || emp.code))
+              .filter(Boolean)
+          : [];
+        setDesignerOptions(Array.from(new Set(names)).sort((a, b) => a.localeCompare(b, "th-TH")));
+      } catch (error) {
+        console.error("Failed to fetch designers", error);
+        setDesignerOptions([]);
+      }
+    };
+
+    fetchDesigners();
   }, []);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterJobType, setFilterJobType] = useState<string>("all");
@@ -441,11 +642,14 @@ export default function JobOrderManagement() {
     "assign" | "action" | "view"
   >("view");
 
-  const designers = ["ดีไซเนอร์ สมชาย", "ดีไซเนอร์ สมหญิง", "ดีไซเนอร์ วิชัย"];
-
-  const getProductTypeDisplay = (job: JobOrder): string => {
-    return job.product_type_display || job.job_type || "-";
-  };
+  const designers = useMemo(() => {
+    const assignedNames = jobs
+      .map((job) => cleanDisplayValue(job.assignee))
+      .filter(Boolean);
+    return Array.from(new Set([...designerOptions, ...assignedNames])).sort((a, b) =>
+      a.localeCompare(b, "th-TH")
+    );
+  }, [designerOptions, jobs]);
 
   const productTypeOptions = useMemo(() => {
     const values = jobs
@@ -454,6 +658,13 @@ export default function JobOrderManagement() {
     return Array.from(new Set(values)).sort((a, b) =>
       a.localeCompare(b, "th-TH")
     );
+  }, [jobs]);
+
+  const assigneeOptions = useMemo(() => {
+    const values = jobs
+      .map((job) => cleanDisplayValue(job.assignee))
+      .filter(Boolean);
+    return Array.from(new Set(values)).sort((a, b) => a.localeCompare(b, "th-TH"));
   }, [jobs]);
 
   // คำนวณวันที่เหลือ
@@ -538,6 +749,10 @@ export default function JobOrderManagement() {
 
     let assignee = selectedDesigner;
     if (assignmentType === "random") {
+      if (designers.length === 0) {
+        toast.error("ไม่พบรายชื่อพนักงานฝ่ายกราฟฟิก");
+        return;
+      }
       assignee = designers[Math.floor(Math.random() * designers.length)];
     } else if (!assignee) {
       toast.error("กรุณาเลือกพนักงาน");
@@ -806,13 +1021,16 @@ export default function JobOrderManagement() {
   // กรองข้อมูล
   const filterJobs = (jobs: JobOrder[]) => {
     return jobs.filter((job) => {
+      const jobAssignee = cleanDisplayValue(job.assignee);
       const matchSearch =
-        job.job_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        job.client_name.toLowerCase().includes(searchTerm.toLowerCase());
+        cleanDisplayValue(job.job_id).toLowerCase().includes(searchTerm.toLowerCase()) ||
+        cleanDisplayValue(job.client_name).toLowerCase().includes(searchTerm.toLowerCase());
       const matchJobType =
         filterJobType === "all" || getProductTypeDisplay(job) === filterJobType;
       const matchAssignee =
-        filterAssignee === "all" || job.assignee === filterAssignee;
+        filterAssignee === "all" ||
+        (filterAssignee === UNASSIGNED_ASSIGNEE_VALUE && !jobAssignee) ||
+        jobAssignee === filterAssignee;
       return matchSearch && matchJobType && matchAssignee;
     });
   };
@@ -873,12 +1091,25 @@ export default function JobOrderManagement() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">ทั้งหมด</SelectItem>
-              <SelectItem value="ดีไซเนอร์ สมชาย">ดีไซเนอร์ สมชาย</SelectItem>
-              <SelectItem value="ดีไซเนอร์ สมหญิง">ดีไซเนอร์ สมหญิง</SelectItem>
-              <SelectItem value="ดีไซเนอร์ วิชัย">ดีไซเนอร์ วิชัย</SelectItem>
+              {jobs.some((job) => !cleanDisplayValue(job.assignee)) && (
+                <SelectItem value={UNASSIGNED_ASSIGNEE_VALUE}>ยังไม่มอบหมาย</SelectItem>
+              )}
+              {assigneeOptions.map((assignee) => (
+                <SelectItem key={assignee} value={assignee}>
+                  {assignee}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
-          <Button variant="outline" className="gap-2">
+          <Button
+            variant="outline"
+            className="gap-2"
+            onClick={() => {
+              setSearchTerm("");
+              setFilterJobType("all");
+              setFilterAssignee("all");
+            }}
+          >
             <Filter className="h-4 w-4" />
             ล้างฟิลเตอร์
           </Button>
@@ -1493,11 +1724,17 @@ export default function JobOrderManagement() {
                     <SelectValue placeholder="เลือกพนักงาน" />
                   </SelectTrigger>
                   <SelectContent>
-                    {designers.map((designer) => (
-                      <SelectItem key={designer} value={designer}>
-                        {designer}
+                    {designers.length > 0 ? (
+                      designers.map((designer) => (
+                        <SelectItem key={designer} value={designer}>
+                          {designer}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="no-designers" disabled>
+                        ไม่พบรายชื่อพนักงานฝ่ายกราฟฟิก
                       </SelectItem>
-                    ))}
+                    )}
                   </SelectContent>
                 </Select>
               </div>

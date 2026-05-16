@@ -47,6 +47,119 @@ function normalize_order_status_value($order_status, $legacy_status) {
     return !empty($order_status) ? $order_status : 'สร้างคำสั่งซื้อใหม่';
 }
 
+function clean_display_value($value) {
+    $value = is_string($value) || is_numeric($value) ? trim(strval($value)) : '';
+    $key = strtolower($value);
+    return in_array($key, ['', '0', '-', 'null', 'undefined', 'n/a'], true) ? '' : $value;
+}
+
+function normalize_product_category_value($category, $first_item_type = '', $first_product_name = '', $has_readymade = false, $has_custom = false, $has_estimate = false, $product_type = '') {
+    $category = clean_display_value($category);
+    $key = strtolower($category);
+
+    switch ($key) {
+        case 'readymade':
+        case 'catalog':
+            return 'สินค้าสำเร็จรูป';
+        case 'custom':
+        case 'estimate':
+        case 'made-to-order':
+        case 'textile':
+        case 'items':
+        case 'lanyard':
+        case 'premium':
+            return 'สินค้าสั่งผลิต';
+    }
+
+    if ($category === 'สินค้าสำเร็จรูป' || $category === 'สินค้าสั่งผลิต') {
+        return $category;
+    }
+
+    $item_type = strtolower(clean_display_value($first_item_type));
+    if ($has_readymade || in_array($item_type, ['readymade', 'catalog'], true)) {
+        return 'สินค้าสำเร็จรูป';
+    }
+    if ($has_estimate || $has_custom || in_array($item_type, ['estimate', 'custom', 'made-to-order'], true)) {
+        return 'สินค้าสั่งผลิต';
+    }
+
+    $product_type = clean_display_value($product_type);
+    if ($product_type !== '') {
+        return $product_type;
+    }
+
+    $first_product_name = clean_display_value($first_product_name);
+    if ($first_product_name !== '') {
+        return $first_product_name;
+    }
+
+    return 'ไม่ระบุ';
+}
+
+function normalize_payment_status_value($payment_status) {
+    $payment_status = is_string($payment_status) ? trim($payment_status) : $payment_status;
+    $payment_status_key = is_string($payment_status) ? strtolower($payment_status) : $payment_status;
+
+    switch ($payment_status_key) {
+        case 'ชำระแล้ว':
+        case 'ชำระครบ':
+        case 'ชำระครบแล้ว':
+        case 'เต็มจำนวน':
+        case 'paid':
+        case 'paid_full':
+        case 'full_paid':
+            return 'ชำระเงินแล้ว';
+        case 'บางส่วน':
+        case 'มัดจำ':
+        case 'ชำระมัดจำ':
+        case 'partial':
+        case 'partially_paid':
+        case 'deposit':
+            return 'ชำระบางส่วน';
+        case 'รอชำระ':
+        case 'ค้างชำระ':
+        case 'pending':
+        case 'unpaid':
+            return 'รอชำระเงิน';
+        case 'credit':
+        case 'credit_term':
+            return 'เครดิต';
+        default:
+            return !empty($payment_status) ? $payment_status : 'รอชำระเงิน';
+    }
+}
+
+function calculate_payment_status_value($payment_status, $payments, $paid_amount, $total_price) {
+    $payment_status = normalize_payment_status_value($payment_status);
+    if (!is_array($payments)) {
+        return $payment_status;
+    }
+
+    $payments_total = 0;
+    $has_full_payment = false;
+    $has_credit = false;
+
+    foreach ($payments as $payment) {
+        $type = $payment['type'] ?? $payment['payment_type'] ?? '';
+        if ($type === 'full') {
+            $has_full_payment = true;
+        }
+        if ($type === 'credit_term' || $type === 'credit') {
+            $has_credit = true;
+        }
+        $payments_total += floatval($payment['amount'] ?? 0);
+    }
+
+    $paid_amount = max(floatval($paid_amount), $payments_total);
+    $total_price = floatval($total_price);
+
+    if ($has_credit) return 'เครดิต';
+    if ($has_full_payment) return 'ชำระเงินแล้ว';
+    if ($paid_amount > 0 && $total_price > 0 && $paid_amount >= $total_price) return 'ชำระเงินแล้ว';
+    if ($paid_amount > 0) return 'ชำระบางส่วน';
+    return $payment_status;
+}
+
 function has_order_identifier($id, $job_id) {
     return !empty($id) || !empty($job_id);
 }
@@ -158,8 +271,11 @@ if ($method === 'GET') {
         $pay_stmt->bind_param("i", $order_id_for_children);
         $pay_stmt->execute();
         $payments = [];
-        while ($row = $pay_stmt->get_result()->fetch_assoc()) {
-            $payments[] = $row;
+        $pay_result = $pay_stmt->get_result();
+        if ($pay_result) {
+            while ($row = $pay_result->fetch_assoc()) {
+                $payments[] = $row;
+            }
         }
 
         // parse departments JSON
@@ -202,6 +318,7 @@ if ($method === 'GET') {
     $payment_method = isset($_GET['payment_method']) ? trim($_GET['payment_method']) : '';
     $date_from = isset($_GET['date_from']) ? trim($_GET['date_from']) : '';
     $date_to = isset($_GET['date_to']) ? trim($_GET['date_to']) : '';
+    $fields = isset($_GET['fields']) ? trim($_GET['fields']) : '';
 
     $where = [];
     $params = [];
@@ -250,7 +367,31 @@ if ($method === 'GET') {
     }
 
     $where_sql = count($where) > 0 ? "WHERE " . implode(" AND ", $where) : "";
-    $from_sql = "FROM orders LEFT JOIN customers ON orders.customer_id = customers.id";
+    $payment_summary_sql = "
+        LEFT JOIN (
+            SELECT
+                order_id,
+                SUM(COALESCE(amount, 0)) AS payments_total,
+                MAX(CASE WHEN payment_type = 'full' THEN 1 ELSE 0 END) AS has_full_payment,
+                MAX(CASE WHEN payment_type IN ('credit_term', 'credit') THEN 1 ELSE 0 END) AS has_credit_payment
+            FROM order_payments
+            GROUP BY order_id
+        ) payment_summary ON payment_summary.order_id = orders.order_id
+    ";
+    $item_summary_sql = "
+        LEFT JOIN (
+            SELECT
+                order_id,
+                SUBSTRING_INDEX(GROUP_CONCAT(product_name ORDER BY item_id ASC SEPARATOR '||'), '||', 1) AS first_product_name,
+                SUBSTRING_INDEX(GROUP_CONCAT(item_type ORDER BY item_id ASC SEPARATOR '||'), '||', 1) AS first_item_type,
+                MAX(CASE WHEN item_type IN ('readymade', 'catalog') THEN 1 ELSE 0 END) AS has_readymade_item,
+                MAX(CASE WHEN item_type IN ('custom', 'made-to-order') THEN 1 ELSE 0 END) AS has_custom_item,
+                MAX(CASE WHEN item_type = 'estimate' THEN 1 ELSE 0 END) AS has_estimate_item
+            FROM order_items
+            GROUP BY order_id
+        ) item_summary ON item_summary.order_id = orders.order_id
+    ";
+    $from_sql = "FROM orders LEFT JOIN customers ON orders.customer_id = customers.id $payment_summary_sql $item_summary_sql";
 
     // Count total
     $count_sql = "SELECT COUNT(*) AS total $from_sql $where_sql";
@@ -269,7 +410,15 @@ if ($method === 'GET') {
                         customers.phone AS cust_phone, 
                         customers.line_id AS cust_line_id, 
                         customers.email AS cust_email,
-                        customers.created_at AS cust_created_at
+                        customers.created_at AS cust_created_at,
+                        COALESCE(payment_summary.payments_total, 0) AS payments_total,
+                        COALESCE(payment_summary.has_full_payment, 0) AS has_full_payment,
+                        COALESCE(payment_summary.has_credit_payment, 0) AS has_credit_payment,
+                        item_summary.first_product_name,
+                        item_summary.first_item_type,
+                        COALESCE(item_summary.has_readymade_item, 0) AS has_readymade_item,
+                        COALESCE(item_summary.has_custom_item, 0) AS has_custom_item,
+                        COALESCE(item_summary.has_estimate_item, 0) AS has_estimate_item
                  $from_sql $where_sql 
                  ORDER BY orders.created_at DESC LIMIT ? OFFSET ?";
     $data_params = array_merge($params, [$limit, $offset]);
@@ -284,6 +433,32 @@ if ($method === 'GET') {
 
     $orders = [];
     while ($row = $result->fetch_assoc()) {
+        $row['product_type'] = clean_display_value($row['product_type'] ?? '');
+        $first_product_name = clean_display_value($row['first_product_name'] ?? '');
+        if ($row['product_type'] === '' && $first_product_name !== '') {
+            $row['product_type'] = $first_product_name;
+        }
+        $row['product_category'] = normalize_product_category_value(
+            $row['product_category'] ?? '',
+            $row['first_item_type'] ?? '',
+            $first_product_name,
+            !empty($row['has_readymade_item']),
+            !empty($row['has_custom_item']),
+            !empty($row['has_estimate_item']),
+            $row['product_type']
+        );
+
+        if ($fields === 'job_product') {
+            $orders[] = [
+                'order_id' => $row['order_id'] ?? null,
+                'job_id' => $row['job_id'] ?? '',
+                'job_name' => $row['job_name'] ?? '',
+                'product_category' => $row['product_category'],
+                'product_type' => $row['product_type'],
+            ];
+            continue;
+        }
+
         if (!empty($row['departments'])) {
             $row['departments'] = json_decode($row['departments'], true);
         }
@@ -305,9 +480,32 @@ if ($method === 'GET') {
         $row['order_status'] = normalize_order_status_value($row['order_status'] ?? null, $row['status'] ?? null);
         $row['total_price'] = $row['total_price'] ?? ($row['total_amount'] ?? 0);
         $row['require_tax_invoice'] = $row['require_tax_invoice'] ?? ($row['needs_tax_invoice'] ?? 0);
-        $row['paid_amount'] = $row['paid_amount'] ?? 0;
-        $row['payment_status'] = $row['payment_status'] ?? 'รอชำระเงิน';
+        $payments_total = floatval($row['payments_total'] ?? 0);
+        $row['paid_amount'] = max(floatval($row['paid_amount'] ?? 0), $payments_total);
+        $summary_payments = [];
+        if (!empty($row['has_credit_payment'])) {
+            $summary_payments[] = ['type' => 'credit_term', 'amount' => $payments_total];
+        } elseif (!empty($row['has_full_payment'])) {
+            $summary_payments[] = ['type' => 'full', 'amount' => $payments_total];
+        } elseif ($payments_total > 0) {
+            $summary_payments[] = ['type' => 'deposit', 'amount' => $payments_total];
+        }
+        $row['payment_status'] = calculate_payment_status_value($row['payment_status'] ?? null, $summary_payments, $row['paid_amount'], $row['total_price']);
         $orders[] = $row;
+    }
+
+    if ($fields === 'job_product') {
+        echo json_encode([
+            "status" => "success",
+            "data" => $orders,
+            "pagination" => [
+                "total" => intval($total),
+                "page" => $page,
+                "limit" => $limit,
+                "totalPages" => ceil($total / $limit),
+            ],
+        ]);
+        exit();
     }
 
     // Summary stats (all orders without limit for cards)
@@ -316,7 +514,10 @@ if ($method === 'GET') {
         COALESCE(orders.order_status, orders.status, 'สร้างคำสั่งซื้อใหม่') AS order_status,
         COALESCE(orders.payment_status, 'รอชำระเงิน') AS payment_status,
         COALESCE(orders.total_price, orders.total_amount, 0) AS total_price,
-        COALESCE(orders.paid_amount, 0) AS paid_amount
+        COALESCE(orders.paid_amount, 0) AS paid_amount,
+        COALESCE(payment_summary.payments_total, 0) AS payments_total,
+        COALESCE(payment_summary.has_full_payment, 0) AS has_full_payment,
+        COALESCE(payment_summary.has_credit_payment, 0) AS has_credit_payment
     $from_sql $where_sql";
     if (!empty($params)) {
         $stats_stmt = $conn->prepare($stats_sql);
@@ -333,8 +534,20 @@ if ($method === 'GET') {
     $total_paid = 0;
 
     while ($row = $stats_result->fetch_assoc()) {
+        $payments_total = floatval($row['payments_total'] ?? 0);
+        $paid_amount = max(floatval($row['paid_amount'] ?? 0), $payments_total);
+        $summary_payments = [];
+        if (!empty($row['has_credit_payment'])) {
+            $summary_payments[] = ['type' => 'credit_term', 'amount' => $payments_total];
+        } elseif (!empty($row['has_full_payment'])) {
+            $summary_payments[] = ['type' => 'full', 'amount' => $payments_total];
+        } elseif ($payments_total > 0) {
+            $summary_payments[] = ['type' => 'deposit', 'amount' => $payments_total];
+        }
+        $effective_payment_status = calculate_payment_status_value($row['payment_status'] ?? null, $summary_payments, $paid_amount, $row['total_price']);
+
         $total_revenue += floatval($row['total_price']);
-        $total_paid += floatval($row['paid_amount']);
+        $total_paid += $paid_amount;
         switch ($row['order_status']) {
             case 'ส่งคำขอสั่งซื้อ':
                 $status_counts['request']++;
@@ -349,7 +562,7 @@ if ($method === 'GET') {
                 $status_counts['jobCreated']++;
                 break;
         }
-        switch ($row['payment_status']) {
+        switch ($effective_payment_status) {
             case 'ชำระบางส่วน':
                 $payment_counts['partial']++;
                 break;
@@ -463,8 +676,38 @@ if ($method === 'POST') {
     $v_event_location = $data['event_location'] ?? null;
     $v_usage_date = (!empty($data['usage_date'])) ? $data['usage_date'] : null;
     $v_delivery_date = (!empty($data['delivery_date'])) ? $data['delivery_date'] : null;
-    $v_product_category = $data['product_category'] ?? '';
-    $v_product_type = $data['product_type'] ?? '';
+    $items_for_category = (!empty($data['items']) && is_array($data['items'])) ? $data['items'] : [];
+    $first_item = $items_for_category[0] ?? [];
+    $first_item_type = $first_item['item_type'] ?? ($first_item['itemType'] ?? '');
+    $first_product_name = $first_item['product_name'] ?? ($first_item['productType'] ?? ($first_item['label'] ?? ''));
+    $has_readymade_item = false;
+    $has_custom_item = false;
+    $has_estimate_item = false;
+    foreach ($items_for_category as $item_for_category) {
+        $item_type = strtolower(clean_display_value($item_for_category['item_type'] ?? ($item_for_category['itemType'] ?? '')));
+        if (in_array($item_type, ['readymade', 'catalog'], true)) {
+            $has_readymade_item = true;
+        }
+        if (in_array($item_type, ['custom', 'made-to-order'], true)) {
+            $has_custom_item = true;
+        }
+        if ($item_type === 'estimate') {
+            $has_estimate_item = true;
+        }
+    }
+    $v_product_type = clean_display_value($data['product_type'] ?? '');
+    if ($v_product_type === '') {
+        $v_product_type = clean_display_value($first_product_name);
+    }
+    $v_product_category = normalize_product_category_value(
+        $data['product_category'] ?? '',
+        $first_item_type,
+        $first_product_name,
+        $has_readymade_item,
+        $has_custom_item,
+        $has_estimate_item,
+        $v_product_type
+    );
     $v_budget = floatval($data['budget'] ?? 0);
     $v_sales_channel = $data['sales_channel'] ?? null;
     $v_subtotal = floatval($data['subtotal'] ?? 0);
@@ -473,8 +716,13 @@ if ($method === 'POST') {
     $v_total_amount = floatval($data['total_amount'] ?? ($data['total_price'] ?? 0));
     $v_total_price = floatval($data['total_price'] ?? ($data['total_amount'] ?? 0));
     $v_payment_method = $data['payment_method'] ?? '';
-    $v_payment_status = $data['payment_status'] ?? 'รอชำระเงิน';
     $v_paid_amount = floatval($data['paid_amount'] ?? 0);
+    $v_payment_status = calculate_payment_status_value($data['payment_status'] ?? null, $data['payments'] ?? [], $v_paid_amount, $v_total_price);
+    if ($v_paid_amount <= 0 && !empty($data['payments']) && is_array($data['payments'])) {
+        foreach ($data['payments'] as $payment) {
+            $v_paid_amount += floatval($payment['amount'] ?? 0);
+        }
+    }
     $v_delivery_type = $data['delivery_type'] ?? 'parcel';
     $v_delivery_method = $data['delivery_method'] ?? null;
     $v_private_transport_name = $data['private_transport_name'] ?? null;

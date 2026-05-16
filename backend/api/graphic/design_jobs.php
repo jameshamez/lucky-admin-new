@@ -163,6 +163,56 @@ function translateProductTypeName(string $value): string
     return $trimmed;
 }
 
+function cleanDesignDisplayValue($value): string
+{
+    $text = is_string($value) || is_numeric($value) ? trim((string) $value) : '';
+    $lower = mb_strtolower($text, 'UTF-8');
+    if ($text === '' || in_array($lower, ['0', '-', 'null', 'undefined', 'n/a', 'internal'], true) || preg_match('/^\d+$/', $text)) {
+        return '';
+    }
+    return $text;
+}
+
+function translateProductCategoryName($value): string
+{
+    $text = cleanDesignDisplayValue($value);
+    if ($text === '') {
+        return '';
+    }
+
+    $lower = mb_strtolower($text, 'UTF-8');
+    if (in_array($lower, ['readymade', 'catalog'], true) || mb_stripos($lower, 'สำเร็จ', 0, 'UTF-8') !== false) {
+        return 'สินค้าสำเร็จรูป';
+    }
+    if (
+        in_array($lower, ['custom', 'estimate', 'made-to-order', 'textile', 'items', 'lanyard', 'premium'], true)
+        || mb_stripos($lower, 'สั่งผลิต', 0, 'UTF-8') !== false
+    ) {
+        return 'สินค้าสั่งผลิต';
+    }
+    if (in_array($text, ['สินค้าสำเร็จรูป', 'สินค้าสั่งผลิต'], true)) {
+        return $text;
+    }
+
+    return '';
+}
+
+function translateKnownProductTypeName($value): string
+{
+    $text = cleanDesignDisplayValue($value);
+    if ($text === '') {
+        return '';
+    }
+
+    $translated = translateProductTypeName($text);
+    $knownLabels = ['สินค้าสำเร็จรูป', 'สินค้าสั่งผลิต', 'เหรียญสำเร็จรูป', 'เหรียญสั่งผลิต', 'ถ้วยรางวัล', 'โล่', 'ป้ายจารึก', 'สายคล้อง', 'เข็มกลัด', 'คริสตัล', 'อะคริลิค', 'เสื้อ', 'บิบ'];
+    if (in_array($translated, $knownLabels, true)) {
+        return $translated;
+    }
+
+    return $translated !== $text ? $translated : '';
+}
+
 function formatDesignJobRow(array $row): array
 {
     $row['medal_colors'] = !empty($row['medal_colors']) ? (json_decode($row['medal_colors'], true) ?: []) : [];
@@ -181,33 +231,46 @@ function formatDesignJobRow(array $row): array
         }
     }
 
-    $rawType = $row['sales_product_type'] ?? '';
-    if (!$rawType) {
-        $candidates = [
-            $salesDetails['productType'] ?? null,
-            $salesDetails['product_type'] ?? null,
-            $salesDetails['type'] ?? null,
-            $salesDetails['category'] ?? null,
-            $salesDetails['product']['type'] ?? null,
-            $row['sales_product_category'] ?? null,
-            $row['order_product_category'] ?? null,
-        ];
+    $categoryDisplay = translateProductCategoryName($row['sales_product_category'] ?? '');
+    if ($categoryDisplay === '') {
+        $categoryDisplay = translateProductCategoryName($row['order_product_category'] ?? '');
+    }
 
-        foreach ($candidates as $candidate) {
-            if (is_string($candidate) && trim($candidate) !== '') {
-                $rawType = $candidate;
-                break;
-            }
+    $rawType = '';
+    $typeCandidates = [
+        $row['sales_product_type'] ?? null,
+        $salesDetails['productType'] ?? null,
+        $salesDetails['product_type'] ?? null,
+        $salesDetails['type'] ?? null,
+        $salesDetails['product']['type'] ?? null,
+        $row['order_product_type'] ?? null,
+    ];
+
+    foreach ($typeCandidates as $candidate) {
+        $candidate = cleanDesignDisplayValue($candidate);
+        if ($candidate !== '') {
+            $rawType = $candidate;
+            break;
         }
     }
 
-    $rawType = is_string($rawType) ? trim($rawType) : '';
-    $row['product_type_raw'] = $rawType;
-    $row['product_type_display'] = $rawType !== ''
-        ? translateProductTypeName($rawType)
-        : ($row['job_type'] ?? '-');
+    $typeDisplay = translateKnownProductTypeName($rawType);
+    if ($typeDisplay === '') {
+        $typeDisplay = translateKnownProductTypeName($row['job_type'] ?? '');
+    }
 
-    unset($row['sales_details_json'], $row['sales_product_type'], $row['sales_product_category'], $row['order_product_category']);
+    if (!$rawType) {
+        $rawType = cleanDesignDisplayValue($row['job_type'] ?? '');
+    }
+
+    $row['product_type_raw'] = $rawType;
+    $row['product_category'] = $categoryDisplay;
+    $row['sales_product_category'] = translateProductCategoryName($row['sales_product_category'] ?? '');
+    $row['order_product_category'] = translateProductCategoryName($row['order_product_category'] ?? '');
+    $row['order_product_type'] = cleanDesignDisplayValue($row['order_product_type'] ?? '');
+    $row['product_type_display'] = $categoryDisplay ?: ($typeDisplay ?: '-');
+
+    unset($row['sales_details_json'], $row['sales_product_type']);
 
     return $row;
 }
@@ -218,7 +281,7 @@ if ($method === 'GET') {
         // Single job
         $stmt = $conn->prepare("SELECT dj.id, dj.job_code, dj.client_name, dj.job_type, dj.description, dj.urgency, dj.priority, dj.designer, dj.ordered_by, dj.quotation_no, dj.status, dj.progress, dj.google_drive_link, dj.layout_image, dj.artwork_image, dj.artwork_status, dj.production_artwork, dj.ai_file, dj.due_date, dj.order_date, dj.assigned_at, dj.started_at, dj.finish_date, dj.revision_rounds, dj.qc_pass, dj.feedback, dj.internal_notes, dj.specs, dj.medal_size, dj.medal_thickness, dj.medal_colors, dj.medal_front_details, dj.medal_back_details, dj.lanyard_size, dj.lanyard_patterns, dj.quantity, dj.created_at, dj.updated_at,
             pes.product_type AS sales_product_type, pes.product_category AS sales_product_category, pes.details AS sales_details_json,
-            o.product_category AS order_product_category
+            o.product_category AS order_product_category, o.product_type AS order_product_type
             FROM design_jobs dj
             LEFT JOIN price_estimations_sales pes ON pes.estimate_id = dj.quotation_no
             LEFT JOIN orders o ON o.job_id = dj.job_code
@@ -337,7 +400,7 @@ if ($method === 'GET') {
     // Data
     $sql = "SELECT dj.id, dj.job_code, dj.client_name, dj.job_type, dj.description, dj.urgency, dj.priority, dj.designer, dj.ordered_by, dj.quotation_no, dj.status, dj.progress, dj.google_drive_link, dj.layout_image, dj.artwork_image, dj.artwork_status, dj.production_artwork, dj.ai_file, dj.due_date, dj.order_date, dj.assigned_at, dj.started_at, dj.finish_date, dj.revision_rounds, dj.qc_pass, dj.feedback, dj.internal_notes, dj.specs, dj.medal_size, dj.medal_thickness, dj.medal_colors, dj.medal_front_details, dj.medal_back_details, dj.lanyard_size, dj.lanyard_patterns, dj.quantity, dj.created_at, dj.updated_at,
             pes.product_type AS sales_product_type, pes.product_category AS sales_product_category, pes.details AS sales_details_json,
-            o.product_category AS order_product_category
+            o.product_category AS order_product_category, o.product_type AS order_product_type
         FROM design_jobs dj
         LEFT JOIN price_estimations_sales pes ON pes.estimate_id = dj.quotation_no
         LEFT JOIN orders o ON o.job_id = dj.job_code

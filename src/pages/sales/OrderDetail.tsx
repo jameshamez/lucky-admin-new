@@ -695,31 +695,63 @@ export default function OrderDetail() {
     if (!orderId) return;
     setIsLoading(true);
     try {
-      let finalOrderId = orderId;
+      const requestedOrderId = decodeURIComponent(orderId);
+      let finalOrderId = requestedOrderId;
+      let fallbackApiData: any | null = null;
 
-      if (isNaN(Number(orderId))) {
-        const searchRes = await fetch(`${API_BASE_URL}/orders.php?search=${encodeURIComponent(orderId)}`);
-        const searchJson = await searchRes.json();
-        if (searchJson.status === "success" && searchJson.data && searchJson.data.length > 0) {
-          const match = searchJson.data.find((d: any) => d.job_id === orderId);
-          if (match) {
+      const findOrderFromSearch = async (term: string) => {
+        const searchRes = await fetch(`${API_BASE_URL}/orders.php?search=${encodeURIComponent(term)}`);
+        const searchJson = await searchRes.json().catch(() => null);
+        const data = Array.isArray(searchJson?.data) ? searchJson.data : [];
+        const normalizedTerm = String(term).trim();
+        const exactMatch = data.find((d: any) => String(d.job_id || "").trim() === normalizedTerm)
+          || data.find((d: any) => String(d.order_id || "").trim() === normalizedTerm);
+
+        return exactMatch || (data.length === 1 ? data[0] : null);
+      };
+
+      if (isNaN(Number(requestedOrderId))) {
+        const match = await findOrderFromSearch(requestedOrderId);
+        if (match) {
+          fallbackApiData = match;
+          if (match.order_id) {
             finalOrderId = String(match.order_id);
           }
         }
       }
 
-      if (isNaN(Number(finalOrderId))) {
+      let apiData: any | null = null;
+
+      if (!isNaN(Number(finalOrderId))) {
+        try {
+          const res = await fetch(`${API_BASE_URL}/orders.php?id=${encodeURIComponent(finalOrderId)}`);
+          const json = await res.json().catch(() => null);
+
+          if (res.ok && json?.status === "success" && json.data) {
+            apiData = Array.isArray(json.data) ? json.data[0] : json.data;
+          } else {
+            console.warn("Order detail endpoint failed, using list data fallback if available", json);
+          }
+        } catch (detailError) {
+          console.warn("Order detail endpoint failed, using list data fallback if available", detailError);
+        }
+      }
+
+      if (!apiData && !fallbackApiData) {
+        fallbackApiData = await findOrderFromSearch(requestedOrderId);
+      }
+
+      if (!apiData && fallbackApiData) {
+        apiData = fallbackApiData;
+      }
+
+      if (!apiData) {
         setOrder(null);
         return;
       }
 
-      const res = await fetch(`${API_BASE_URL}/orders.php?id=${encodeURIComponent(finalOrderId)}`);
-      const json = await res.json();
-
-      if (json.status === "success" && json.data) {
-        const apiData = Array.isArray(json.data) ? json.data[0] : json.data;
-        const apiItems = await enrichOrderItemsWithEstimations(Array.isArray(apiData.items) ? apiData.items : []);
-        const apiDataWithItems = { ...apiData, items: apiItems };
+      const apiItems = await enrichOrderItemsWithEstimations(Array.isArray(apiData.items) ? apiData.items : []);
+      const apiDataWithItems = { ...apiData, items: apiItems };
 
         let broadStatus = "pending_approval";
         const os = apiData.order_status;
@@ -833,7 +865,6 @@ export default function OrderDetail() {
           console.error("Error fetching design job:", e);
           setDesignJob(null);
         }
-      }
     } catch (err) {
       console.error(err);
       toast.error("ดึงข้อมูลคำสั่งซื้อล้มเหลว");

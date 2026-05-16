@@ -48,6 +48,24 @@ const getFileNameFromUrl = (url: string, fallback: string) => {
   return url.split("?")[0].split("/").pop() || fallback;
 };
 
+const isAcceptedFile = (file: File, accept: string) => {
+  if (!accept.trim()) return true;
+
+  return accept.split(",").some((rule) => {
+    const normalizedRule = rule.trim().toLowerCase();
+    if (!normalizedRule) return false;
+    if (normalizedRule.endsWith("/*")) {
+      return file.type
+        .toLowerCase()
+        .startsWith(normalizedRule.replace("/*", "/"));
+    }
+    if (normalizedRule.startsWith(".")) {
+      return file.name.toLowerCase().endsWith(normalizedRule);
+    }
+    return file.type.toLowerCase() === normalizedRule;
+  });
+};
+
 export function JobUpdateForm({ jobId, quotationNo, clientName, productTypeDisplay, initialData, onSubmit }: JobUpdateFormProps) {
   // Mock current user - ในระบบจริงจะดึงจาก auth
   const currentUser = "สมชาย ใจดี";
@@ -60,6 +78,7 @@ export function JobUpdateForm({ jobId, quotationNo, clientName, productTypeDispl
 
   // Dropdown states
   const [openDropdowns, setOpenDropdowns] = useState<Record<string, boolean>>({});
+  const [dragTarget, setDragTarget] = useState<string | null>(null);
 
   // Section 1: เริ่มวางแบบ - รูปวางแบบ
   const [layoutLogs, setLayoutLogs] = useState<FileLog[]>([]);
@@ -168,57 +187,94 @@ export function JobUpdateForm({ jobId, quotationNo, clientName, productTypeDispl
     setOpenDropdowns(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
+  const getDroppedFile = (
+    e: React.DragEvent<HTMLElement>,
+    accept: string,
+    disabled?: boolean
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragTarget(null);
+
+    if (disabled) return null;
+
+    const droppedFiles = Array.from(e.dataTransfer.files || []);
+    const file = droppedFiles.find((item) => isAcceptedFile(item, accept));
+    if (!file && droppedFiles.length > 0) {
+      toast.error("ชนิดไฟล์ไม่รองรับ");
+    }
+    return file || null;
+  };
+
+  const handleLayoutImageFile = async (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      toast.error("กรุณาเลือกรูปภาพเท่านั้น");
+      return;
+    }
+
+    const previewUrl = URL.createObjectURL(file);
+    const pendingLog = createFileLog(file, previewUrl);
+    setLayoutPreview(previewUrl);
+    setLayoutLogs(prev => [pendingLog, ...prev]);
+    try {
+      const uploadedUrl = await uploadDesignFile(file, "layout");
+      setLayoutPreview(uploadedUrl);
+      setLayoutLogs(prev => prev.map(log => (
+        log.id === pendingLog.id ? { ...log, previewUrl: uploadedUrl } : log
+      )));
+      toast.success("อัปโหลดรูปวางแบบสำเร็จ");
+    } catch (err: any) {
+      setLayoutPreview(null);
+      setLayoutLogs(prev => prev.filter(log => log.id !== pendingLog.id));
+      toast.error(`อัปโหลดรูปวางแบบล้มเหลว: ${err?.message || ""}`);
+    } finally {
+      URL.revokeObjectURL(previewUrl);
+    }
+  };
+
   const handleLayoutImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const previewUrl = URL.createObjectURL(file);
-      const pendingLog = createFileLog(file, previewUrl);
-      setLayoutPreview(previewUrl);
-      setLayoutLogs([pendingLog, ...layoutLogs]);
-      try {
-        const uploadedUrl = await uploadDesignFile(file, "layout");
-        setLayoutPreview(uploadedUrl);
-        setLayoutLogs(prev => prev.map(log => (
-          log.id === pendingLog.id ? { ...log, previewUrl: uploadedUrl } : log
-        )));
-        toast.success("อัปโหลดรูปวางแบบสำเร็จ");
-      } catch (err: any) {
-        setLayoutPreview(null);
-        setLayoutLogs(prev => prev.filter(log => log.id !== pendingLog.id));
-        toast.error(`อัปโหลดรูปวางแบบล้มเหลว: ${err?.message || ""}`);
-      } finally {
-        URL.revokeObjectURL(previewUrl);
-      }
+      await handleLayoutImageFile(file);
     }
     e.target.value = '';
+  };
+
+  const handleArtworkFile = async (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      toast.error("กรุณาเลือกรูปภาพเท่านั้น");
+      return;
+    }
+
+    const previewUrl = URL.createObjectURL(file);
+    setArtworkPreview(previewUrl);
+    const newVersion = artworkStatus === 'rejected' ? artworkVersion + 1 : artworkVersion;
+    if (artworkStatus === 'rejected') {
+      setArtworkVersion(newVersion);
+      setArtworkStatus('draft');
+    }
+    const pendingLog = createFileLog(file, previewUrl, newVersion);
+    setArtworkLogs(prev => [pendingLog, ...prev]);
+    try {
+      const uploadedUrl = await uploadDesignFile(file, "artwork");
+      setArtworkPreview(uploadedUrl);
+      setArtworkLogs(prev => prev.map(log => (
+        log.id === pendingLog.id ? { ...log, previewUrl: uploadedUrl } : log
+      )));
+      toast.success("อัปโหลด Artwork สำเร็จ");
+    } catch (err: any) {
+      setArtworkPreview(null);
+      setArtworkLogs(prev => prev.filter(log => log.id !== pendingLog.id));
+      toast.error(`อัปโหลด Artwork ล้มเหลว: ${err?.message || ""}`);
+    } finally {
+      URL.revokeObjectURL(previewUrl);
+    }
   };
 
   const handleArtworkUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const previewUrl = URL.createObjectURL(file);
-      setArtworkPreview(previewUrl);
-      const newVersion = artworkStatus === 'rejected' ? artworkVersion + 1 : artworkVersion;
-      if (artworkStatus === 'rejected') {
-        setArtworkVersion(newVersion);
-        setArtworkStatus('draft');
-      }
-      const pendingLog = createFileLog(file, previewUrl, newVersion);
-      setArtworkLogs([pendingLog, ...artworkLogs]);
-      try {
-        const uploadedUrl = await uploadDesignFile(file, "artwork");
-        setArtworkPreview(uploadedUrl);
-        setArtworkLogs(prev => prev.map(log => (
-          log.id === pendingLog.id ? { ...log, previewUrl: uploadedUrl } : log
-        )));
-        toast.success("อัปโหลด Artwork สำเร็จ");
-      } catch (err: any) {
-        setArtworkPreview(null);
-        setArtworkLogs(prev => prev.filter(log => log.id !== pendingLog.id));
-        toast.error(`อัปโหลด Artwork ล้มเหลว: ${err?.message || ""}`);
-      } finally {
-        URL.revokeObjectURL(previewUrl);
-      }
+      await handleArtworkFile(file);
     }
     e.target.value = '';
   };
@@ -273,50 +329,63 @@ export function JobUpdateForm({ jobId, quotationNo, clientName, productTypeDispl
     });
   };
 
+  const handleProductionArtworkFile = async (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      toast.error("กรุณาเลือกรูปภาพเท่านั้น");
+      return;
+    }
+
+    const pendingLog = createFileLog(file);
+    setProductionArtworkLogs(prev => [pendingLog, ...prev]);
+    try {
+      const uploadedUrl = await uploadDesignFile(file, "production-artwork");
+      setProductionArtworkLogs(prev => prev.map(log => (
+        log.id === pendingLog.id ? { ...log, previewUrl: uploadedUrl } : log
+      )));
+      toast.success("อัปโหลด Artwork สำหรับผลิตสำเร็จ");
+    } catch (err: any) {
+      setProductionArtworkLogs(prev => prev.filter(log => log.id !== pendingLog.id));
+      toast.error(`อัปโหลด Artwork สำหรับผลิตล้มเหลว: ${err?.message || ""}`);
+    }
+  };
+
   const handleProductionArtworkChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const pendingLog = createFileLog(file);
-      setProductionArtworkLogs([pendingLog, ...productionArtworkLogs]);
-      try {
-        const uploadedUrl = await uploadDesignFile(file, "production-artwork");
-        setProductionArtworkLogs(prev => prev.map(log => (
-          log.id === pendingLog.id ? { ...log, previewUrl: uploadedUrl } : log
-        )));
-        toast.success("อัปโหลด Artwork สำหรับผลิตสำเร็จ");
-      } catch (err: any) {
-        setProductionArtworkLogs(prev => prev.filter(log => log.id !== pendingLog.id));
-        toast.error(`อัปโหลด Artwork สำหรับผลิตล้มเหลว: ${err?.message || ""}`);
-      }
+      await handleProductionArtworkFile(file);
     }
     e.target.value = '';
+  };
+
+  const handleAiFile = async (file: File) => {
+    const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : "";
+    const pendingLog = createFileLog(file, previewUrl || undefined);
+    if (file.type.startsWith('image/') || file.type === 'application/pdf') {
+      setAiFilePreview(previewUrl || null);
+      setAiFileLogs(prev => [pendingLog, ...prev]);
+    } else {
+      setAiFileLogs(prev => [pendingLog, ...prev]);
+    }
+    try {
+      const uploadedUrl = await uploadDesignFile(file, "ai-files");
+      setAiFilePreview(file.type.startsWith('image/') ? uploadedUrl : null);
+      setAiFileLogs(prev => prev.map(log => (
+        log.id === pendingLog.id ? { ...log, previewUrl: uploadedUrl } : log
+      )));
+      toast.success("อัปโหลดไฟล์ AI สำเร็จ");
+    } catch (err: any) {
+      setAiFilePreview(null);
+      setAiFileLogs(prev => prev.filter(log => log.id !== pendingLog.id));
+      toast.error(`อัปโหลดไฟล์ AI ล้มเหลว: ${err?.message || ""}`);
+    } finally {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    }
   };
 
   const handleAiFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : "";
-      const pendingLog = createFileLog(file, previewUrl || undefined);
-      if (file.type.startsWith('image/') || file.type === 'application/pdf') {
-        setAiFilePreview(previewUrl || null);
-        setAiFileLogs([pendingLog, ...aiFileLogs]);
-      } else {
-        setAiFileLogs([pendingLog, ...aiFileLogs]);
-      }
-      try {
-        const uploadedUrl = await uploadDesignFile(file, "ai-files");
-        setAiFilePreview(file.type.startsWith('image/') ? uploadedUrl : null);
-        setAiFileLogs(prev => prev.map(log => (
-          log.id === pendingLog.id ? { ...log, previewUrl: uploadedUrl } : log
-        )));
-        toast.success("อัปโหลดไฟล์ AI สำเร็จ");
-      } catch (err: any) {
-        setAiFilePreview(null);
-        setAiFileLogs(prev => prev.filter(log => log.id !== pendingLog.id));
-        toast.error(`อัปโหลดไฟล์ AI ล้มเหลว: ${err?.message || ""}`);
-      } finally {
-        if (previewUrl) URL.revokeObjectURL(previewUrl);
-      }
+      await handleAiFile(file);
     }
     e.target.value = '';
   };
@@ -375,17 +444,52 @@ export function JobUpdateForm({ jobId, quotationNo, clientName, productTypeDispl
   const ClickablePreview = ({ 
     src, 
     alt, 
-    placeholder 
+    placeholder,
+    onFileDrop,
+    accept = "image/*",
+    dropKey,
+    disabled = false,
   }: { 
     src: string | null; 
     alt: string; 
     placeholder: string;
+    onFileDrop?: (file: File) => void | Promise<void>;
+    accept?: string;
+    dropKey?: string;
+    disabled?: boolean;
   }) => {
+    const isDragging = !!dropKey && dragTarget === dropKey;
+    const dropHandlers = onFileDrop && dropKey ? {
+      onDragEnter: (e: React.DragEvent<HTMLElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!disabled) setDragTarget(dropKey);
+      },
+      onDragOver: (e: React.DragEvent<HTMLElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+      },
+      onDragLeave: (e: React.DragEvent<HTMLElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setDragTarget(null);
+      },
+      onDrop: (e: React.DragEvent<HTMLElement>) => {
+        const file = getDroppedFile(e, accept, disabled);
+        if (file) void onFileDrop(file);
+      },
+    } : {};
+
     if (src) {
       return (
         <div 
-          className="w-full h-40 border rounded-lg overflow-hidden bg-muted/30 cursor-pointer relative group"
+          className={cn(
+            "w-full h-40 border rounded-lg overflow-hidden bg-muted/30 cursor-pointer relative group transition-colors",
+            isDragging && "border-primary bg-primary/10 ring-2 ring-primary/30",
+            disabled && "cursor-not-allowed opacity-70"
+          )}
           onClick={() => setModalImage(src)}
+          {...dropHandlers}
         >
           <img
             src={src}
@@ -395,13 +499,30 @@ export function JobUpdateForm({ jobId, quotationNo, clientName, productTypeDispl
           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
             <ZoomIn className="h-8 w-8 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-lg" />
           </div>
+          {isDragging && (
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background/80 text-sm font-medium text-primary">
+              ปล่อยเพื่ออัปโหลด
+            </div>
+          )}
         </div>
       );
     }
     return (
-      <div className="w-full h-40 border border-dashed rounded-lg flex flex-col items-center justify-center bg-muted/20 text-muted-foreground">
+      <div
+        className={cn(
+          "relative w-full h-40 border border-dashed rounded-lg flex flex-col items-center justify-center bg-muted/20 text-muted-foreground transition-colors",
+          isDragging && "border-primary bg-primary/10 ring-2 ring-primary/30",
+          disabled && "cursor-not-allowed opacity-70"
+        )}
+        {...dropHandlers}
+      >
         <ImageIcon className="h-10 w-10 mb-2" />
         <span className="text-xs">{placeholder}</span>
+        {isDragging && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-background/80 text-sm font-medium text-primary">
+            ปล่อยเพื่ออัปโหลด
+          </div>
+        )}
       </div>
     );
   };
@@ -411,6 +532,7 @@ export function JobUpdateForm({ jobId, quotationNo, clientName, productTypeDispl
     inputId,
     accept = "image/*", 
     onChange, 
+    onFileDrop,
     logs,
     dropdownKey,
     disabled = false,
@@ -419,6 +541,7 @@ export function JobUpdateForm({ jobId, quotationNo, clientName, productTypeDispl
     inputId: string;
     accept?: string; 
     onChange: (e: React.ChangeEvent<HTMLInputElement>) => void; 
+    onFileDrop?: (file: File) => void | Promise<void>;
     logs: FileLog[];
     dropdownKey: string;
     disabled?: boolean;
@@ -426,11 +549,36 @@ export function JobUpdateForm({ jobId, quotationNo, clientName, productTypeDispl
     const isOpen = openDropdowns[dropdownKey] || false;
     const latestLog = logs[0];
     const olderLogs = logs.slice(1);
+    const isDragging = dragTarget === dropdownKey;
 
     return (
       <div className="space-y-2">
         <Label className="text-sm font-medium">{label}</Label>
-        <div className="flex items-center gap-2">
+        <div
+          className={cn(
+            "relative flex items-center gap-2 rounded-lg border border-dashed p-3 transition-colors",
+            isDragging && "border-primary bg-primary/10",
+            disabled && "cursor-not-allowed opacity-60"
+          )}
+          onDragEnter={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!disabled && onFileDrop) setDragTarget(dropdownKey);
+          }}
+          onDragOver={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          onDragLeave={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setDragTarget(null);
+          }}
+          onDrop={(e) => {
+            const file = getDroppedFile(e, accept, disabled || !onFileDrop);
+            if (file) void onFileDrop?.(file);
+          }}
+        >
           <Button
             type="button"
             variant="outline"
@@ -450,6 +598,11 @@ export function JobUpdateForm({ jobId, quotationNo, clientName, productTypeDispl
             className="hidden"
             disabled={disabled}
           />
+          {isDragging && (
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-background/80 text-sm font-medium text-primary">
+              ปล่อยเพื่ออัปโหลด
+            </div>
+          )}
         </div>
 
         {/* Latest Upload - Always Visible */}
@@ -584,6 +737,7 @@ export function JobUpdateForm({ jobId, quotationNo, clientName, productTypeDispl
               inputId="layout-file"
               accept="image/*"
               onChange={handleLayoutImageChange}
+              onFileDrop={handleLayoutImageFile}
               logs={layoutLogs}
               dropdownKey="layout"
             />
@@ -595,6 +749,8 @@ export function JobUpdateForm({ jobId, quotationNo, clientName, productTypeDispl
               src={layoutPreview}
               alt="Layout Preview"
               placeholder="ตัวอย่างรูปวางแบบ"
+              onFileDrop={handleLayoutImageFile}
+              dropKey="layout-preview"
             />
           </div>
         </div>
@@ -649,6 +805,7 @@ export function JobUpdateForm({ jobId, quotationNo, clientName, productTypeDispl
               inputId="artwork-file"
               accept="image/*"
               onChange={handleArtworkUpload}
+              onFileDrop={handleArtworkFile}
               logs={artworkLogs}
               dropdownKey="artwork"
               disabled={artworkStatus === 'pending_review' && currentRole === 'graphic'}
@@ -719,6 +876,9 @@ export function JobUpdateForm({ jobId, quotationNo, clientName, productTypeDispl
               src={artworkPreview}
               alt="Artwork Preview"
               placeholder="ตัวอย่างรูป Artwork"
+              onFileDrop={handleArtworkFile}
+              dropKey="artwork-preview"
+              disabled={artworkStatus === 'pending_review' && currentRole === 'graphic'}
             />
           </div>
         </div>
@@ -841,6 +1001,7 @@ export function JobUpdateForm({ jobId, quotationNo, clientName, productTypeDispl
               inputId="ai-file"
               accept=".ai,.eps,.pdf,image/*"
               onChange={handleAiFileChange}
+              onFileDrop={handleAiFile}
               logs={aiFileLogs}
               dropdownKey="aiFile"
             />

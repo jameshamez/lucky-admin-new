@@ -146,8 +146,11 @@ if ($order_id) {
     if ($pay_stmt) {
         $pay_stmt->bind_param("i", $order_id);
         $pay_stmt->execute();
-        while ($row = $pay_stmt->get_result()->fetch_assoc()) {
-            $payments[] = $row;
+        $pay_result = $pay_stmt->get_result();
+        if ($pay_result) {
+            while ($row = $pay_result->fetch_assoc()) {
+                $payments[] = $row;
+            }
         }
         $pay_stmt->close();
     }

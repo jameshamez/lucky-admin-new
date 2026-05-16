@@ -57,6 +57,9 @@ interface JobTracking {
   job_id: string;
   client_name: string;
   job_type: string;
+  job_type_raw?: string;
+  product_type_display?: string;
+  product_type_raw?: string;
   assignee: string;
   assigned_at: string;
   due_date: string;
@@ -73,6 +76,138 @@ interface JobTracking {
   internal_notes?: string;
   specs?: string;
 }
+
+const PRODUCT_CATEGORY_LABELS: Record<string, string> = {
+  readymade: "สินค้าสำเร็จรูป",
+  catalog: "สินค้าสำเร็จรูป",
+  custom: "สินค้าสั่งผลิต",
+  estimate: "สินค้าสั่งผลิต",
+  "made-to-order": "สินค้าสั่งผลิต",
+  textile: "สินค้าสั่งผลิต",
+  items: "สินค้าสั่งผลิต",
+  lanyard: "สินค้าสั่งผลิต",
+  premium: "สินค้าสั่งผลิต",
+};
+
+const DESIGN_JOB_TYPE_LABELS = [
+  "สินค้าสำเร็จรูป",
+  "สินค้าสั่งผลิต",
+  "เหรียญสำเร็จรูป",
+  "เหรียญสั่งผลิต",
+  "ถ้วยรางวัล",
+  "โล่",
+  "ป้ายจารึก",
+  "สายคล้อง",
+  "เข็มกลัด",
+  "คริสตัล",
+  "อะคริลิค",
+  "เสื้อ",
+  "บิบ",
+];
+
+const DESIGN_JOB_TYPE_KEYWORDS: Array<[string, string]> = [
+  ["ready", "สินค้าสำเร็จรูป"],
+  ["สำเร็จ", "สินค้าสำเร็จรูป"],
+  ["medal", "เหรียญสั่งผลิต"],
+  ["เหรียญ", "เหรียญสั่งผลิต"],
+  ["trophy", "ถ้วยรางวัล"],
+  ["ถ้วย", "ถ้วยรางวัล"],
+  ["plaque", "โล่"],
+  ["award", "โล่"],
+  ["โล่", "โล่"],
+  ["ป้าย", "ป้ายจารึก"],
+  ["lanyard", "สายคล้อง"],
+  ["สายคล้อง", "สายคล้อง"],
+  ["pin", "เข็มกลัด"],
+  ["เข็มกลัด", "เข็มกลัด"],
+  ["crystal", "คริสตัล"],
+  ["คริสตัล", "คริสตัล"],
+  ["acrylic", "อะคริลิค"],
+  ["อะคริลิค", "อะคริลิค"],
+  ["shirt", "เสื้อ"],
+  ["เสื้อ", "เสื้อ"],
+  ["bib", "บิบ"],
+  ["บิบ", "บิบ"],
+];
+
+const cleanDisplayValue = (value?: string | number | null) => {
+  const text = String(value ?? "").trim();
+  const key = text.toLowerCase();
+  return ["", "0", "-", "null", "undefined", "n/a", "internal"].includes(key)
+    ? ""
+    : text;
+};
+
+const isAcceptedFile = (file: File, accept: string) => {
+  if (!accept.trim()) return true;
+
+  return accept.split(",").some((rule) => {
+    const normalizedRule = rule.trim().toLowerCase();
+    if (!normalizedRule) return false;
+    if (normalizedRule.endsWith("/*")) {
+      return file.type
+        .toLowerCase()
+        .startsWith(normalizedRule.replace("/*", "/"));
+    }
+    if (normalizedRule.startsWith(".")) {
+      return file.name.toLowerCase().endsWith(normalizedRule);
+    }
+    return file.type.toLowerCase() === normalizedRule;
+  });
+};
+
+const normalizeProductCategoryDisplay = (value?: string | number | null) => {
+  const text = cleanDisplayValue(value);
+  const key = text.toLowerCase();
+  if (["สินค้าสำเร็จรูป", "สินค้าสั่งผลิต"].includes(text)) return text;
+  if (PRODUCT_CATEGORY_LABELS[key]) return PRODUCT_CATEGORY_LABELS[key];
+  if (key.includes("สำเร็จ")) return "สินค้าสำเร็จรูป";
+  if (key.includes("สั่งผลิต") || key.includes("custom")) return "สินค้าสั่งผลิต";
+  return "";
+};
+
+const normalizeJobTypeDisplay = (value?: string | number | null) => {
+  const text = cleanDisplayValue(value);
+  if (!text || /^\d+$/.test(text)) return "";
+
+  if (DESIGN_JOB_TYPE_LABELS.includes(text)) return text;
+
+  const key = text.toLowerCase();
+  if (PRODUCT_CATEGORY_LABELS[key]) return PRODUCT_CATEGORY_LABELS[key];
+
+  const matched = DESIGN_JOB_TYPE_KEYWORDS.find(([keyword]) =>
+    key.includes(keyword.toLowerCase())
+  );
+  return matched?.[1] || "";
+};
+
+const getJobTypeDisplay = (job: any) => {
+  const categoryCandidates = [
+    job.product_category,
+    job.sales_product_category,
+    job.order_product_category,
+  ];
+  for (const candidate of categoryCandidates) {
+    const display = normalizeProductCategoryDisplay(candidate);
+    if (display) return display;
+  }
+
+  const typeCandidates = [
+    job.product_type_display,
+    job.product_type_label,
+    job.product_type_raw,
+    job.product_type,
+    job.order_product_type,
+    job.job_type,
+  ];
+
+  for (const candidate of typeCandidates) {
+    const display = normalizeJobTypeDisplay(candidate);
+    if (display) return display;
+  }
+
+  return "ไม่ระบุประเภทงาน";
+};
 
 const workflowSteps = [
   { key: "รับงานแล้ว", label: "รับงาน" },
@@ -131,6 +266,7 @@ export default function JobTracking() {
 
   const [jobs, setJobs] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [dragTarget, setDragTarget] = useState<string | null>(null);
 
   // Sales API base (align with other pages)
   const API_BASE = "https://nacres.co.th/api-lucky/admin";
@@ -152,6 +288,71 @@ export default function JobTracking() {
       [jobId]: { artworkStatus: "draft", ...(prev[jobId] || {}), ...patch },
     }));
   };
+
+  const getDropTargetKey = (
+    job: JobTracking,
+    field: keyof DesignWorkflowData
+  ) => `${job.job_id}-${String(field)}`;
+
+  const getDroppedFile = (
+    e: React.DragEvent<HTMLElement>,
+    accept: string
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragTarget(null);
+
+    const droppedFiles = Array.from(e.dataTransfer.files || []);
+    const file = droppedFiles.find((item) => isAcceptedFile(item, accept));
+    if (!file && droppedFiles.length > 0) {
+      toast.error("ชนิดไฟล์ไม่รองรับ");
+    }
+    return file || null;
+  };
+
+  const uploadDroppedFileForJob = (
+    e: React.DragEvent<HTMLElement>,
+    job: JobTracking,
+    field: keyof DesignWorkflowData,
+    accept: string
+  ) => {
+    const file = getDroppedFile(e, accept);
+    if (file) void uploadFileForJob(job, field, file);
+  };
+
+  const getDropZoneClassName = (
+    job: JobTracking,
+    field: keyof DesignWorkflowData,
+    baseClassName: string
+  ) =>
+    `${baseClassName} ${
+      dragTarget === getDropTargetKey(job, field)
+        ? "border-primary bg-primary/10 ring-2 ring-primary/30"
+        : ""
+    }`;
+
+  const getDropZoneHandlers = (
+    job: JobTracking,
+    field: keyof DesignWorkflowData,
+    accept: string
+  ) => ({
+    onDragEnter: (e: React.DragEvent<HTMLElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setDragTarget(getDropTargetKey(job, field));
+    },
+    onDragOver: (e: React.DragEvent<HTMLElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+    },
+    onDragLeave: (e: React.DragEvent<HTMLElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setDragTarget(null);
+    },
+    onDrop: (e: React.DragEvent<HTMLElement>) =>
+      uploadDroppedFileForJob(e, job, field, accept),
+  });
 
   // Load design workflow from Sales price_estimations for this job
   const loadFromSales = async (job: JobTracking) => {
@@ -268,20 +469,51 @@ export default function JobTracking() {
         setLoading(true);
         const res = await designJobService.getJobs();
         if (res.status === "success") {
-          const mapped = res.data.map((j: any) => ({
-            ...j,
-            job_id: j.job_code,
-            assignee: j.designer,
-            has_artwork: !!j.artwork_image || !!j.ai_file,
-            designWorkflow: {
-              googleDriveLink: j.google_drive_link,
-              layoutImage: j.layout_image,
-              artworkImage: j.artwork_image,
-              artworkStatus: j.artwork_status,
-              productionArtwork: j.production_artwork,
-              aiFile: j.ai_file,
-            },
-          }));
+          const ordersByJobId = new Map<string, any>();
+          try {
+            const orderRes = await fetch(`${API_BASE}/orders.php?limit=100`);
+            const orderJson = await orderRes.json();
+            if (orderJson?.status === "success" && Array.isArray(orderJson.data)) {
+              orderJson.data.forEach((order: any) => {
+                const key = String(order.job_id || order.order_id || "").trim();
+                if (key) ordersByJobId.set(key, order);
+              });
+            }
+          } catch (orderError) {
+            console.warn("Unable to load order category fallback", orderError);
+          }
+
+          const mapped = res.data.map((j: any) => {
+            const jobId = j.job_id || j.job_code;
+            const linkedOrder = ordersByJobId.get(String(jobId || "").trim()) || {};
+            const jobTypeDisplay = getJobTypeDisplay({
+              ...j,
+              product_category: linkedOrder.product_category ?? j.product_category,
+              product_type: linkedOrder.product_type ?? j.product_type,
+              order_product_category:
+                linkedOrder.product_category ?? j.order_product_category,
+              order_product_type: linkedOrder.product_type ?? j.order_product_type,
+            });
+
+            return {
+              ...j,
+              job_id: jobId,
+              job_type: jobTypeDisplay,
+              job_type_raw: j.job_type,
+              product_type_display: jobTypeDisplay,
+              product_type_raw: j.product_type_raw || j.product_type || j.job_type,
+              assignee: j.designer,
+              has_artwork: !!j.artwork_image || !!j.ai_file,
+              designWorkflow: {
+                googleDriveLink: j.google_drive_link,
+                layoutImage: j.layout_image,
+                artworkImage: j.artwork_image,
+                artworkStatus: j.artwork_status,
+                productionArtwork: j.production_artwork,
+                aiFile: j.ai_file,
+              },
+            };
+          });
           setJobs(mapped);
         }
       } catch (error) {
@@ -661,7 +893,14 @@ export default function JobTracking() {
               </div>
               <div className="space-y-2">
                 <span className="text-xs text-muted-foreground">รูปวางแบบ</span>
-                <div className="w-full h-32 border rounded-lg overflow-hidden bg-muted/30 flex items-center justify-center">
+                <div
+                  className={getDropZoneClassName(
+                    job,
+                    "layoutImage",
+                    "relative w-full h-32 border rounded-lg overflow-hidden bg-muted/30 flex items-center justify-center transition-colors"
+                  )}
+                  {...getDropZoneHandlers(job, "layoutImage", "image/*")}
+                >
                   {getDesignEdit(job).layoutImage ? (
                     <img
                       src={getDesignEdit(job).layoutImage!}
@@ -672,6 +911,11 @@ export default function JobTracking() {
                     <div className="flex flex-col items-center text-muted-foreground">
                       <ImageIcon className="h-8 w-8 mb-1" />
                       <span className="text-xs">ตัวอย่างรูปวางแบบ</span>
+                    </div>
+                  )}
+                  {dragTarget === getDropTargetKey(job, "layoutImage") && (
+                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background/80 text-sm font-medium text-primary">
+                      ปล่อยเพื่ออัปโหลด
                     </div>
                   )}
                 </div>
@@ -736,7 +980,14 @@ export default function JobTracking() {
                 <span className="text-xs text-muted-foreground">
                   รูป Artwork
                 </span>
-                <div className="w-full h-32 border rounded-lg overflow-hidden bg-muted/30 flex items-center justify-center">
+                <div
+                  className={getDropZoneClassName(
+                    job,
+                    "artworkImage",
+                    "relative w-full h-32 border rounded-lg overflow-hidden bg-muted/30 flex items-center justify-center transition-colors"
+                  )}
+                  {...getDropZoneHandlers(job, "artworkImage", "image/*")}
+                >
                   {getDesignEdit(job).artworkImage ? (
                     <img
                       src={getDesignEdit(job).artworkImage!}
@@ -747,6 +998,11 @@ export default function JobTracking() {
                     <div className="flex flex-col items-center text-muted-foreground">
                       <ImageIcon className="h-8 w-8 mb-1" />
                       <span className="text-xs">ตัวอย่างรูป Artwork</span>
+                    </div>
+                  )}
+                  {dragTarget === getDropTargetKey(job, "artworkImage") && (
+                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background/80 text-sm font-medium text-primary">
+                      ปล่อยเพื่ออัปโหลด
                     </div>
                   )}
                 </div>
@@ -823,7 +1079,14 @@ export default function JobTracking() {
                   <span className="text-xs text-muted-foreground">
                     แนบ Artwork
                   </span>
-                  <div className="w-full h-24 border rounded-lg overflow-hidden bg-muted/30 flex items-center justify-center">
+                  <div
+                    className={getDropZoneClassName(
+                      job,
+                      "productionArtwork",
+                      "relative w-full h-24 border rounded-lg overflow-hidden bg-muted/30 flex items-center justify-center transition-colors"
+                    )}
+                    {...getDropZoneHandlers(job, "productionArtwork", "image/*")}
+                  >
                     {getDesignEdit(job).productionArtwork ? (
                       <img
                         src={getDesignEdit(job).productionArtwork!}
@@ -834,6 +1097,11 @@ export default function JobTracking() {
                       <div className="flex flex-col items-center text-muted-foreground">
                         <ImageIcon className="h-6 w-6 mb-1" />
                         <span className="text-[10px]">รอไฟล์</span>
+                      </div>
+                    )}
+                    {dragTarget === getDropTargetKey(job, "productionArtwork") && (
+                      <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background/80 text-sm font-medium text-primary">
+                        ปล่อยเพื่ออัปโหลด
                       </div>
                     )}
                   </div>
@@ -891,7 +1159,18 @@ export default function JobTracking() {
                   <span className="text-xs text-muted-foreground">
                     แนบไฟล์ AI
                   </span>
-                  <div className="w-full h-24 border rounded-lg overflow-hidden bg-muted/30 flex items-center justify-center">
+                  <div
+                    className={getDropZoneClassName(
+                      job,
+                      "aiFile",
+                      "relative w-full h-24 border rounded-lg overflow-hidden bg-muted/30 flex items-center justify-center transition-colors"
+                    )}
+                    {...getDropZoneHandlers(
+                      job,
+                      "aiFile",
+                      ".ai,.eps,.pdf,.psd,.svg,image/*"
+                    )}
+                  >
                     {getDesignEdit(job).aiFile ? (
                       <div className="flex flex-col items-center text-foreground">
                         <FileText className="h-6 w-6 mb-1 text-primary" />
@@ -903,6 +1182,11 @@ export default function JobTracking() {
                       <div className="flex flex-col items-center text-muted-foreground">
                         <FileText className="h-6 w-6 mb-1" />
                         <span className="text-[10px]">ตัวอย่างไฟล์ AI</span>
+                      </div>
+                    )}
+                    {dragTarget === getDropTargetKey(job, "aiFile") && (
+                      <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background/80 text-sm font-medium text-primary">
+                        ปล่อยเพื่ออัปโหลด
                       </div>
                     )}
                   </div>

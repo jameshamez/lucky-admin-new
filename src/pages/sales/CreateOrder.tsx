@@ -19,6 +19,95 @@ import CreateOrderForm from "@/components/sales/CreateOrderForm";
 
 const API_BASE = "https://nacres.co.th/api-lucky/admin";
 
+const PRODUCT_CATEGORY_LABELS: Record<string, string> = {
+  readymade: "สินค้าสำเร็จรูป",
+  catalog: "สินค้าสำเร็จรูป",
+  custom: "สินค้าสั่งผลิต",
+  estimate: "สินค้าสั่งผลิต",
+  "made-to-order": "สินค้าสั่งผลิต",
+  textile: "สินค้าสั่งผลิต",
+  items: "สินค้าสั่งผลิต",
+  lanyard: "สินค้าสั่งผลิต",
+  premium: "สินค้าสั่งผลิต",
+};
+
+const cleanDisplayValue = (value?: string | number | null) => {
+  const text = String(value ?? "").trim();
+  const key = text.toLowerCase();
+  return ["", "0", "-", "null", "undefined", "n/a"].includes(key) ? "" : text;
+};
+
+const formatDateForApi = (value?: Date | string | null) => {
+  if (!value) return null;
+  if (value instanceof Date) return format(value, "yyyy-MM-dd");
+
+  const text = String(value).trim();
+  if (!text) return null;
+  if (text.includes("T")) return text.split("T")[0];
+  if (text.includes(" ")) return text.split(" ")[0];
+  return text;
+};
+
+const normalizeProductCategory = (
+  category?: string | number | null,
+  options: {
+    productType?: string | number | null;
+    firstItemType?: string | number | null;
+    hasReadymadeItem?: boolean;
+    hasCustomItem?: boolean;
+    hasEstimateItem?: boolean;
+  } = {}
+) => {
+  const value = cleanDisplayValue(category);
+  const key = value.toLowerCase();
+  if (PRODUCT_CATEGORY_LABELS[key]) return PRODUCT_CATEGORY_LABELS[key];
+  if (["สินค้าสำเร็จรูป", "สินค้าสั่งผลิต"].includes(value)) return value;
+
+  const itemType = cleanDisplayValue(options.firstItemType).toLowerCase();
+  if (options.hasReadymadeItem || ["readymade", "catalog"].includes(itemType)) return "สินค้าสำเร็จรูป";
+  if (options.hasEstimateItem || options.hasCustomItem || ["estimate", "custom", "made-to-order"].includes(itemType)) return "สินค้าสั่งผลิต";
+
+  const productType = cleanDisplayValue(options.productType);
+  if (productType) return productType;
+  return value || "ไม่ระบุ";
+};
+
+const normalizePaymentStatus = (status?: string | null) => {
+  const value = (status || "").trim();
+  const key = value.toLowerCase();
+  if (["ชำระแล้ว", "ชำระครบ", "ชำระครบแล้ว", "เต็มจำนวน", "paid", "paid_full", "full_paid"].includes(key)) return "ชำระเงินแล้ว";
+  if (["บางส่วน", "มัดจำ", "ชำระมัดจำ", "partial", "partially_paid", "deposit"].includes(key)) return "ชำระบางส่วน";
+  if (["รอชำระ", "ค้างชำระ", "pending", "unpaid"].includes(key)) return "รอชำระเงิน";
+  if (["credit", "credit_term"].includes(key)) return "เครดิต";
+  return value || "รอชำระเงิน";
+};
+
+const derivePaymentStatus = ({
+  paymentStatus,
+  paidAmount,
+  totalPrice,
+  paymentsTotal = 0,
+  hasFullPayment = false,
+  hasCreditPayment = false,
+}: {
+  paymentStatus?: string | null;
+  paidAmount: number;
+  totalPrice: number;
+  paymentsTotal?: number;
+  hasFullPayment?: boolean;
+  hasCreditPayment?: boolean;
+}) => {
+  const normalizedStatus = normalizePaymentStatus(paymentStatus);
+  const effectivePaid = Math.max(Number(paidAmount) || 0, Number(paymentsTotal) || 0);
+  const effectiveTotal = Number(totalPrice) || 0;
+
+  if (hasCreditPayment || normalizedStatus === "เครดิต") return "เครดิต";
+  if (hasFullPayment || normalizedStatus === "ชำระเงินแล้ว") return "ชำระเงินแล้ว";
+  if (effectivePaid > 0 && effectiveTotal > 0 && effectivePaid >= effectiveTotal) return "ชำระเงินแล้ว";
+  if (effectivePaid > 0) return "ชำระบางส่วน";
+  return normalizedStatus;
+};
+
 export default function CreateOrder() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -100,39 +189,61 @@ export default function CreateOrder() {
       const json = await res.json();
       if (json.status === "success") {
         // Map snake_case DB fields → camelCase used in the UI
-        const mapped = json.data.map((o: any) => ({
-          id: o.id,
-          jobId: o.job_id,
-          orderDate: o.order_date,
-          customerName: o.customer_name,
-          lineName: o.customer_line,
-          customerPhone: o.customer_phone,
-          customerEmail: o.customer_email,
-          customerAddress: o.customer_address,
-          product: o.job_name,
-          productCategory: o.product_category,
-          productType: o.product_type,
-          salesChannel: o.sales_channel,
-          deliveryDate: o.delivery_date,
-          deliveryMethod: o.delivery_method,
-          deliveryCost: parseFloat(o.delivery_cost ?? 0),
-          paymentMethod: o.payment_method,
-          paymentStatus: o.payment_status,
-          orderStatus: o.order_status,
-          jobCreated: Boolean(o.job_created),
-          departments: o.departments ?? [],
-          totalPrice: parseFloat(o.total_price ?? o.total_amount ?? 0),
-          subtotal: parseFloat(o.subtotal ?? 0),
-          vatAmount: parseFloat(o.vat_amount ?? 0),
-          totalWithVat: parseFloat(o.total_price ?? o.total_amount ?? 0),
-          paidAmount: parseFloat(o.paid_amount ?? 0),
-          taxInvoice: Boolean(o.require_tax_invoice),
-          taxCompanyName: o.tax_payer_name,
-          taxId: o.tax_id,
-          invoiceType: o.invoice_type || (Boolean(o.require_tax_invoice) ? "tax-invoice" : "no-tax-invoice"),
-          responsiblePerson: o.responsible_person,
-          savedProducts: [],
-        }));
+        const mapped = json.data.map((o: any) => {
+          const totalPrice = parseFloat(o.total_price ?? o.total_amount ?? 0) || 0;
+          const paymentsTotal = parseFloat(o.payments_total ?? 0) || 0;
+          const paidAmount = Math.max(parseFloat(o.paid_amount ?? 0) || 0, paymentsTotal);
+          const productType = cleanDisplayValue(o.product_type) || cleanDisplayValue(o.first_product_name);
+          const productCategory = normalizeProductCategory(o.product_category, {
+            productType,
+            firstItemType: o.first_item_type,
+            hasReadymadeItem: Boolean(Number(o.has_readymade_item ?? 0)),
+            hasCustomItem: Boolean(Number(o.has_custom_item ?? 0)),
+            hasEstimateItem: Boolean(Number(o.has_estimate_item ?? 0)),
+          });
+
+          return {
+            id: o.order_id ?? o.id,
+            jobId: o.job_id,
+            orderDate: o.order_date,
+            customerName: o.customer_name,
+            lineName: o.customer_line,
+            customerPhone: o.customer_phone,
+            customerEmail: o.customer_email,
+            customerAddress: o.customer_address,
+            product: o.job_name,
+            productCategory,
+            productType,
+            salesChannel: o.sales_channel,
+            deliveryDate: o.delivery_date,
+            deliveryMethod: o.delivery_method,
+            deliveryCost: parseFloat(o.delivery_cost ?? 0),
+            paymentMethod: o.payment_method,
+            paymentStatus: derivePaymentStatus({
+              paymentStatus: o.payment_status,
+              paidAmount,
+              totalPrice,
+              paymentsTotal,
+              hasFullPayment: Boolean(Number(o.has_full_payment ?? 0)),
+              hasCreditPayment: Boolean(Number(o.has_credit_payment ?? 0)),
+            }),
+            orderStatus: o.order_status,
+            jobCreated: Boolean(o.job_created),
+            departments: o.departments ?? [],
+            totalPrice,
+            totalAmount: totalPrice,
+            subtotal: parseFloat(o.subtotal ?? 0),
+            vatAmount: parseFloat(o.vat_amount ?? 0),
+            totalWithVat: totalPrice,
+            paidAmount,
+            taxInvoice: Boolean(o.require_tax_invoice),
+            taxCompanyName: o.tax_payer_name,
+            taxId: o.tax_id,
+            invoiceType: o.invoice_type || (Boolean(o.require_tax_invoice) ? "tax-invoice" : "no-tax-invoice"),
+            responsiblePerson: o.responsible_person,
+            savedProducts: [],
+          };
+        });
         setOrders(mapped);
         if (json.summary) {
           setSummary(json.summary);
@@ -272,17 +383,19 @@ export default function CreateOrder() {
   };
 
   const getPaymentStatusBadge = (status: string) => {
-    switch (status) {
+    const normalizedStatus = normalizePaymentStatus(status);
+
+    switch (normalizedStatus) {
       case "ชำระเงินแล้ว":
-        return <Badge className="bg-green-100 text-green-800 border-green-200 hover:bg-green-100">{status}</Badge>;
+        return <Badge className="bg-green-100 text-green-800 border-green-200 hover:bg-green-100">{normalizedStatus}</Badge>;
       case "ชำระบางส่วน":
-        return <Badge className="bg-orange-100 text-orange-800 border-orange-200 hover:bg-orange-100">{status}</Badge>;
+        return <Badge className="bg-orange-100 text-orange-800 border-orange-200 hover:bg-orange-100">{normalizedStatus}</Badge>;
       case "รอชำระเงิน":
-        return <Badge className="bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-100">{status}</Badge>;
+        return <Badge className="bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-100">{normalizedStatus}</Badge>;
       case "เครดิต":
-        return <Badge className="bg-sky-100 text-sky-800 border-sky-200 hover:bg-sky-100">{status}</Badge>;
+        return <Badge className="bg-sky-100 text-sky-800 border-sky-200 hover:bg-sky-100">{normalizedStatus}</Badge>;
       default:
-        return <Badge variant="outline">{status}</Badge>;
+        return <Badge variant="outline">{normalizedStatus}</Badge>;
     }
   };
 
@@ -359,6 +472,51 @@ export default function CreateOrder() {
 
       // Map camelCase form fields → snake_case API payload
       const deliveryInfo = data.deliveryInfo ?? {};
+      const paymentRecords = (data.paymentItems ?? data.payments ?? []).map((p: any) => ({
+        type: p.type ?? "deposit",
+        typeLabel: p.typeLabel ?? p.type ?? null,
+        amount: parseFloat(p.amount ?? 0) || 0,
+        transferDate: formatDateForApi(p.transferDate),
+        slipUrl: p.slipUrl ?? null,
+        receivingBank: p.receivingBank ?? null,
+        additionalDetails: p.additionalDetails ?? null,
+      }));
+      const totalPrice = parseFloat(data.totalPrice ?? data.totalAmount ?? 0) || 0;
+      const paidAmountFromRecords = paymentRecords.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+      const paidAmountInput = parseFloat(data.paidAmount ?? 0) || 0;
+      const paidAmount = Math.max(paidAmountInput, paidAmountFromRecords);
+      const calculatedPaymentStatus = derivePaymentStatus({
+        paymentStatus: data.paymentStatus,
+        paidAmount,
+        totalPrice,
+        paymentsTotal: paidAmountFromRecords,
+        hasFullPayment: paymentRecords.some((p) => p.type === "full"),
+        hasCreditPayment: paymentRecords.some((p) => p.type === "credit_term" || p.type === "credit"),
+      });
+      const orderItems = (data.savedProducts ?? data.items ?? []).map((item: any) => ({
+        product_id: item.product_id ?? null,
+        item_type: item.itemType ?? item.item_type ?? "custom",
+        product_name: item.productType ?? item.product_name ?? item.label ?? "",
+        product_code: item.product_code ?? null,
+        material: item.material ?? null,
+        size: item.size ?? null,
+        color: item.color ?? null,
+        quantity: parseInt(item.quantity ?? 1),
+        unit_price: parseFloat(item.unitPrice ?? item.unit_price ?? item.price ?? 0),
+        total_price: parseFloat(item.totalPrice ?? item.total_price ??
+          ((item.quantity ?? 1) * (item.unitPrice ?? item.price ?? 0))),
+        details: item.details ?? null,
+      }));
+      const firstOrderItem = orderItems[0];
+      const productType = cleanDisplayValue(data.productType) || cleanDisplayValue(firstOrderItem?.product_name);
+      const productCategory = normalizeProductCategory(data.productCategory, {
+        productType,
+        firstItemType: firstOrderItem?.item_type,
+        hasReadymadeItem: orderItems.some((item) => ["readymade", "catalog"].includes(String(item.item_type).toLowerCase())),
+        hasCustomItem: orderItems.some((item) => ["custom", "made-to-order"].includes(String(item.item_type).toLowerCase())),
+        hasEstimateItem: orderItems.some((item) => String(item.item_type).toLowerCase() === "estimate"),
+      });
+
       const payload: Record<string, any> = {
         // ข้อมูลพนักงาน
         responsible_person: data.responsiblePerson ?? "",
@@ -384,25 +542,13 @@ export default function CreateOrder() {
         job_name: data.jobName ?? "",
         event_location: data.eventLocation ?? null,
         sales_channel: data.salesChannel ?? null,
-        order_date: data.orderDate
-          ? (data.orderDate instanceof Date
-            ? data.orderDate.toISOString().split("T")[0]
-            : data.orderDate)
-          : new Date().toISOString().split("T")[0],
-        usage_date: data.usageDate
-          ? (data.usageDate instanceof Date
-            ? data.usageDate.toISOString().split("T")[0]
-            : data.usageDate)
-          : null,
-        delivery_date: data.deliveryDate
-          ? (data.deliveryDate instanceof Date
-            ? data.deliveryDate.toISOString().split("T")[0]
-            : data.deliveryDate)
-          : null,
+        order_date: formatDateForApi(data.orderDate) ?? formatDateForApi(new Date()),
+        usage_date: formatDateForApi(data.usageDate),
+        delivery_date: formatDateForApi(data.deliveryDate),
 
         // สินค้า
-        product_category: data.productCategory ?? "",
-        product_type: data.productType ?? "",
+        product_category: productCategory,
+        product_type: productType,
         material: data.material ?? null,
         budget: data.budget ? parseFloat(data.budget) : null,
 
@@ -410,12 +556,12 @@ export default function CreateOrder() {
         subtotal: parseFloat(data.subtotal ?? 0),
         delivery_cost: parseFloat(deliveryInfo.shippingCost ?? data.deliveryCost ?? 0),
         vat_amount: parseFloat(data.vatAmount ?? 0),
-        total_price: parseFloat(data.totalPrice ?? data.totalAmount ?? 0),
+        total_price: totalPrice,
 
         // ชำระเงิน
         payment_method: deliveryInfo.paymentMethod ?? data.paymentMethod ?? "",
-        payment_status: data.paymentStatus ?? "รอชำระเงิน",
-        paid_amount: parseFloat(data.paidAmount ?? 0),
+        payment_status: calculatedPaymentStatus,
+        paid_amount: paidAmount,
 
         // จัดส่ง
         delivery_type: data.deliveryType ?? "parcel",
@@ -430,11 +576,7 @@ export default function CreateOrder() {
           deliveryInfo.province,
           deliveryInfo.postalCode,
         ].filter(Boolean).join(" ") || null,
-        preferred_delivery_date: deliveryInfo.preferredDeliveryDate
-          ? (deliveryInfo.preferredDeliveryDate instanceof Date
-            ? deliveryInfo.preferredDeliveryDate.toISOString().split("T")[0]
-            : deliveryInfo.preferredDeliveryDate)
-          : null,
+        preferred_delivery_date: formatDateForApi(deliveryInfo.preferredDeliveryDate),
         origin_branch: deliveryInfo.originBranch ?? null,
         destination_branch: deliveryInfo.destinationBranch ?? null,
         preferred_time_slot: deliveryInfo.preferredTimeSlot ?? null,
@@ -452,35 +594,10 @@ export default function CreateOrder() {
         quotation_url: data.quotationUrl ?? null,
 
         // รายการสินค้า (order_items)
-        items: (data.savedProducts ?? data.items ?? []).map((item: any) => ({
-          product_id: item.product_id ?? null,
-          item_type: item.itemType ?? item.item_type ?? "custom",
-          product_name: item.productType ?? item.product_name ?? item.label ?? "",
-          product_code: item.product_code ?? null,
-          material: item.material ?? null,
-          size: item.size ?? null,
-          color: item.color ?? null,
-          quantity: parseInt(item.quantity ?? 1),
-          unit_price: parseFloat(item.unitPrice ?? item.unit_price ?? item.price ?? 0),
-          total_price: parseFloat(item.totalPrice ?? item.total_price ??
-            ((item.quantity ?? 1) * (item.unitPrice ?? item.price ?? 0))),
-          details: item.details ?? null,
-        })),
+        items: orderItems,
 
         // ประวัติชำระเงิน (order_payments)
-        payments: (data.paymentItems ?? data.payments ?? []).map((p: any) => ({
-          type: p.type ?? "deposit",
-          typeLabel: p.typeLabel ?? p.type ?? null,
-          amount: parseFloat(p.amount ?? 0),
-          transferDate: p.transferDate
-            ? (p.transferDate instanceof Date
-              ? p.transferDate.toISOString().split("T")[0]
-              : p.transferDate)
-            : null,
-          slipUrl: p.slipUrl ?? null,
-          receivingBank: p.receivingBank ?? null,
-          additionalDetails: p.additionalDetails ?? null,
-        })),
+        payments: paymentRecords,
       };
 
       const res = await fetch(url, {
@@ -767,8 +884,8 @@ export default function CreateOrder() {
           <CardContent>
             <div className="grid grid-cols-2 gap-4">
               <div><p className="text-sm text-muted-foreground">JOB ID</p><p className="font-medium text-primary">{selectedOrder.jobId}</p></div>
-              <div><p className="text-sm text-muted-foreground">วันที่สั่งซื้อ</p><p className="font-medium">{selectedOrder.orderDate}</p></div>
-              <div><p className="text-sm text-muted-foreground">วันจัดส่ง</p><p className="font-medium">{selectedOrder.deliveryDate}</p></div>
+              <div><p className="text-sm text-muted-foreground">วันที่สั่งซื้อ</p><p className="font-medium">{formatDateDisplay(selectedOrder.orderDate)}</p></div>
+              <div><p className="text-sm text-muted-foreground">วันจัดส่ง</p><p className="font-medium">{formatDateDisplay(selectedOrder.deliveryDate)}</p></div>
               <div><p className="text-sm text-muted-foreground">ช่องทางการขาย</p><Badge variant="outline">{selectedOrder.salesChannel}</Badge></div>
               <div><p className="text-sm text-muted-foreground">สถานะคำสั่งซื้อ</p>{getOrderStatusBadge(selectedOrder.orderStatus || "สร้างคำสั่งซื้อใหม่")}</div>
               <div><p className="text-sm text-muted-foreground">สถานะชำระเงิน</p>{getPaymentStatusBadge(selectedOrder.paymentStatus || "รอชำระเงิน")}</div>
@@ -1268,7 +1385,7 @@ export default function CreateOrder() {
                           <span className="text-muted-foreground">-</span>
                         )}
                       </TableCell>
-                      <TableCell className="whitespace-nowrap">{highlightText(order.deliveryDate, activeSearchTerm)}</TableCell>
+                      <TableCell className="whitespace-nowrap">{highlightText(formatDateDisplay(order.deliveryDate), activeSearchTerm)}</TableCell>
                       <TableCell>
                         <div className="flex flex-col gap-2">
                           <div className="flex gap-2">

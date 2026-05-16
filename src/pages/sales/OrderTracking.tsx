@@ -97,6 +97,36 @@ interface Order {
   sentDepartments?: string[];
 }
 
+const PRODUCT_CATEGORY_LABELS: Record<string, string> = {
+  readymade: "สินค้าสำเร็จรูป",
+  catalog: "สินค้าสำเร็จรูป",
+  custom: "สินค้าสั่งผลิต",
+  estimate: "สินค้าสั่งผลิต",
+  "made-to-order": "สินค้าสั่งผลิต",
+  textile: "สินค้าสั่งผลิต",
+  items: "สินค้าสั่งผลิต",
+  lanyard: "สินค้าสั่งผลิต",
+  premium: "สินค้าสั่งผลิต",
+};
+
+const cleanDisplayValue = (value?: string | number | null) => {
+  const text = String(value ?? "").trim();
+  const key = text.toLowerCase();
+  return ["", "0", "-", "null", "undefined", "n/a", "internal"].includes(key) ? "" : text;
+};
+
+const getProductCategoryDisplay = (order: any) => {
+  const category = cleanDisplayValue(order.product_category);
+  const categoryKey = category.toLowerCase();
+  if (PRODUCT_CATEGORY_LABELS[categoryKey]) return PRODUCT_CATEGORY_LABELS[categoryKey];
+  if (category) return category;
+
+  const productType = cleanDisplayValue(order.product_type);
+  if (productType) return productType;
+
+  return "ไม่ระบุประเภทสินค้า";
+};
+
 const mockOrders: Order[] = [
   {
     id: "JOB-2024-001",
@@ -419,17 +449,20 @@ export default function OrderTracking() {
             broadStatus = "shipped";
           }
 
+          const productCategoryDisplay = getProductCategoryDisplay(o);
+          const jobName = cleanDisplayValue(o.job_name);
+
           return {
             id: o.job_id || String(o.order_id),
             numericId: o.order_id,
             customer: o.customer_name || "ไม่ระบุชื่อ",
-            items: o.job_name || "ไม่ระบุสินค้า",
+            items: productCategoryDisplay,
             orderDate: (o.order_date || "").split(" ")[0],
             dueDate: o.delivery_date || "-",
             status: broadStatus,
             value: parseFloat(o.total_price ?? o.total_amount) || 0,
             progress: 0,
-            type: o.product_category || "internal",
+            type: productCategoryDisplay,
             location: o.event_location || "domestic",
             department: o.responsible_person || "-",
             lineId: o.customer_line || "-",
@@ -441,8 +474,8 @@ export default function OrderTracking() {
             orderItems: [
               {
                 id: o.order_id || Math.random(),
-                name: o.job_name || "คำสั่งซื้อ",
-                description: o.notes || "สร้างจาก Order",
+                name: productCategoryDisplay,
+                description: jobName || o.notes || "สร้างจาก Order",
                 quantity: 1,
                 currentStatus: o.order_status || "สร้างคำสั่งซื้อใหม่",
                 statusHistory: []

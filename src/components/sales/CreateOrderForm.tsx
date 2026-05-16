@@ -1213,10 +1213,6 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
     if (selectedProvinceName) {
       setThaiAmphures([]);
       setThaiTambons([]);
-      setSelectedAmphureName("");
-      form.setValue("deliveryInfo.district", "");
-      form.setValue("deliveryInfo.subdistrict", "");
-      form.setValue("deliveryInfo.postalCode", "");
       getAmphoesByProvince(selectedProvinceName).then(setThaiAmphures);
     }
   }, [selectedProvinceName]);
@@ -1225,8 +1221,6 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
   useEffect(() => {
     if (selectedProvinceName && selectedAmphureName) {
       setThaiTambons([]);
-      form.setValue("deliveryInfo.subdistrict", "");
-      form.setValue("deliveryInfo.postalCode", "");
       getDistricts(selectedProvinceName, selectedAmphureName).then(setThaiTambons);
     }
   }, [selectedAmphureName, selectedProvinceName]);
@@ -5546,7 +5540,7 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
         )}
 
         {/* Section 6: Delivery Information */}
-        {((watchedProductType && watchedMaterial) || savedProducts.length > 0) && (
+        {((watchedProductType && watchedMaterial) || savedProducts.length > 0 || selectedEstimations.length > 0) && (
           <Card>
             <CardHeader>
               <CardTitle>การจัดส่ง</CardTitle>
@@ -5770,6 +5764,10 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                                 onValueChange={(val) => {
                                   field.onChange(val);
                                   setSelectedProvinceName(val);
+                                  setSelectedAmphureName("");
+                                  form.setValue("deliveryInfo.district", "");
+                                  form.setValue("deliveryInfo.subdistrict", "");
+                                  form.setValue("deliveryInfo.postalCode", "");
                                 }}
                                 value={field.value}
                               >
@@ -5800,6 +5798,8 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                                 onValueChange={(val) => {
                                   field.onChange(val);
                                   setSelectedAmphureName(val);
+                                  form.setValue("deliveryInfo.subdistrict", "");
+                                  form.setValue("deliveryInfo.postalCode", "");
                                 }}
                                 value={field.value}
                                 disabled={!selectedProvinceName}

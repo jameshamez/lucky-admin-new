@@ -45,18 +45,73 @@ interface JobDetailDrawerProps {
   onReject?: (reason: string) => void;
 }
 
-const mockEmployees = [
-  { id: "1", name: "สมชาย ใจดี" },
-  { id: "2", name: "สมหญิง รักงาน" },
-  { id: "3", name: "วิชัย มีฝีมือ" },
-  { id: "4", name: "สุดา ออกแบบดี" },
-];
-
 const API_BASE = "https://nacres.co.th/api-lucky/admin";
 
 type ReferenceFileItem = { fileName: string; url: string };
+type DesignerOption = { id: string; name: string };
 
 const referenceImagePattern = /\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i;
+const EMPTY_DISPLAY = "ไม่มีข้อมูล";
+
+const PRODUCT_CATEGORY_LABELS: Record<string, string> = {
+  readymade: "สินค้าสำเร็จรูป",
+  catalog: "สินค้าสำเร็จรูป",
+  custom: "สินค้าสั่งผลิต",
+  estimate: "สินค้าสั่งผลิต",
+  "made-to-order": "สินค้าสั่งผลิต",
+  textile: "สินค้าสั่งผลิต",
+  items: "สินค้าสั่งผลิต",
+  lanyard: "สินค้าสั่งผลิต",
+  premium: "สินค้าสั่งผลิต",
+};
+
+const KNOWN_JOB_TYPE_LABELS = [
+  "สินค้าสำเร็จรูป",
+  "สินค้าสั่งผลิต",
+  "ป้ายจารึก",
+  "เหรียญสำเร็จรูป",
+  "เหรียญสั่งผลิต",
+  "โล่",
+  "โล่สั่งผลิต",
+  "ถ้วยรางวัล",
+  "สายคล้อง",
+  "เสื้อ",
+  "บิบ",
+  "คริสตัล",
+  "อะคริลิค",
+];
+
+const JOB_TYPE_KEYWORDS: Array<[string, string]> = [
+  ["ready", "สินค้าสำเร็จรูป"],
+  ["สำเร็จ", "สินค้าสำเร็จรูป"],
+  ["ป้าย", "ป้ายจารึก"],
+  ["plaque", "โล่"],
+  ["award", "โล่"],
+  ["shield", "โล่"],
+  ["โล่", "โล่"],
+  ["medal", "เหรียญสั่งผลิต"],
+  ["เหรียญ", "เหรียญสั่งผลิต"],
+  ["trophy", "ถ้วยรางวัล"],
+  ["ถ้วย", "ถ้วยรางวัล"],
+  ["lanyard", "สายคล้อง"],
+  ["สายคล้อง", "สายคล้อง"],
+  ["shirt", "เสื้อ"],
+  ["เสื้อ", "เสื้อ"],
+  ["bib", "บิบ"],
+  ["บิบ", "บิบ"],
+  ["crystal", "คริสตัล"],
+  ["คริสตัล", "คริสตัล"],
+  ["acrylic", "อะคริลิค"],
+  ["อะคริลิค", "อะคริลิค"],
+];
+
+const cleanDisplayValue = (value: any) => {
+  const text = String(value ?? "").trim();
+  const key = text.toLowerCase();
+  return ["", "0", "-", "null", "undefined", "n/a", "internal"].includes(key)
+    ? ""
+    : text;
+};
 
 const toReferenceFileItem = (file: any): ReferenceFileItem | null => {
   if (!file) return null;
@@ -77,30 +132,63 @@ const isReferenceImageFile = (file: ReferenceFileItem) => {
 
 const getFirstText = (...values: any[]) => {
   for (const value of values) {
-    if (typeof value === "string" && value.trim()) return value.trim();
+    const text = cleanDisplayValue(value);
+    if (text) return text;
   }
   return "";
 };
 
 const normalizeJobTypeDisplay = (value: string) => {
-  const text = value.trim();
+  const text = cleanDisplayValue(value);
   if (!text) return "";
+  if (/^\d+$/.test(text)) return "";
+
+  if (KNOWN_JOB_TYPE_LABELS.includes(text)) return text;
 
   const lower = text.toLowerCase();
   const includes = (needle: string) => lower.includes(needle.toLowerCase());
 
-  if (includes("ป้ายจารึก")) return "ป้ายจารึก";
-  if ((includes("ready") || includes("สำเร็จ")) && (includes("medal") || includes("เหรียญ"))) return "เหรียญสำเร็จรูป";
-  if (includes("plaque") || includes("award") || includes("shield") || includes("โล่")) return "โล่";
-  if (includes("medal") || includes("เหรียญ")) return "เหรียญสั่งผลิต";
-  if (includes("trophy") || includes("ถ้วย")) return "ถ้วยรางวัล";
-  if (includes("lanyard") || includes("สายคล้อง")) return "สายคล้อง";
-  if (includes("shirt") || includes("เสื้อ")) return "เสื้อ";
-  if (includes("bib") || includes("บิบ")) return "บิบ";
-  if (includes("crystal") || includes("คริสตัล")) return "คริสตัล";
-  if (includes("acrylic") || includes("อะคริลิค")) return "อะคริลิค";
+  if (PRODUCT_CATEGORY_LABELS[lower]) return PRODUCT_CATEGORY_LABELS[lower];
 
-  return text;
+  const matched = JOB_TYPE_KEYWORDS.find(([keyword]) => includes(keyword));
+  return matched?.[1] || "";
+};
+
+const normalizeProductCategoryDisplay = (value: any) => {
+  const text = cleanDisplayValue(value);
+  const key = text.toLowerCase();
+  if (["สินค้าสำเร็จรูป", "สินค้าสั่งผลิต"].includes(text)) return text;
+  if (PRODUCT_CATEGORY_LABELS[key]) return PRODUCT_CATEGORY_LABELS[key];
+  if (key.includes("สำเร็จ")) return "สินค้าสำเร็จรูป";
+  if (key.includes("สั่งผลิต") || key.includes("custom")) return "สินค้าสั่งผลิต";
+  return "";
+};
+
+const parseMaybeJson = (value: any) => {
+  if (!value) return {};
+  if (typeof value === "object") return value;
+  if (typeof value !== "string") return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const parseDateValue = (...values: any[]) => {
+  const text = getFirstText(...values);
+  if (!text || text.startsWith("0000-00-00")) return null;
+  const date = new Date(text.includes(" ") ? text.replace(" ", "T") : text);
+  return Number.isNaN(date.getTime()) || date.getFullYear() < 2000 ? null : date;
+};
+
+const getFirstNumber = (...values: any[]) => {
+  for (const value of values) {
+    const num = Number(value);
+    if (Number.isFinite(num) && num > 0) return num;
+  }
+  return null;
 };
 
 export function JobDetailDrawer({ 
@@ -123,41 +211,90 @@ export function JobDetailDrawer({
   const [requestInfoMessage, setRequestInfoMessage] = useState("");
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [salesDetails, setSalesDetails] = useState<any>(null);
+  const [salesOrder, setSalesOrder] = useState<any>(null);
+  const [designerOptions, setDesignerOptions] = useState<DesignerOption[]>([]);
 
-  // Fetch Sales Price Estimation details for this job (to show real files/images)
+  // Fetch Sales order and price estimation details for this job.
   useEffect(() => {
     const fetchDetails = async () => {
       try {
         if (!open) return;
-        const id = jobData?.job_id || jobId;
+        const id = jobData?.job_id || jobData?.job_code || jobId;
         if (!id) return;
         setLoadingDetails(true);
+
+        try {
+          const orderRes = await fetch(`${API_BASE}/orders.php?job_id=${encodeURIComponent(String(id))}`);
+          const orderJson = await orderRes.json().catch(() => ({}));
+          setSalesOrder(orderJson?.status === "success" ? orderJson.data : null);
+        } catch (orderError) {
+          console.error(orderError);
+          setSalesOrder(null);
+        }
+
         const res = await fetch(`${API_BASE}/price_estimations.php`);
-        if (!res.ok) throw new Error("fetch failed");
+        if (!res.ok) throw new Error("fetch estimation failed");
         const json = await res.json();
         const rows = json?.data || [];
-        const found = rows.find((it: any) => String(it.estimate_id || it.job_code || it.id) === String(id));
+        const lookupIds = [
+          id,
+          jobData?.quotation_no,
+          jobData?.quotation_number,
+          jobData?.job_code,
+          jobData?.job_id,
+        ].map((value) => cleanDisplayValue(value)).filter(Boolean);
+        const found = rows.find((it: any) => {
+          const rowIds = [
+            it.estimate_id,
+            it.job_code,
+            it.quotation_no,
+            it.quotation_number,
+            it.id,
+          ].map((value) => cleanDisplayValue(value)).filter(Boolean);
+          return rowIds.some((rowId) => lookupIds.includes(rowId));
+        });
         if (!found) {
           setSalesDetails(null);
           return;
         }
-        let details: any = {};
-        try {
-          details = typeof found.details === 'string' ? JSON.parse(found.details) : (found.details || {});
-        } catch {
-          details = {};
-        }
-        setSalesDetails(details);
+        const details = parseMaybeJson(found.details);
+        setSalesDetails({ ...found, ...details, details, estimationRecord: found });
       } catch (e) {
         console.error(e);
         setSalesDetails(null);
+        setSalesOrder(null);
       } finally {
         setLoadingDetails(false);
       }
     };
     fetchDetails();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, jobId, jobData?.job_id]);
+  }, [open, jobId, jobData?.job_id, jobData?.job_code, jobData?.quotation_no]);
+
+  useEffect(() => {
+    const fetchDesigners = async () => {
+      if (!open || mode === "view") return;
+
+      try {
+        const res = await fetch(`${API_BASE}/employees.php?department=${encodeURIComponent("ฝ่ายกราฟฟิก")}`);
+        const json = await res.json();
+        const employees = Array.isArray(json?.data) ? json.data : [];
+        setDesignerOptions(
+          employees
+            .filter((emp: any) => String(emp.is_active ?? "1") !== "0")
+            .map((emp: any) => ({
+              id: String(emp.id ?? emp.code ?? emp.full_name),
+              name: getFirstText(emp.full_name, emp.nickname, emp.code) || "ไม่ระบุชื่อ",
+            }))
+        );
+      } catch (error) {
+        console.error(error);
+        setDesignerOptions([]);
+      }
+    };
+
+    fetchDesigners();
+  }, [open, mode]);
 
   const parseImageToken = (img: any): string | null => {
     if (!img) return null;
@@ -175,23 +312,41 @@ export function JobDetailDrawer({
   };
 
   const referenceImages: string[] = useMemo(() => {
+    const orderItemDetails = Array.isArray(salesOrder?.items)
+      ? salesOrder.items.map((item: any) => parseMaybeJson(item?.details))
+      : [];
+    const orderDetailImages = orderItemDetails.flatMap((details: any) => {
+      if (Array.isArray(details?.customerReferenceImages)) return details.customerReferenceImages;
+      if (Array.isArray(details?.artworkImages)) return details.artworkImages;
+      return [];
+    });
     const list = (salesDetails?.customerReferenceImages && Array.isArray(salesDetails.customerReferenceImages))
       ? salesDetails.customerReferenceImages
       : (salesDetails?.artworkImages && Array.isArray(salesDetails.artworkImages))
         ? salesDetails.artworkImages
         : [];
-    const attachedImageFiles = (Array.isArray(salesDetails?.designFiles) ? salesDetails.designFiles : [])
+    const attachedImageFiles = (Array.isArray(salesOrder?.design_files) ? salesOrder.design_files : [])
+      .concat(Array.isArray(salesDetails?.designFiles) ? salesDetails.designFiles : [])
       .concat(Array.isArray(salesDetails?.referenceFiles) ? salesDetails.referenceFiles : [])
       .map(toReferenceFileItem)
       .filter((file): file is ReferenceFileItem => Boolean(file) && isReferenceImageFile(file))
       .map(file => file.url);
 
-    return [...list.map(parseImageToken).filter(Boolean), ...attachedImageFiles] as string[];
-  }, [salesDetails]);
+    return [...list.concat(orderDetailImages).map(parseImageToken).filter(Boolean), ...attachedImageFiles] as string[];
+  }, [salesDetails, salesOrder]);
 
   type DocItem = ReferenceFileItem;
   const referenceFiles: DocItem[] = useMemo(() => {
-    const raw = (Array.isArray(salesDetails?.designFiles) ? salesDetails.designFiles : [])
+    const orderItemDetails = Array.isArray(salesOrder?.items)
+      ? salesOrder.items.map((item: any) => parseMaybeJson(item?.details))
+      : [];
+    const detailFiles = orderItemDetails.flatMap((details: any) => (
+      (Array.isArray(details?.designFiles) ? details.designFiles : [])
+        .concat(Array.isArray(details?.referenceFiles) ? details.referenceFiles : [])
+    ));
+    const raw = (Array.isArray(salesOrder?.design_files) ? salesOrder.design_files : [])
+      .concat(detailFiles)
+      .concat(Array.isArray(salesDetails?.designFiles) ? salesDetails.designFiles : [])
       .concat(Array.isArray(salesDetails?.referenceFiles) ? salesDetails.referenceFiles : []);
     const merged = (raw || [])
       .map(toReferenceFileItem)
@@ -205,7 +360,7 @@ export function JobDetailDrawer({
       return extra;
     }
     return merged;
-  }, [salesDetails]);
+  }, [salesDetails, salesOrder]);
 
   const prodAiFile: DocItem | null = useMemo(() => {
     const url = jobData?.ai_file || salesDetails?.designWorkflow?.aiFile || '';
@@ -221,6 +376,15 @@ export function JobDetailDrawer({
 
   const savedLayoutImage = useMemo(() => parseImageToken(jobData?.layout_image), [jobData?.layout_image]);
   const savedArtworkImage = useMemo(() => parseImageToken(jobData?.artwork_image), [jobData?.artwork_image]);
+  const orderItems = useMemo(() => (
+    Array.isArray(salesOrder?.items) ? salesOrder.items : []
+  ), [salesOrder]);
+  const firstOrderItem = orderItems[0] || {};
+  const firstOrderItemDetails = parseMaybeJson(firstOrderItem?.details);
+  const totalOrderQuantity = orderItems.reduce((sum: number, item: any) => {
+    const quantity = Number(item?.quantity);
+    return sum + (Number.isFinite(quantity) ? quantity : 0);
+  }, 0);
 
   const getArtworkStatusLabel = (status?: string) => {
     switch (status) {
@@ -237,70 +401,77 @@ export function JobDetailDrawer({
     }
   };
 
-  const jobTypeDisplay = normalizeJobTypeDisplay(getFirstText(
-    jobData?.product_type_display,
-    salesDetails?.productCategoryText,
-    salesDetails?.productTypeLabel,
-    jobData?.product_type_label,
-    jobData?.productTypeLabel,
-    jobData?.product_type_raw,
-    jobData?.product_type,
-    jobData?.productType,
-    salesDetails?.productType,
-    salesDetails?.product_type,
-    salesDetails?.type,
-    salesDetails?.category,
-    salesDetails?.product?.type,
-    jobData?.product_category,
-    jobData?.productCategory,
-    salesDetails?.product_category,
-    salesDetails?.productCategory,
-    jobData?.job_type,
-    "ป้ายจารึก"
-  ));
+  const jobTypeDisplay = (
+    [
+      salesOrder?.product_category,
+      salesDetails?.product_category,
+      salesDetails?.productCategory,
+      jobData?.product_category,
+      jobData?.productCategory,
+    ].map(normalizeProductCategoryDisplay).find(Boolean) ||
+    [
+      jobData?.product_type_display,
+      salesDetails?.productCategoryText,
+      salesDetails?.productTypeLabel,
+      jobData?.product_type_label,
+      jobData?.productTypeLabel,
+      firstOrderItem?.product_name,
+      firstOrderItemDetails?.productCategoryText,
+      firstOrderItemDetails?.productTypeLabel,
+      jobData?.product_type_raw,
+      jobData?.product_type,
+      jobData?.productType,
+      salesOrder?.product_type,
+      salesDetails?.productType,
+      salesDetails?.product_type,
+      salesDetails?.type,
+      salesDetails?.category,
+      salesDetails?.product?.type,
+      jobData?.job_type,
+    ].map(normalizeJobTypeDisplay).find(Boolean) ||
+    EMPTY_DISPLAY
+  );
 
-  // Mock employee workload data
-  const mockEmployeeWorkload: Record<string, { jobType: string; quantity: number }[]> = {
-    "1": [
-      { jobType: "ป้ายจารึก", quantity: 3 },
-      { jobType: "เหรียญสำเร็จรูป", quantity: 2 },
-    ],
-    "2": [
-      { jobType: "โล่/ถ้วย/คริสตัล", quantity: 5 },
-    ],
-    "3": [
-      { jobType: "เสื้อ", quantity: 4 },
-      { jobType: "สายคล้อง", quantity: 1 },
-    ],
-    "4": [
-      { jobType: "ป้ายจารึก", quantity: 2 },
-    ],
-  };
-
-  // ข้อมูลจริงจาก jobData หรือ Mockup
+  // ข้อมูลจริงจากฝ่ายขาย/คำสั่งซื้อเท่านั้น
   const data = {
-    customerName: jobData?.client_name ?? "บริษัท ABC จำกัด",
-    contactName: jobData?.contact_name ?? "คุณสมศักดิ์ ใจดี",
-    phone: jobData?.phone_number ?? "081-234-5678",
-    lineId: jobData?.line_id ?? "@customer_line",
-    facebook: jobData?.facebook ?? "ABC Company",
-    salesperson: jobData?.ordered_by ?? "สมชาย",
+    customerName: getFirstText(salesOrder?.customer_name, salesDetails?.customer_name, salesDetails?.customerName, jobData?.client_name) || EMPTY_DISPLAY,
+    contactName: getFirstText(salesOrder?.delivery_recipient, salesDetails?.contact_name, salesDetails?.contactName, jobData?.contact_name) || EMPTY_DISPLAY,
+    phone: getFirstText(salesOrder?.customer_phone, salesOrder?.delivery_phone, salesDetails?.customer_phone, salesDetails?.phone, jobData?.phone_number),
+    lineId: getFirstText(salesOrder?.customer_line, salesDetails?.customer_line, salesDetails?.line_id, jobData?.line_id),
+    facebook: getFirstText(salesDetails?.facebook, salesDetails?.facebook_name, jobData?.facebook),
+    salesperson: getFirstText(salesOrder?.responsible_person, salesDetails?.sales_owner_name, salesDetails?.sales_name, jobData?.ordered_by) || EMPTY_DISPLAY,
     jobType: jobTypeDisplay,
-    urgencyLabel: jobData?.urgency ?? "เร่งด่วน",
-    orderDate: jobData?.order_date ? new Date(jobData.order_date) : new Date("2024-11-28"),
-    dueDate: jobData?.due_date ? new Date(jobData.due_date) : new Date("2024-12-01"),
-    quotation: jobData?.quotation_no ?? "QT-2024-001",
-    jobIdDisplay: jobData?.job_id || jobId || "JOB-2024-XXX",
-    jobName: jobData?.job_name ?? "ป้ายจารึกรางวัล ประจำปี 2567",
-    quantity: jobData?.quantity ?? 50,
-    width: jobData?.width ?? "15",
-    height: jobData?.height ?? "20",
-    material: jobData?.material ?? "อะคริลิค",
-    textOnSign: jobData?.text_on_sign ?? "รางวัลพนักงานดีเด่น\nประจำปี 2567\nบริษัท ABC จำกัด",
-    description: jobData?.description ?? "ออกแบบโลโก้สำหรับบริษัท ต้องการดูมีความทันสมัย เน้นสีน้ำเงิน-ขาว",
+    urgencyLabel: getFirstText(salesOrder?.urgency_level, jobData?.urgency) || "ปกติ",
+    orderDate: parseDateValue(salesOrder?.order_date, salesDetails?.estimation_date, jobData?.order_date, jobData?.assigned_at),
+    dueDate: parseDateValue(salesOrder?.delivery_date, salesOrder?.preferred_delivery_date, jobData?.due_date, salesDetails?.usage_date),
+    quotation: getFirstText(salesOrder?.quotation_number, jobData?.quotation_no, salesDetails?.estimate_id) || EMPTY_DISPLAY,
+    jobIdDisplay: getFirstText(salesOrder?.job_id, jobData?.job_id, jobData?.job_code, jobId) || EMPTY_DISPLAY,
+    jobName: getFirstText(salesOrder?.job_name, salesDetails?.job_name, jobData?.job_name, jobData?.description) || EMPTY_DISPLAY,
+    quantity: getFirstNumber(totalOrderQuantity, firstOrderItem?.quantity, salesDetails?.quantity, jobData?.quantity),
+    width: getFirstText(firstOrderItemDetails?.width, firstOrderItemDetails?.size_width, salesDetails?.width, jobData?.width),
+    height: getFirstText(firstOrderItemDetails?.height, firstOrderItemDetails?.size_height, salesDetails?.height, jobData?.height),
+    material: getFirstText(firstOrderItem?.material, firstOrderItemDetails?.material, salesDetails?.material, jobData?.material),
+    color: getFirstText(firstOrderItem?.color, firstOrderItemDetails?.color, salesDetails?.product_color, jobData?.color),
+    size: getFirstText(firstOrderItem?.size, firstOrderItemDetails?.size, salesDetails?.size, jobData?.medal_size),
+    thickness: getFirstText(firstOrderItemDetails?.thickness, salesDetails?.thickness, jobData?.medal_thickness),
+    model: getFirstText(firstOrderItemDetails?.model, salesDetails?.model, jobData?.model),
+    lanyardSize: getFirstText(firstOrderItemDetails?.lanyardSize, salesDetails?.lanyardSize, jobData?.lanyard_size),
+    lanyardPatterns: getFirstText(firstOrderItemDetails?.lanyardPatterns, salesDetails?.lanyardPatterns, jobData?.lanyard_patterns),
+    textOnSign: getFirstText(
+      firstOrderItemDetails?.job_description,
+      firstOrderItemDetails?.designDescription,
+      salesDetails?.designDescription,
+      salesDetails?.inscriptionDetails,
+      salesDetails?.plaqueText,
+      salesOrder?.notes,
+      jobData?.specs,
+      jobData?.description
+    ),
+    description: getFirstText(salesOrder?.notes, salesDetails?.notes, salesDetails?.designDescription, jobData?.description, jobData?.specs),
   };
 
-  const toThaiDate = (d: Date) => {
+  const toThaiDate = (d: Date | null) => {
+    if (!d) return EMPTY_DISPLAY;
     const dd = String(d.getDate()).padStart(2, "0");
     const mm = String(d.getMonth() + 1).padStart(2, "0");
     const yyyy = d.getFullYear() + 543;
@@ -308,9 +479,14 @@ export function JobDetailDrawer({
   };
 
   const today = new Date();
-  const diffDays = Math.ceil((data.dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  const diffDays = data.dueDate
+    ? Math.ceil((data.dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+    : null;
 
   const getDeadlineBadge = () => {
+    if (diffDays === null) {
+      return <Badge variant="secondary" className="gap-1"><Clock className="h-3 w-3" />ยังไม่ระบุ</Badge>;
+    }
     if (diffDays < 0) {
       return <Badge variant="destructive" className="gap-1"><AlertTriangle className="h-3 w-3" />เกินกำหนด {Math.abs(diffDays)} วัน</Badge>;
     } else if (diffDays <= 2) {
@@ -322,8 +498,9 @@ export function JobDetailDrawer({
   };
 
   const handleRandomEmployee = () => {
-    const randomIndex = Math.floor(Math.random() * mockEmployees.length);
-    const employee = mockEmployees[randomIndex];
+    if (designerOptions.length === 0) return;
+    const randomIndex = Math.floor(Math.random() * designerOptions.length);
+    const employee = designerOptions[randomIndex];
     setSelectedEmployee(employee.name);
     setSelectedEmployeeId(employee.id);
   };
@@ -335,28 +512,67 @@ export function JobDetailDrawer({
   };
 
   const getEmployeeWorkload = () => {
-    if (!selectedEmployeeId) return [];
-    return mockEmployeeWorkload[selectedEmployeeId] || [];
+    return [];
   };
 
   const handleDownloadAll = () => {
-    // Mock function - in real app this would download all files
-    console.log("Downloading all files...");
+    const files: ReferenceFileItem[] = [
+      ...referenceFiles,
+      ...referenceImages.map((url, index) => ({ fileName: `reference-image-${index + 1}`, url })),
+      ...(prodAiFile ? [prodAiFile] : []),
+      ...prodArtworkImages.map((url, index) => ({ fileName: `production-artwork-${index + 1}`, url })),
+    ];
+
+    files.forEach((file) => {
+      const a = document.createElement("a");
+      a.href = file.url;
+      a.download = file.fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    });
+  };
+
+  const displayValue = (value: any) => cleanDisplayValue(value) || EMPTY_DISPLAY;
+  const toTextList = (value: any): string[] => {
+    if (Array.isArray(value)) return value.map(cleanDisplayValue).filter(Boolean);
+    const text = cleanDisplayValue(value);
+    return text ? [text] : [];
+  };
+  const renderBadgeList = (...values: any[]) => {
+    const list = values.flatMap(toTextList);
+    if (list.length === 0) {
+      return <p className="text-sm text-muted-foreground">{EMPTY_DISPLAY}</p>;
+    }
+
+    return (
+      <div className="flex flex-wrap gap-2">
+        {list.map((detail, idx) => (
+          <Badge key={`${detail}-${idx}`} variant="outline" className="text-sm font-normal">{detail}</Badge>
+        ))}
+      </div>
+    );
   };
 
   const renderJobSpecifications = () => {
-    const currentJobType = data.jobType || "ป้ายจารึก";
+    const currentJobType = data.jobType;
+    const sizeDisplay = data.width || data.height
+      ? `${data.width || "-"} x ${data.height || "-"} ซม.`
+      : displayValue(data.size);
+    const quantityDisplay = data.quantity
+      ? `${Number(data.quantity).toLocaleString()} ชิ้น`
+      : EMPTY_DISPLAY;
     
     // Common specs for all job types
     const commonSpecs = (
       <>
         <div className="space-y-1">
           <p className="text-sm font-semibold text-muted-foreground">ขนาด (กว้าง x สูง)</p>
-          <p className="text-base font-normal">{data.width} x {data.height} ซม.</p>
+          <p className="text-base font-normal">{sizeDisplay}</p>
         </div>
         <div className="space-y-1">
           <p className="text-sm font-semibold text-muted-foreground">จำนวนที่สั่ง</p>
-          <p className="text-base font-normal">{data.quantity} ชิ้น</p>
+          <p className="text-base font-normal">{quantityDisplay}</p>
         </div>
       </>
     );
@@ -368,7 +584,7 @@ export function JobDetailDrawer({
             {commonSpecs}
             <div className="space-y-1">
               <p className="text-sm font-semibold text-muted-foreground">ชนิดฐาน / วัสดุ</p>
-              <p className="text-base font-normal">{jobData?.base_type || data.material}</p>
+              <p className="text-base font-normal">{displayValue(jobData?.base_type || data.material)}</p>
             </div>
           </>
         );
@@ -379,11 +595,11 @@ export function JobDetailDrawer({
             {commonSpecs}
             <div className="space-y-1">
               <p className="text-sm font-semibold text-muted-foreground">วัสดุ</p>
-              <p className="text-base font-normal">{jobData?.material || "ทองเหลือง"}</p>
+              <p className="text-base font-normal">{displayValue(data.material)}</p>
             </div>
             <div className="space-y-1">
               <p className="text-sm font-semibold text-muted-foreground">สี</p>
-              <p className="text-base font-normal">{jobData?.color || "ทอง"}</p>
+              <p className="text-base font-normal">{displayValue(data.color)}</p>
             </div>
           </>
         );
@@ -393,43 +609,31 @@ export function JobDetailDrawer({
           <>
             <div className="space-y-1">
               <p className="text-sm font-semibold text-muted-foreground">ขนาด</p>
-              <p className="text-base font-normal text-primary">{jobData?.medal_size || "5"} ซม.</p>
+              <p className="text-base font-normal text-primary">{displayValue(data.size)}</p>
             </div>
             <div className="space-y-1">
               <p className="text-sm font-semibold text-muted-foreground">ความหนา</p>
-              <p className="text-base font-normal text-primary">{jobData?.medal_thickness || "5"} มิล</p>
+              <p className="text-base font-normal text-primary">{displayValue(data.thickness)}</p>
             </div>
             <div className="col-span-2 space-y-2">
               <p className="text-sm font-semibold text-muted-foreground">สี (เลือกได้หลายรายการ)</p>
-              <div className="flex flex-wrap gap-2">
-                {(jobData?.medal_colors || ["shinny gold (สีทองเงา)"]).map((color: string, idx: number) => (
-                  <Badge key={idx} variant="outline" className="text-sm font-normal">{color}</Badge>
-                ))}
-              </div>
+              {renderBadgeList(jobData?.medal_colors, salesDetails?.colors, firstOrderItemDetails?.colors, data.color)}
             </div>
             <div className="col-span-2 space-y-2">
               <p className="text-sm font-semibold text-muted-foreground">รายละเอียดด้านหน้า (เลือกได้หลายรายการ)</p>
-              <div className="flex flex-wrap gap-2">
-                {(jobData?.medal_front_details || ["พิมพ์โลโก้"]).map((detail: string, idx: number) => (
-                  <Badge key={idx} variant="outline" className="text-sm font-normal">{detail}</Badge>
-                ))}
-              </div>
+              {renderBadgeList(jobData?.medal_front_details, salesDetails?.frontDetails, firstOrderItemDetails?.frontDetails)}
             </div>
             <div className="col-span-2 space-y-2">
               <p className="text-sm font-semibold text-muted-foreground">รายละเอียดด้านหลัง (เลือกได้หลายรายการ)</p>
-              <div className="flex flex-wrap gap-2">
-                {(jobData?.medal_back_details || ["ลงน้ำยาป้องกันสนิม"]).map((detail: string, idx: number) => (
-                  <Badge key={idx} variant="outline" className="text-sm font-normal">{detail}</Badge>
-                ))}
-              </div>
+              {renderBadgeList(jobData?.medal_back_details, salesDetails?.backDetails, firstOrderItemDetails?.backDetails)}
             </div>
             <div className="space-y-1">
               <p className="text-sm font-semibold text-muted-foreground">สายคล้อง</p>
-              <p className="text-base font-normal text-primary">{jobData?.lanyard_size || "2 × 90 ซม"}</p>
+              <p className="text-base font-normal text-primary">{displayValue(data.lanyardSize)}</p>
             </div>
             <div className="space-y-1">
               <p className="text-sm font-semibold text-muted-foreground">จำนวนลาย</p>
-              <p className="text-base font-normal text-primary">{jobData?.lanyard_patterns || "3 ลาย"}</p>
+              <p className="text-base font-normal text-primary">{displayValue(data.lanyardPatterns)}</p>
             </div>
           </>
         );
@@ -444,7 +648,7 @@ export function JobDetailDrawer({
             {commonSpecs}
             <div className="space-y-1">
               <p className="text-sm font-semibold text-muted-foreground">รุ่น</p>
-              <p className="text-base font-normal">{jobData?.model || "คริสตัล A-01"}</p>
+              <p className="text-base font-normal">{displayValue(data.model)}</p>
             </div>
           </>
         );
@@ -455,15 +659,15 @@ export function JobDetailDrawer({
             {commonSpecs}
             <div className="space-y-1">
               <p className="text-sm font-semibold text-muted-foreground">ประเภทเสื้อ</p>
-              <p className="text-base font-normal">{jobData?.shirt_type || "โปโล"}</p>
+              <p className="text-base font-normal">{displayValue(jobData?.shirt_type || firstOrderItemDetails?.shirtType || firstOrderItemDetails?.collar)}</p>
             </div>
             <div className="space-y-1">
               <p className="text-sm font-semibold text-muted-foreground">ไซส์</p>
-              <p className="text-base font-normal">{jobData?.sizes || "S, M, L, XL"}</p>
+              <p className="text-base font-normal">{displayValue(jobData?.sizes || firstOrderItem?.size || data.size)}</p>
             </div>
             <div className="space-y-1">
               <p className="text-sm font-semibold text-muted-foreground">สี</p>
-              <p className="text-base font-normal">{jobData?.color || "ขาว"}</p>
+              <p className="text-base font-normal">{displayValue(data.color)}</p>
             </div>
           </>
         );
@@ -475,11 +679,11 @@ export function JobDetailDrawer({
             {commonSpecs}
             <div className="space-y-1">
               <p className="text-sm font-semibold text-muted-foreground">วัสดุ</p>
-              <p className="text-base font-normal">{jobData?.material || "ผ้าโพลีเอสเตอร์"}</p>
+              <p className="text-base font-normal">{displayValue(data.material)}</p>
             </div>
             <div className="space-y-1">
               <p className="text-sm font-semibold text-muted-foreground">สี</p>
-              <p className="text-base font-normal">{jobData?.color || "แดง"}</p>
+              <p className="text-base font-normal">{displayValue(data.color)}</p>
             </div>
           </>
         );
@@ -516,13 +720,20 @@ export function JobDetailDrawer({
 
         <div className="space-y-1">
           <p className="text-sm font-semibold text-muted-foreground">เบอร์โทรศัพท์</p>
-          <a 
-            href={`tel:${data.phone.replace(/-/g, '')}`}
-            className="text-base font-normal text-primary hover:underline flex items-center gap-2 cursor-pointer"
-          >
-            <Phone className="h-4 w-4" />
-            {data.phone}
-          </a>
+          {data.phone ? (
+            <a 
+              href={`tel:${data.phone.replace(/-/g, '')}`}
+              className="text-base font-normal text-primary hover:underline flex items-center gap-2 cursor-pointer"
+            >
+              <Phone className="h-4 w-4" />
+              {data.phone}
+            </a>
+          ) : (
+            <p className="text-base font-normal text-muted-foreground flex items-center gap-2">
+              <Phone className="h-4 w-4" />
+              {EMPTY_DISPLAY}
+            </p>
+          )}
         </div>
 
         <div className="space-y-1">
@@ -530,7 +741,7 @@ export function JobDetailDrawer({
           <div className="space-y-2">
             <p className="text-base font-normal flex items-center gap-2">
               <MessageCircle className="h-4 w-4 text-primary" />
-              Line: {data.lineId}
+              Line: {data.lineId || EMPTY_DISPLAY}
             </p>
             {data.facebook && (
               <p className="text-base font-normal flex items-center gap-2">
@@ -620,7 +831,7 @@ export function JobDetailDrawer({
           <p className="text-sm font-semibold text-muted-foreground">รายละเอียดการออกแบบ</p>
           <div className="relative">
             <Textarea 
-              value={data.textOnSign}
+              value={data.textOnSign || EMPTY_DISPLAY}
               readOnly
               className="min-h-[100px] bg-muted/30 resize-none cursor-text select-all"
               onClick={(e) => (e.target as HTMLTextAreaElement).select()}
@@ -933,6 +1144,7 @@ export function JobDetailDrawer({
               <Button 
                 variant="outline" 
                 onClick={handleRandomEmployee}
+                disabled={designerOptions.length === 0}
                 className="flex-1"
               >
                 <Shuffle className="mr-2 h-4 w-4" />
@@ -1015,15 +1227,19 @@ export function JobDetailDrawer({
             <DialogTitle>เลือกพนักงานออกแบบ</DialogTitle>
           </DialogHeader>
           <div className="space-y-2 py-4">
-            {mockEmployees.map((emp) => (
-              <button
-                key={emp.id}
-                onClick={() => handleSelectEmployee(emp)}
-                className="w-full p-3 text-left border rounded-md hover:bg-accent transition-colors"
-              >
-                {emp.name}
-              </button>
-            ))}
+            {designerOptions.length > 0 ? (
+              designerOptions.map((emp) => (
+                <button
+                  key={emp.id}
+                  onClick={() => handleSelectEmployee(emp)}
+                  className="w-full p-3 text-left border rounded-md hover:bg-accent transition-colors"
+                >
+                  {emp.name}
+                </button>
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">ไม่พบรายชื่อพนักงานฝ่ายกราฟฟิก</p>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowEmployeeDialog(false)}>
