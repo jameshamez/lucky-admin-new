@@ -1,4 +1,4 @@
-import { useState, useEffect, CSSProperties, Fragment, useMemo, useRef } from "react";
+import { useState, useEffect, CSSProperties, Fragment, useMemo, useRef, type SyntheticEvent } from "react";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -30,10 +30,16 @@ import { toast } from "sonner";
 
 // --- Types ---
 interface PriceEntry {
+  id?: string | number;
   model: string;
+  size?: string;
   retailPrice: number;
   moldCost: number;
   specialPrice: number;
+  wholesalePrice?: number;
+  retail_price?: number;
+  wholesale_price?: number;
+  special_price?: number;
 }
 interface ProductionTime {
   value: number;
@@ -52,8 +58,10 @@ interface ProcurementCost {
   manufact: string;
   mtl: string;
   noted: string;
+  importQty?: number;
   priceYuan: number;
   priceTHB: number;
+  exchangeRate?: number;
   amountRMB: number;
   totalTHB: number;
   pcsCtn: number;
@@ -66,6 +74,7 @@ interface ProcurementCost {
   meas: number;
   gw: number;
   tgw: number;
+  purchaseHistory?: string;
 }
 
 interface ProductItem {
@@ -102,6 +111,20 @@ interface ProductItem {
 const productTypes = [
   "ถ้วยรางวัลสำเร็จ", "เหรียญรางวัล", "โล่รางวัล", "เสื้อพิมพ์ลายและผ้า", "ชิ้นส่วนถ้วยรางวัล",
 ];
+
+const PRODUCT_TYPE_OPTIONS = [
+  { value: "1", label: "สินค้าสำเร็จรูป" },
+  { value: "2", label: "สินค้าพรีออเดอร์" },
+  { value: "3", label: "option" },
+  { value: "4", label: "วัตถุดิบ" },
+];
+
+const RAW_MATERIAL_PRODUCT_TYPE = "4";
+const RAW_MATERIAL_CATEGORY = "ชิ้นส่วนถ้วยรางวัล";
+const DEFAULT_EXCHANGE_RATE = 5.5;
+
+const isRawMaterialType = (productType?: string) =>
+  String(productType || "") === RAW_MATERIAL_PRODUCT_TYPE;
 
 const categories = [
   { key: "เลือกหมวดหมู่", label: "เลือกหมวดหมู่" },
@@ -234,16 +257,153 @@ const manufactOptions = ["BC", "YX", "GD", "HZ", "SZ", "DG", "ZJ"];
 const mtlOptions = ["PLASTIC", "METAL", "ZINC", "CRYSTAL", "WOOD", "MARBLE", "RESIN", "GLASS"];
 const sizeOptions = ["A", "B", "C", "D", "N/A", "5cm", "8 นิ้ว", "10 นิ้ว", "มาตรฐาน", "H192mm", "H250mm", "H300mm", "4x4 นิ้ว"];
 
+const cleanText = (value: unknown) => String(value ?? "").trim();
+
+const getProductBaseModel = (product: any) =>
+  cleanText(product?.modelName ?? product?.model);
+
+const getSizeAtIndex = (product: any, index: number, price?: any) =>
+  cleanText(
+    price?.size ??
+    price?.size_name ??
+    product?.sizes?.[index]?.size ??
+    product?.sizeData?.[index]?.size ??
+    product?.size?.[index]
+  );
+
+const buildSizedModel = (baseModel: string, size: string) =>
+  baseModel && size ? `${baseModel}_${size}` : baseModel;
+
+const getPriceModel = (product: any, index: number, price?: any) =>
+  buildSizedModel(getProductBaseModel(product), getSizeAtIndex(product, index, price));
+
+const createBlankPrice = (size = "", index = 0) => ({
+  id: `${Date.now()}-${index}`,
+  model: "",
+  size,
+  retailPrice: 0,
+  wholesalePrice: 0,
+  specialPrice: 0,
+  retail_price: 0,
+  wholesale_price: 0,
+  special_price: 0,
+});
+
+const syncPricesWithSizes = (product: any, sizes: any[]) => {
+  const currentPrices = Array.isArray(product?.prices) ? product.prices : [];
+  if (!sizes.length) return currentPrices;
+
+  return sizes.map((sizeItem, index) => {
+    const size = cleanText(sizeItem?.size ?? sizeItem);
+    const currentPrice = currentPrices[index] || createBlankPrice(size, index);
+    const retailPrice = currentPrice.retail_price ?? currentPrice.retailPrice ?? 0;
+    const wholesalePrice = currentPrice.wholesale_price ?? currentPrice.wholesalePrice ?? currentPrice.moldCost ?? 0;
+    const specialPrice = currentPrice.special_price ?? currentPrice.specialPrice ?? 0;
+
+    return {
+      ...currentPrice,
+      id: currentPrice.id ?? `${Date.now()}-${index}`,
+      model: buildSizedModel(getProductBaseModel(product), size),
+      size,
+      retailPrice,
+      wholesalePrice,
+      specialPrice,
+      retail_price: retailPrice,
+      wholesale_price: wholesalePrice,
+      special_price: specialPrice,
+    };
+  });
+};
+
 // --- Mock Data ---
 const emptyProcurementCost: ProcurementCost = {
   manufact: "", mtl: "", noted: "", priceYuan: 0, priceTHB: 0,
   amountRMB: 0, totalTHB: 0, pcsCtn: 0, ctn: 0, boxSize: "",
   boxSizeNum: 0, shippingCost: 0, shippingPerPiece: 0, totalShipping: 0,
-  meas: 0, gw: 0, tgw: 0,
+  meas: 0, gw: 0, tgw: 0, importQty: 0, exchangeRate: DEFAULT_EXCHANGE_RATE,
+  purchaseHistory: "",
+};
+
+const toNumber = (value: unknown) => {
+  const parsed = typeof value === "number" ? value : parseFloat(String(value ?? ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const getProductCategoryOptions = (productType?: string) =>
+  isRawMaterialType(productType)
+    ? categories.filter((category) => category.key === RAW_MATERIAL_CATEGORY)
+    : categories;
+
+const calculateRawMaterialCost = (product: any, updates: Partial<ProcurementCost> = {}) => {
+  const current = {
+    ...emptyProcurementCost,
+    ...(product?.procurementCost || {}),
+    ...updates,
+  } as ProcurementCost;
+  const importQty = toNumber(
+    updates.importQty ?? product?.procurementCost?.importQty ?? product?.currentStock
+  );
+  const unitCost = toNumber(current.priceYuan);
+  const exchangeRate = toNumber(current.exchangeRate) || DEFAULT_EXCHANGE_RATE;
+  const shippingCost = toNumber(current.shippingCost);
+  const amountRMB = importQty * unitCost;
+  const totalTHB = amountRMB * exchangeRate;
+
+  return {
+    ...current,
+    importQty,
+    priceYuan: unitCost,
+    exchangeRate,
+    priceTHB: unitCost * exchangeRate,
+    amountRMB,
+    totalTHB,
+    shippingCost,
+    totalShipping: totalTHB + shippingCost,
+  };
+};
+
+const applyRawMaterialCost = (product: any, updates: Partial<ProcurementCost>) => {
+  const procurementCost = calculateRawMaterialCost(product, updates);
+  return {
+    ...product,
+    currentStock: procurementCost.importQty || 0,
+    procurementCost,
+  };
+};
+
+const parseProcurementCost = (source: any) => {
+  const raw = source?.procurementCost ?? source?.procurement_cost;
+  if (!raw) return undefined;
+
+  try {
+    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+    return calculateRawMaterialCost({
+      currentStock: source?.inventory ?? source?.currentStock ?? parsed?.importQty,
+      procurementCost: parsed,
+    });
+  } catch {
+    return undefined;
+  }
 };
 
 const API_PRODUCT_URL = "https://nacres.co.th/api-lucky/portal/getProduct.php";
 const BASE_IMAGE_URL = "https://nacres.co.th/api-lucky/";
+const DEFAULT_COLOR_IMAGE = "/placeholder.svg";
+
+const getColorImageSrc = (imagePath?: string) => {
+  const path = (imagePath || "").trim();
+  if (!path || path.startsWith("/colors/") || path === "/default-color.png") {
+    return DEFAULT_COLOR_IMAGE;
+  }
+  if (path.startsWith("http") || path.startsWith("data:")) return path;
+  if (path.startsWith("/")) return path;
+  return `${BASE_IMAGE_URL}${path.replace(/^\/+/, "")}`;
+};
+
+const useDefaultColorImage = (event: SyntheticEvent<HTMLImageElement>) => {
+  if (event.currentTarget.src.endsWith(DEFAULT_COLOR_IMAGE)) return;
+  event.currentTarget.src = DEFAULT_COLOR_IMAGE;
+};
 
 // Helper: map API product -> ProductItem
 function mapApiProduct(p: any): ProductItem {
@@ -265,13 +425,25 @@ function mapApiProduct(p: any): ProductItem {
       height: parseFloat(s.height) || 0,
       weight: parseFloat(s.weight) || 0,
     }));
-  const prices: PriceEntry[] = (p.prices || []).map((pr: any) => ({
-    model: p.modelName || p.name,
-    retailPrice: pr.retail_price || 0,
-    moldCost: 0,
-    specialPrice: pr.special_price || 0,
-    wholesalePrice: pr.special_price || 0,
-  }));
+  const prices: PriceEntry[] = (p.prices || []).map((pr: any, index: number) => {
+    const size = cleanText(pr.size ?? sizeData[index]?.size);
+    const retailPrice = parseFloat(pr.retail_price ?? pr.retailPrice) || 0;
+    const wholesalePrice = parseFloat(pr.wholesale_price ?? pr.wholesalePrice ?? pr.moldCost) || 0;
+    const specialPrice = parseFloat(pr.special_price ?? pr.specialPrice) || 0;
+
+    return {
+      id: pr.id,
+      model: pr.model || buildSizedModel(cleanText(p.modelName || p.name), size),
+      size,
+      retailPrice,
+      moldCost: wholesalePrice,
+      specialPrice,
+      wholesalePrice,
+      retail_price: retailPrice,
+      wholesale_price: wholesalePrice,
+      special_price: specialPrice,
+    };
+  });
   if (prices.length === 0 && p.price > 0) {
     prices.push({ model: p.modelName || p.name, retailPrice: p.price, moldCost: 0, specialPrice: 0 });
   }
@@ -308,6 +480,7 @@ function mapApiProduct(p: any): ProductItem {
     options: [],
     optionsData: p.options || [],
     prices,
+    procurementCost: parseProcurementCost(p),
     lastUpdated: new Date().toISOString().split("T")[0],
     status: (() => {
       const min = (() => { const m = parseInt(p.minimumStock); return isNaN(m) || m === 0 ? 10 : m; })();
@@ -410,6 +583,9 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
       category: item.category,
       subcategoryId: "",
       productType: item.productType,
+      currentStock: item.currentStock,
+      minimumStock: item.minimumStock,
+      procurementCost: item.procurementCost ? { ...emptyProcurementCost, ...item.procurementCost } : { ...emptyProcurementCost },
       image: item.image,
       images: item.additionalImages || [],
       colors: [],
@@ -422,6 +598,8 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
         : item.options.map((o, i) => ({ id: i, product_id: item.id, option_id: i + 1 })),
       prices: item.prices.map((p: any, i) => ({
         id: p.id ?? i,
+        model: p.model || getPriceModel({ modelName: item.model, sizes: item.sizeData, size: item.size }, i, p),
+        size: getSizeAtIndex({ sizes: item.sizeData, size: item.size }, i, p),
         retail_price: parseFloat(p.retail_price ?? p.retailPrice) || 0,
         wholesale_price: parseFloat(p.wholesale_price ?? p.moldCost ?? p.wholesalePrice) || 0,
         special_price: parseFloat(p.special_price ?? p.specialPrice) || 0,
@@ -450,6 +628,11 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
         return { id: i, color: c, image_path: found ? found.image : "" };
       });
 
+    apiProduct.prices = syncPricesWithSizes(apiProduct, apiProduct.sizes || []);
+    if (isRawMaterialType(apiProduct.productType)) {
+      apiProduct.procurementCost = calculateRawMaterialCost(apiProduct);
+    }
+
     setEditProduct(apiProduct);
     setProductionTimes(item.productionTime.map(pt => ({ duration: String(pt.value), unit: pt.unit === "สัปดาห์" ? "months" : "days" })));
     setIsEditModalOpen(true);
@@ -466,7 +649,8 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
     if (!editProduct) return;
 
     // ตรวจสอบราคาส่ง (wholesalePrice) ไม่ให้เป็น 0 ในโหมดแก้ไข
-    const hasZeroWholesale = editProduct.prices?.some((price: any) => {
+    const isRawMaterial = isRawMaterialType(editProduct.productType);
+    const hasZeroWholesale = !isRawMaterial && editProduct.prices?.some((price: any) => {
       // API may return wholesalePrice, wholesale_price, or moldCost
       const val = price.wholesale_price ?? price.wholesalePrice ?? price.moldCost;
       return !val || parseFloat(val.toString()) <= 0;
@@ -489,9 +673,12 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
       formData.append("name", editProduct.name);
       formData.append("description", editProduct.description || "");
       formData.append("productType", editProduct.productType || "1");
+      formData.append("inventory", String(editProduct.currentStock ?? 1));
+      formData.append("request", "1");
+      formData.append("total_availble", String(editProduct.currentStock ?? 1));
 
       // ข้อมูลส่วนประกอบ (Parts)
-      if (editProduct.productType === "1" && editProduct.parts) {
+      if (!isRawMaterial && editProduct.productType === "1" && editProduct.parts) {
         const partsData = editProduct.parts.map((part: any) => ({
           name: part.name,
           for: part.for,
@@ -502,11 +689,13 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
       }
 
       // ข้อมูลราคา (Prices)
-      if (editProduct.prices) {
-        const pricesData = editProduct.prices.map((price: any) => ({
-          retailPrice: price.retail_price || price.retailPrice,
-          wholesalePrice: price.wholesale_price || price.wholesalePrice,
-          specialPrice: price.special_price || price.specialPrice,
+      if (!isRawMaterial && editProduct.prices) {
+        const pricesData = editProduct.prices.map((price: any, index: number) => ({
+          model: getPriceModel(editProduct, index, price),
+          size: getSizeAtIndex(editProduct, index, price),
+          retailPrice: price.retail_price ?? price.retailPrice ?? 0,
+          wholesalePrice: price.wholesale_price ?? price.wholesalePrice ?? price.moldCost ?? 0,
+          specialPrice: price.special_price ?? price.specialPrice ?? 0,
         }));
         formData.append("prices", JSON.stringify(pricesData));
       }
@@ -526,7 +715,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
       }
 
       // ข้อมูล Options
-      if (editProduct.options && editProduct.options.length > 0) {
+      if (!isRawMaterial && editProduct.options && editProduct.options.length > 0) {
         // Map option_id back to Thai name that PHP switch-case expects
         const OPTION_ID_TO_NAME: Record<number, string> = {
           1: "ทำป้ายจารึก",
@@ -550,13 +739,20 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
       }
 
       // ข้อมูลระยะเวลาในการผลิต (Production Times)
-      if (productionTimes && productionTimes.length > 0) {
+      if (!isRawMaterial && productionTimes && productionTimes.length > 0) {
         formData.append("productionTimes", JSON.stringify(productionTimes));
       }
 
       // ข้อมูล Tags
-      if (editProduct.tags && editProduct.tags.length > 0) {
+      if (!isRawMaterial && editProduct.tags && editProduct.tags.length > 0) {
         formData.append("tags", editProduct.tags.join(","));
+      }
+
+      if (isRawMaterial) {
+        formData.append(
+          "procurementCost",
+          JSON.stringify(calculateRawMaterialCost(editProduct))
+        );
       }
 
       // รูปภาพหลัก
@@ -614,10 +810,13 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
     images: [],
     colors: [],
     sizes: [],
+    currentStock: 0,
+    minimumStock: 0,
     tags: [],
     options: [],
     customOtherValue: "",
-    prices: [{ retail_price: 0, wholesale_price: 0, special_price: 0 }],
+    procurementCost: { ...emptyProcurementCost },
+    prices: [createBlankPrice()],
     parts: []
   });
 
@@ -635,10 +834,13 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
       images: [],
       colors: [],
       sizes: [],
+      currentStock: 0,
+      minimumStock: 0,
       tags: [],
       options: [],
       customOtherValue: "",
-      prices: [{ retail_price: 0, wholesale_price: 0, special_price: 0 }],
+      procurementCost: { ...emptyProcurementCost },
+      prices: [createBlankPrice()],
       parts: []
     });
   };
@@ -701,19 +903,28 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
               : [],
             parts: Array.isArray(product.parts) ? product.parts : [],
             prices: Array.isArray(product.prices)
-              ? product.prices.map((p: any) => ({
-                // Keep both formats so Edit modal can read directly
-                id: p.id,
-                model: p.model || "",
-                // camelCase (for PriceEntry interface)
-                retailPrice: parseFloat(p.retail_price || p.retailPrice) || 0,
-                moldCost: parseFloat(p.wholesale_price || p.moldCost) || 0,
-                specialPrice: parseFloat(p.special_price || p.specialPrice) || 0,
-                // snake_case (for Edit modal UI fields)
-                retail_price: parseFloat(p.retail_price || p.retailPrice) || 0,
-                wholesale_price: parseFloat(p.wholesale_price || p.moldCost) || 0,
-                special_price: parseFloat(p.special_price || p.specialPrice) || 0,
-              }))
+              ? product.prices.map((p: any, index: number) => {
+                const size = cleanText(p.size ?? sizeData[index]?.size);
+                const retailPrice = parseFloat(p.retail_price ?? p.retailPrice) || 0;
+                const wholesalePrice = parseFloat(p.wholesale_price ?? p.wholesalePrice ?? p.moldCost) || 0;
+                const specialPrice = parseFloat(p.special_price ?? p.specialPrice) || 0;
+
+                return {
+                  // Keep both formats so Edit modal can read directly
+                  id: p.id,
+                  model: p.model || buildSizedModel(cleanText(product.modelName || product.model), size),
+                  size,
+                  // camelCase (for PriceEntry interface)
+                  retailPrice,
+                  moldCost: wholesalePrice,
+                  specialPrice,
+                  wholesalePrice,
+                  // snake_case (for Edit modal UI fields)
+                  retail_price: retailPrice,
+                  wholesale_price: wholesalePrice,
+                  special_price: specialPrice,
+                };
+              })
               : [],
             sizes: sizeData,
             colors: colorData,
@@ -730,6 +941,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
             request: parseInt(product.request) || 0,
             total_available: parseInt(product.total_available) || 0,
             currentStock: parseInt(product.inventory || product.currentStock) || 0,
+            procurementCost: parseProcurementCost(product),
             minimumStock: (() => {
               const min = parseInt(product.minimumStock);
               return isNaN(min) || min === 0 ? 10 : min;
@@ -769,6 +981,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
   const handleCreateSave = async () => {
     // Validation
     const errors: Record<string, string> = {};
+    const isRawMaterial = isRawMaterialType(newProduct.productType);
     if (!newProduct.productType) errors.productType = "กรุณาเลือกประเภทสินค้า";
     if (!newProduct.name?.trim()) errors.name = "กรุณากรอกชื่อสินค้า";
     if (!newProduct.modelName?.trim()) errors.modelName = "กรุณากรอกรหัสสินค้า";
@@ -777,7 +990,10 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
     if (!newProduct.image) errors.image = "กรุณาเพิ่มรูปภาพหลัก";
 
     // ตรวจสอบราคาส่ง (wholesalePrice) ไม่ให้เป็น 0
-    if (newProduct.prices && newProduct.prices.some(price => !price.wholesalePrice || price.wholesalePrice <= 0)) {
+    if (!isRawMaterial && newProduct.prices && newProduct.prices.some((price: any) => {
+      const wholesalePrice = price.wholesale_price ?? price.wholesalePrice ?? price.moldCost;
+      return !wholesalePrice || parseFloat(wholesalePrice.toString()) <= 0;
+    })) {
       const label = newProduct.productType === "1" ? "ราคาส่ง" : "ราคาส่ง";
       errors.prices = `กรุณาระบุ${label}ให้ถูกต้อง (ต้องมากกว่า 0)`;
     }
@@ -803,12 +1019,12 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
       formData.append("name", newProduct.name);
       formData.append("description", newProduct.description || "");
       formData.append("productType", newProduct.productType || "1");
-      formData.append("inventory", "1");
+      formData.append("inventory", String(newProduct.currentStock ?? 1));
       formData.append("request", "1");
-      formData.append("total_availble", "1");
+      formData.append("total_availble", String(newProduct.currentStock ?? 1));
 
       // ข้อมูลส่วนประกอบ (Parts)
-      if (newProduct.productType === "1" && newProduct.parts) {
+      if (!isRawMaterial && newProduct.productType === "1" && newProduct.parts) {
         const partsData = newProduct.parts.map((part) => ({
           name: part.name,
           for: part.for,
@@ -819,11 +1035,13 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
       }
 
       // ข้อมูลราคา (Prices)
-      if (newProduct.prices) {
-        const pricesData = newProduct.prices.map((price) => ({
-          retailPrice: price.retailPrice,
-          wholesalePrice: price.wholesalePrice,
-          specialPrice: price.specialPrice,
+      if (!isRawMaterial && newProduct.prices) {
+        const pricesData = newProduct.prices.map((price: any, index: number) => ({
+          model: getPriceModel(newProduct, index, price),
+          size: getSizeAtIndex(newProduct, index, price),
+          retailPrice: price.retail_price ?? price.retailPrice ?? 0,
+          wholesalePrice: price.wholesale_price ?? price.wholesalePrice ?? price.moldCost ?? 0,
+          specialPrice: price.special_price ?? price.specialPrice ?? 0,
         }));
         formData.append("prices", JSON.stringify(pricesData));
       }
@@ -843,7 +1061,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
       }
 
       // ข้อมูล Options
-      if (newProduct.options && newProduct.options.length > 0) {
+      if (!isRawMaterial && newProduct.options && newProduct.options.length > 0) {
         const flatOptions = [
           ...newProduct.options,
         ];
@@ -854,13 +1072,20 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
       }
 
       // ข้อมูลระยะเวลาในการผลิต (Production Times)
-      if (productionTimes && productionTimes.length > 0) {
+      if (!isRawMaterial && productionTimes && productionTimes.length > 0) {
         formData.append("productionTimes", JSON.stringify(productionTimes));
       }
 
       // ข้อมูล Tags
-      if (newProduct.tags && newProduct.tags.length > 0) {
+      if (!isRawMaterial && newProduct.tags && newProduct.tags.length > 0) {
         formData.append("tags", newProduct.tags.join(","));
+      }
+
+      if (isRawMaterial) {
+        formData.append(
+          "procurementCost",
+          JSON.stringify(calculateRawMaterialCost(newProduct))
+        );
       }
 
       // รูปภาพหลัก
@@ -977,6 +1202,105 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
   };
 
   const subcategories = getSubcategoriesForCategory(selectedCategory);
+
+  const renderRawMaterialCostSection = (product: any, setProductState: any) => {
+    if (!isRawMaterialType(product?.productType)) return null;
+    const cost = calculateRawMaterialCost(product);
+    const updateCost = (updates: Partial<ProcurementCost>) => {
+      setProductState((prev: any) => applyRawMaterialCost(prev || product, updates));
+    };
+
+    return (
+      <div className="md:col-span-2 border border-amber-200 rounded-lg bg-amber-50/60 p-4 space-y-4">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-900">ต้นทุน</h3>
+          <p className="text-xs text-gray-500">ข้อมูลส่วนนี้ใช้ร่วมกับหน้า /procurement/inventory-stock</p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">จำนวนนำเข้า</label>
+            <input
+              type="number"
+              min="0"
+              value={cost.importQty || ""}
+              onChange={(e) => updateCost({ importQty: toNumber(e.target.value) })}
+              className="w-full px-3 py-2 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">ต้นทุน</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={cost.priceYuan || ""}
+              onChange={(e) => updateCost({ priceYuan: toNumber(e.target.value) })}
+              className="w-full px-3 py-2 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">อัตราแลกเปลี่ยน</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={cost.exchangeRate || ""}
+              onChange={(e) => updateCost({ exchangeRate: toNumber(e.target.value) || DEFAULT_EXCHANGE_RATE })}
+              className="w-full px-3 py-2 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">ยอดต้นทุน</label>
+            <input
+              type="number"
+              value={cost.totalTHB.toFixed(2)}
+              readOnly
+              className="w-full px-3 py-2 bg-gray-50 text-gray-700 border border-gray-300 rounded-lg"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">ขนาดกล่อง (กว้าง*ยาว*สูง ซม.)</label>
+            <input
+              type="text"
+              value={cost.boxSize || ""}
+              onChange={(e) => updateCost({ boxSize: e.target.value })}
+              placeholder="เช่น 30*40*50"
+              className="w-full px-3 py-2 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">ค่าขนส่ง</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={cost.shippingCost || ""}
+              onChange={(e) => updateCost({ shippingCost: toNumber(e.target.value) })}
+              className="w-full px-3 py-2 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">ต้นทุนรวม</label>
+            <input
+              type="number"
+              value={cost.totalShipping.toFixed(2)}
+              readOnly
+              className="w-full px-3 py-2 bg-gray-50 text-gray-700 border border-gray-300 rounded-lg"
+            />
+          </div>
+          <div className="md:col-span-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1">ประวัติการซื้อ</label>
+            <textarea
+              value={cost.purchaseHistory || ""}
+              onChange={(e) => updateCost({ purchaseHistory: e.target.value })}
+              rows={3}
+              className="w-full px-3 py-2 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+            />
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   // Excel import state
   const [showImportDialog, setShowImportDialog] = useState(false);
@@ -1107,10 +1431,13 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
       images: [],
       colors: [],
       sizes: [],
+      currentStock: 0,
+      minimumStock: 0,
       tags: [],
       options: [],
       customOtherValue: "",
-      prices: [{ retail_price: 0, wholesale_price: 0, special_price: 0 }],
+      procurementCost: { ...emptyProcurementCost },
+      prices: [createBlankPrice()],
       parts: []
     });
   };
@@ -2035,21 +2362,29 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                 </label>
                 <select
                   value={editProduct?.productType || ""}
-                  onChange={(e) =>
-                    setEditProduct({
-                      ...editProduct!,
-                      productType: e.target.value as
-                        | "ready"
-                        | "preorder"
-                        | "",
-                    })
-                  }
+                  onChange={(e) => {
+                    const productType = e.target.value;
+                    setEditProduct((prev) => {
+                      if (!prev) return prev;
+                      const next = {
+                        ...prev,
+                        productType,
+                        category: isRawMaterialType(productType) ? RAW_MATERIAL_CATEGORY : prev.category,
+                        subcategoryId: isRawMaterialType(productType) ? "" : prev.subcategoryId,
+                      };
+                      return isRawMaterialType(productType)
+                        ? applyRawMaterialCost(next, next.procurementCost || {})
+                        : next;
+                    });
+                  }}
                   className="w-full px-4 py-2.5 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
                 >
                   <option value="">เลือกประเภทสินค้า</option>
-                  <option value="1">สินค้าสำเร็จรูป</option>
-                  <option value="2">สินค้าพรีออเดอร์</option>
-                  <option value="3">option</option>
+                  {PRODUCT_TYPE_OPTIONS.map((type) => (
+                    <option key={type.value} value={type.value}>
+                      {type.label}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div className="md:col-span-2">
@@ -2057,7 +2392,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                   className="block text-sm font-medium text-gray-900 mb-2"
                   style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
                 >
-                  ชื่อสินค้า (สำหรับแสดงลูกค้า)
+                  {isRawMaterialType(editProduct?.productType) ? "ชื่อสินค้า (ไม่แสดงต่อหน้าลูกค้า)" : "ชื่อสินค้า (สำหรับแสดงลูกค้า)"}
                 </label>
                 <input
                   type="text"
@@ -2118,7 +2453,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                 />
               </div>
 
-              <div>
+              <div className={isRawMaterialType(editProduct?.productType) ? "hidden" : ""}>
                 <label
                   className="block text-sm font-medium text-gray-900 mb-2"
                   style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
@@ -2194,7 +2529,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                   className="block text-sm font-medium text-gray-900 mb-2"
                   style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
                 >
-                  หมวดหมู่
+                  {isRawMaterialType(editProduct?.productType) ? "หมวดหมู่ (แสดงแค่ชิ้นส่วน)" : "หมวดหมู่"}
                 </label>
                 <select
                   value={editProduct?.category || ""}
@@ -2220,7 +2555,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                   className="w-full px-4 py-2.5 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
                 >
                   <option value="">เลือกหมวดหมู่</option>
-                  {categories.map((category) => (<option key={category.key} value={category.key}>{category.label}</option>))}
+                  {getProductCategoryOptions(editProduct?.productType).map((category) => (<option key={category.key} value={category.key}>{category.label}</option>))}
                 </select>
               </div>
 
@@ -2229,7 +2564,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                   className="block text-sm font-medium text-gray-900 mb-2"
                   style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
                 >
-                  หมวดหมู่ย่อย
+                  {isRawMaterialType(editProduct?.productType) ? "หมวดหมู่" : "หมวดหมู่ย่อย"}
                 </label>
                 <select
                   value={editProduct?.subcategoryId || ""}
@@ -2246,7 +2581,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                   }}
                   className="w-full px-4 py-2.5 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
                 >
-                  <option value="">เลือกหมวดหมู่ย่อย</option>
+                  <option value="">{isRawMaterialType(editProduct?.productType) ? "เลือกหมวดหมู่" : "เลือกหมวดหมู่ย่อย"}</option>
                   {editProduct?.category
                     ? // ถ้ามีการเลือกหมวดหมู่หลัก แสดงเฉพาะหมวดหมู่ย่อยที่เกี่ยวข้อง
                     getSubcategoriesForCategory(editProduct.category).map(
@@ -2285,19 +2620,9 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                       <div className="flex items-center gap-4 mb-4">
                         <div className="flex-shrink-0 w-12 h-12 rounded-md overflow-hidden">
                           <img
-                            src={
-                              color.image_path
-                                ? color.image_path.startsWith("http") ||
-                                  color.image_path.startsWith("data:") ||
-                                  color.image_path.startsWith("/colors/")
-                                  ? color.image_path
-                                  : `${BASE_IMAGE_URL}/${color.image_path.replace(
-                                    /^\/+/,
-                                    ""
-                                  )}`
-                                : "/default-color.png"
-                            }
+                            src={getColorImageSrc(color.image_path)}
                             alt={color.color}
+                            onError={useDefaultColorImage}
                             className="w-full h-full object-cover"
                           />
                         </div>
@@ -2314,17 +2639,9 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                             {color.image_path && (
                               <div className="relative w-20 h-20 rounded-md overflow-hidden mb-2">
                                 <img
-                                  src={
-                                    color.image_path.startsWith("http") ||
-                                      color.image_path.startsWith("data:") ||
-                                      color.image_path.startsWith("/colors/")
-                                      ? color.image_path
-                                      : `${BASE_IMAGE_URL}/${color.image_path.replace(
-                                        /^\/+/,
-                                        ""
-                                      )}`
-                                  }
+                                  src={getColorImageSrc(color.image_path)}
                                   alt={`Color ${color.color}`}
+                                  onError={useDefaultColorImage}
                                   className="w-full h-full object-cover"
                                 />
                               </div>
@@ -2467,7 +2784,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                   </div>
                 </div>
               </div>
-              <div>
+              <div className={isRawMaterialType(editProduct?.productType) ? "hidden" : ""}>
                 <label
                   className="block text-sm font-medium text-gray-900 mb-2"
                   style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
@@ -2514,7 +2831,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                 </div>
               </div>
               {/* Production Times */}
-              <div>
+              <div className={isRawMaterialType(editProduct?.productType) ? "hidden" : ""}>
                 <label
                   className="block text-sm font-medium text-gray-900 mb-2"
                   style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
@@ -2616,18 +2933,19 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                             <select
                               value={sizeItem.size || ""}
                               onChange={(e) => {
-                                const updatedSizes = [
-                                  ...(editProduct.sizes || []),
-                                ];
-                                updatedSizes[index] = {
-                                  ...updatedSizes[index],
-                                  size: e.target.value,
-                                };
-                                setEditProduct({
-                                  ...editProduct,
-                                  sizes: updatedSizes,
-                                });
-                              }}
+                              const updatedSizes = [
+                                ...(editProduct.sizes || []),
+                              ];
+                              updatedSizes[index] = {
+                                ...updatedSizes[index],
+                                size: e.target.value,
+                              };
+                              setEditProduct({
+                                ...editProduct,
+                                sizes: updatedSizes,
+                                prices: syncPricesWithSizes(editProduct, updatedSizes),
+                              });
+                            }}
                               className="w-full px-3 py-2 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
                             >
                               <option value="">เลือกขนาด</option>
@@ -2654,18 +2972,19 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                               type="number"
                               value={isNaN(sizeItem.width) ? "" : sizeItem.width}
                               onChange={(e) => {
-                                const updatedSizes = [
-                                  ...(editProduct.sizes || []),
-                                ];
-                                updatedSizes[index] = {
-                                  ...updatedSizes[index],
-                                  width: e.target.value === "" ? NaN : parseFloat(e.target.value),
-                                };
-                                setEditProduct({
-                                  ...editProduct,
-                                  sizes: updatedSizes,
-                                });
-                              }}
+                              const updatedSizes = [
+                                ...(editProduct.sizes || []),
+                              ];
+                              updatedSizes[index] = {
+                                ...updatedSizes[index],
+                                width: e.target.value === "" ? NaN : parseFloat(e.target.value),
+                              };
+                              setEditProduct({
+                                ...editProduct,
+                                sizes: updatedSizes,
+                                prices: syncPricesWithSizes(editProduct, updatedSizes),
+                              });
+                            }}
                               className="w-full px-3 py-2 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
                             />
                           </div>
@@ -2677,18 +2996,19 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                               type="number"
                               value={isNaN(sizeItem.height) ? "" : sizeItem.height}
                               onChange={(e) => {
-                                const updatedSizes = [
-                                  ...(editProduct.sizes || []),
-                                ];
-                                updatedSizes[index] = {
-                                  ...updatedSizes[index],
-                                  height: e.target.value === "" ? NaN : parseFloat(e.target.value),
-                                };
-                                setEditProduct({
-                                  ...editProduct,
-                                  sizes: updatedSizes,
-                                });
-                              }}
+                              const updatedSizes = [
+                                ...(editProduct.sizes || []),
+                              ];
+                              updatedSizes[index] = {
+                                ...updatedSizes[index],
+                                height: e.target.value === "" ? NaN : parseFloat(e.target.value),
+                              };
+                              setEditProduct({
+                                ...editProduct,
+                                sizes: updatedSizes,
+                                prices: syncPricesWithSizes(editProduct, updatedSizes),
+                              });
+                            }}
                               className="w-full px-3 py-2 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
                             />
                           </div>
@@ -2702,18 +3022,19 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                               step="1"
                               value={isNaN(sizeItem.weight) ? "" : sizeItem.weight}
                               onChange={(e) => {
-                                const updatedSizes = [
-                                  ...(editProduct.sizes || []),
-                                ];
-                                updatedSizes[index] = {
-                                  ...updatedSizes[index],
-                                  weight: e.target.value === "" ? NaN : parseFloat(e.target.value),
-                                };
-                                setEditProduct({
-                                  ...editProduct,
-                                  sizes: updatedSizes,
-                                });
-                              }}
+                              const updatedSizes = [
+                                ...(editProduct.sizes || []),
+                              ];
+                              updatedSizes[index] = {
+                                ...updatedSizes[index],
+                                weight: e.target.value === "" ? NaN : parseFloat(e.target.value),
+                              };
+                              setEditProduct({
+                                ...editProduct,
+                                sizes: updatedSizes,
+                                prices: syncPricesWithSizes(editProduct, updatedSizes),
+                              });
+                            }}
                               className="w-full px-3 py-2 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
                             />
                           </div>
@@ -2729,6 +3050,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                               setEditProduct({
                                 ...editProduct,
                                 sizes: updatedSizes,
+                                prices: syncPricesWithSizes(editProduct, updatedSizes),
                               });
                             }}
                             className="p-2 text-red-600 hover:text-[#ec4a4c] rounded-lg hover:bg-red-50 transition-all duration-200"
@@ -2762,6 +3084,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                       setEditProduct({
                         ...editProduct,
                         sizes: updatedSizes,
+                        prices: syncPricesWithSizes(editProduct, updatedSizes),
                       });
                     }}
                     className="w-full px-4 py-2.5 text-sm font-medium text-white bg-gradient-to-r from-red-600 to-red-700 rounded-lg hover:from-red-700 hover:to-red-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-all duration-200 hover:shadow-lg"
@@ -2771,7 +3094,8 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                   </button>
                 </div>
               </div>
-              <div className="md:col-span-2">
+              {renderRawMaterialCostSection(editProduct, setEditProduct)}
+              <div className={cn("md:col-span-2", isRawMaterialType(editProduct?.productType) && "hidden")}>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Options
                 </label>
@@ -3199,7 +3523,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
               )}
 
               {/* Prices Section */}
-              <div className="md:col-span-2">
+              <div className={cn("md:col-span-2", isRawMaterialType(editProduct?.productType) && "hidden")}>
                 <label
                   className="block text-sm font-medium text-gray-900 mb-2"
                   style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
@@ -3212,10 +3536,14 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                     <button
                       type="button"
                       onClick={() => {
+                        const nextIndex = editProduct?.prices?.length || 0;
+                        const size = getSizeAtIndex(editProduct, nextIndex);
                         const newPrices = [
                           ...(editProduct?.prices || []),
                           {
                             id: Date.now().toString(),
+                            model: buildSizedModel(getProductBaseModel(editProduct), size),
+                            size,
                             retail_price: 0,
                             wholesale_price: 0,
                             special_price: 0,
@@ -3254,7 +3582,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                               </label>
                               <input
                                 type="text"
-                                value={editProduct?.modelName || ""}
+                                value={getPriceModel(editProduct, index, price)}
                                 readOnly
                                 className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-md text-gray-500"
                               />
@@ -3385,7 +3713,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                               </label>
                               <input
                                 type="text"
-                                value={editProduct?.modelName || ""}
+                                value={getPriceModel(editProduct, index, price)}
                                 readOnly
                                 className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-md text-gray-500"
                               />
@@ -3512,7 +3840,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                               </label>
                               <input
                                 type="text"
-                                value={editProduct?.modelName || ""}
+                                value={getPriceModel(editProduct, index, price)}
                                 readOnly
                                 className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-md text-gray-500"
                               />
@@ -3886,10 +4214,18 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                 <select
                   value={newProduct.productType || ""}
                   onChange={(e) => {
-                    setNewProduct({
+                    const productType = e.target.value;
+                    const nextProduct = {
                       ...newProduct,
-                      productType: e.target.value as any,
-                    });
+                      productType,
+                      category: isRawMaterialType(productType) ? RAW_MATERIAL_CATEGORY : newProduct.category,
+                      subcategoryId: isRawMaterialType(productType) ? "" : newProduct.subcategoryId,
+                    };
+                    setNewProduct(
+                      isRawMaterialType(productType)
+                        ? applyRawMaterialCost(nextProduct, nextProduct.procurementCost || {})
+                        : nextProduct
+                    );
                     clearError('productType');
                   }}
                   className={cn(
@@ -3899,9 +4235,11 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                   )}
                 >
                   <option value="">เลือกประเภทสินค้า</option>
-                  <option value="1">สินค้าสำเร็จรูป</option>
-                  <option value="2">สินค้าพรีออเดอร์</option>
-                  <option value="3">opton</option>
+                  {PRODUCT_TYPE_OPTIONS.map((type) => (
+                    <option key={type.value} value={type.value}>
+                      {type.label}
+                    </option>
+                  ))}
                 </select>
                 {formErrors.productType && <p className="text-xs text-red-500 mt-1">{formErrors.productType}</p>}
               </div>
@@ -3911,7 +4249,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                   className="flex items-center gap-1 text-sm font-medium text-gray-900"
                   style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
                 >
-                  ชื่อสินค้า (สำหรับแสดงลูกค้า) * {newProduct.name?.trim() && !formErrors.name && <CheckCircle2 className="w-4 h-4 text-green-500" />}
+                  {isRawMaterialType(newProduct.productType) ? "ชื่อสินค้า (ไม่แสดงต่อหน้าลูกค้า)" : "ชื่อสินค้า (สำหรับแสดงลูกค้า)"} * {newProduct.name?.trim() && !formErrors.name && <CheckCircle2 className="w-4 h-4 text-green-500" />}
                 </label>
                 <input
                   type="text"
@@ -3994,7 +4332,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                   className="flex items-center gap-1 text-sm font-medium text-gray-900"
                   style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
                 >
-                  หมวดหมู่ * {newProduct.category && newProduct.category !== "all" && newProduct.category !== "เลือกหมวดหมู่" && !formErrors.category && <CheckCircle2 className="w-4 h-4 text-green-500" />}
+                  {isRawMaterialType(newProduct.productType) ? "หมวดหมู่ (แสดงแค่ชิ้นส่วน)" : "หมวดหมู่"} * {newProduct.category && newProduct.category !== "all" && newProduct.category !== "เลือกหมวดหมู่" && !formErrors.category && <CheckCircle2 className="w-4 h-4 text-green-500" />}
                 </label>
                 <select
                   value={newProduct.category}
@@ -4012,7 +4350,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                       (newProduct.category && newProduct.category !== "all" && newProduct.category !== "เลือกหมวดหมู่") ? "border-green-500" : "border-gray-300"
                   )}
                 >
-                  {categories.map((category) => (
+                  {getProductCategoryOptions(newProduct.productType).map((category) => (
                     <option key={category.key} value={category.key}>
                       {category.label}
                     </option>
@@ -4026,7 +4364,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                   className="flex items-center gap-1 text-sm font-medium text-gray-900"
                   style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
                 >
-                  หมวดหมู่ย่อย * {newProduct.subcategoryId && !formErrors.subcategoryId && <CheckCircle2 className="w-4 h-4 text-green-500" />}
+                  {isRawMaterialType(newProduct.productType) ? "หมวดหมู่" : "หมวดหมู่ย่อย"} * {newProduct.subcategoryId && !formErrors.subcategoryId && <CheckCircle2 className="w-4 h-4 text-green-500" />}
                 </label>
                 <select
                   value={newProduct.subcategoryId}
@@ -4047,7 +4385,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                       .length === 0
                   }
                 >
-                  <option value="">เลือกหมวดหมู่ย่อย</option>
+                  <option value="">{isRawMaterialType(newProduct.productType) ? "เลือกหมวดหมู่" : "เลือกหมวดหมู่ย่อย"}</option>
                   {getSubcategoriesForCategory(newProduct.category).map(
                     (subcategory) => (
                       <option key={subcategory.id} value={subcategory.id}>
@@ -4075,17 +4413,9 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                       <div className="flex items-center gap-4 mb-4">
                         <div className="flex-shrink-0 w-12 h-12 rounded-md overflow-hidden">
                           <img
-                            src={
-                              color.image_path && color.image_path.trim()
-                                ? color.image_path.startsWith("data:")
-                                  ? color.image_path
-                                  : `${color.image_path.replace(
-                                    /^\/+/,
-                                    ""
-                                  )}`
-                                : "/default-color.png"
-                            }
+                            src={getColorImageSrc(color.image_path)}
                             alt={color.color}
+                            onError={useDefaultColorImage}
                             className="w-full h-full object-cover"
                           />
                         </div>
@@ -4104,15 +4434,9 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                             {color.image_path && (
                               <div className="relative w-20 h-20 rounded-md overflow-hidden mb-2">
                                 <img
-                                  src={
-                                    color.image_path.startsWith("data:")
-                                      ? color.image_path
-                                      : `${color.image_path.replace(
-                                        /^\/+/,
-                                        ""
-                                      )}`
-                                  }
+                                  src={getColorImageSrc(color.image_path)}
                                   alt={`Color ${color.color}`}
+                                  onError={useDefaultColorImage}
                                   className="w-full h-full object-cover"
                                 />
                               </div>
@@ -4250,7 +4574,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                   </div>
                 </div>
               </div>
-              <div>
+              <div className={isRawMaterialType(newProduct.productType) ? "hidden" : ""}>
                 <label
                   className="block text-sm font-medium text-gray-900 mb-2"
                   style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
@@ -4293,7 +4617,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                 </div>
               </div>
               {/* Production Times */}
-              <div>
+              <div className={isRawMaterialType(newProduct.productType) ? "hidden" : ""}>
                 <label
                   className="block text-sm font-medium text-gray-900 mb-2"
                   style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
@@ -4404,6 +4728,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                               setNewProduct({
                                 ...newProduct,
                                 sizes: updatedSizes,
+                                prices: syncPricesWithSizes(newProduct, updatedSizes),
                               });
                             }}
                             className="w-full px-3 py-2 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
@@ -4440,6 +4765,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                               setNewProduct({
                                 ...newProduct,
                                 sizes: updatedSizes,
+                                prices: syncPricesWithSizes(newProduct, updatedSizes),
                               });
                             }}
                             className="w-full px-3 py-2 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
@@ -4463,6 +4789,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                               setNewProduct({
                                 ...newProduct,
                                 sizes: updatedSizes,
+                                prices: syncPricesWithSizes(newProduct, updatedSizes),
                               });
                             }}
                             className="w-full px-3 py-2 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
@@ -4488,6 +4815,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                               setNewProduct({
                                 ...newProduct,
                                 sizes: updatedSizes,
+                                prices: syncPricesWithSizes(newProduct, updatedSizes),
                               });
                             }}
                             className="w-full px-3 py-2 bg-white text-black border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
@@ -4505,6 +4833,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                             setNewProduct({
                               ...newProduct,
                               sizes: updatedSizes,
+                              prices: syncPricesWithSizes(newProduct, updatedSizes),
                             });
                           }}
                           className="p-2 text-red-600 hover:text-[#ec4a4c] rounded-lg hover:bg-red-50 transition-all duration-200"
@@ -4535,7 +4864,11 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                         height: 0,
                         weight: 0,
                       });
-                      setNewProduct({ ...newProduct, sizes: updatedSizes });
+                      setNewProduct({
+                        ...newProduct,
+                        sizes: updatedSizes,
+                        prices: syncPricesWithSizes(newProduct, updatedSizes),
+                      });
                     }}
                     className="w-full px-4 py-2.5 text-sm font-medium text-white bg-gradient-to-r from-red-600 to-red-700 rounded-lg hover:from-red-700 hover:to-red-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-all duration-200 hover:shadow-lg"
                     style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
@@ -4544,7 +4877,8 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                   </button>
                 </div>
               </div>
-              <div className="md:col-span-2">
+              {renderRawMaterialCostSection(newProduct, setNewProduct)}
+              <div className={cn("md:col-span-2", isRawMaterialType(newProduct.productType) && "hidden")}>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Options
                 </label>
@@ -4936,7 +5270,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
               )}
 
               {/* Prices Section */}
-              <div className="md:col-span-2">
+              <div className={cn("md:col-span-2", isRawMaterialType(newProduct.productType) && "hidden")}>
                 <label
                   className="block text-sm font-medium text-gray-900 mb-2"
                   style={{ fontFamily: "Sukhumvit Set, sans-serif" }}
@@ -4949,10 +5283,14 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                     <button
                       type="button"
                       onClick={() => {
+                        const nextIndex = newProduct.prices?.length || 0;
+                        const size = getSizeAtIndex(newProduct, nextIndex);
                         const newPrices = [
                           ...(newProduct.prices || []),
                           {
                             id: Date.now().toString(),
+                            model: buildSizedModel(getProductBaseModel(newProduct), size),
+                            size,
                             retailPrice: 0,
                             wholesalePrice: 0,
                             specialPrice: 0,
@@ -4980,7 +5318,7 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
                             </label>
                             <input
                               type="text"
-                              value={newProduct.modelName}
+                              value={getPriceModel(newProduct, index, price)}
                               readOnly
                               className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-md text-gray-500"
                             />
