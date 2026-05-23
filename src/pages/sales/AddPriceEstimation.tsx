@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { ArrowLeft, Upload, User, FileText, X, Search, XCircle, History, AlertCircle, Calendar, Package, Check, Copy, Plus, Trash2, Calculator, Trophy, Factory } from "lucide-react";
+import { ArrowLeft, Upload, User, FileText, X, Search, XCircle, History, AlertCircle, Calendar, Package, Check, Copy, Plus, Trash2, Calculator, Trophy, Factory, Eye } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useNavigate, useLocation, useParams } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
@@ -283,7 +283,21 @@ export default function AddPriceEstimation({
           setProductCategory(item.product_category || "");
           setSelectedProductType(item.product_type || "");
           setQuantity(item.quantity?.toString() || "");
-          setPrice(item.price?.toString() || "");
+          
+          // Load price (budget per unit) correctly in sales edit page
+          if (item.status === "เสนอราคา" || String(item.status) === "เสนอราคา") {
+            const details = item.details ? (typeof item.details === 'string' ? JSON.parse(item.details) : item.details) : {};
+            const winner = details.supplierEntries?.find((e: any) => e.isWinner || e.id === details.winnerFactoryValue || e.factoryValue === details.winnerFactoryValue) || details.supplierEntries?.[0];
+            const qtyVal = parseInt(item.quantity?.toString() || "0") || 1;
+            if (winner) {
+              setPrice(winner.totalSellingPricePerUnit?.toString() || (parseFloat(item.price || "0") / qtyVal).toString());
+            } else {
+              setPrice((parseFloat(item.price || "0") / qtyVal).toString());
+            }
+          } else {
+            setPrice(item.price?.toString() || "");
+          }
+          
           setEstimateDate(item.estimation_date || "");
           setEstimateNote(item.notes || "");
 
@@ -639,6 +653,8 @@ export default function AddPriceEstimation({
   // File attachments
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const [existingFileUrls, setExistingFileUrls] = useState<string[]>([]);
+  const [previewImage, setPreviewImage] = useState<{ src: string; title: string } | null>(null);
+  const previewObjectUrlRef = useRef<string | null>(null);
 
   // Sales employees options (from API)
   const [salesOptions, setSalesOptions] = useState<{ value: string; label: string }[]>([]);
@@ -665,6 +681,38 @@ export default function AddPriceEstimation({
     };
     fetchSalesEmployees();
   }, []);
+
+  useEffect(() => {
+    return () => {
+      if (previewObjectUrlRef.current) {
+        URL.revokeObjectURL(previewObjectUrlRef.current);
+      }
+    };
+  }, []);
+
+  const clearPreviewObjectUrl = () => {
+    if (previewObjectUrlRef.current) {
+      URL.revokeObjectURL(previewObjectUrlRef.current);
+      previewObjectUrlRef.current = null;
+    }
+  };
+
+  const openImagePreview = (src: string, title: string) => {
+    clearPreviewObjectUrl();
+    setPreviewImage({ src, title });
+  };
+
+  const openFileImagePreview = (file: File) => {
+    clearPreviewObjectUrl();
+    const objectUrl = URL.createObjectURL(file);
+    previewObjectUrlRef.current = objectUrl;
+    setPreviewImage({ src: objectUrl, title: file.name });
+  };
+
+  const closeImagePreview = () => {
+    setPreviewImage(null);
+    clearPreviewObjectUrl();
+  };
 
   // Fetch customers from API
   useEffect(() => {
@@ -1402,13 +1450,15 @@ export default function AddPriceEstimation({
       let finalFactoryLabel = "";
       let winnerValue = "";
 
-      if (mode === "procurement" && selectedWinner) {
-        finalStatus = "เสนอราคา";
-        const winner = supplierEntries.find(e => e.id === selectedWinner);
-        if (winner) {
+      const winner = supplierEntries.find(e => e.id === selectedWinner);
+      if (winner) {
+        finalFactoryLabel = winner.factoryLabel;
+        winnerValue = winner.factoryValue;
+        if (mode === "procurement" || finalStatus === "เสนอราคา" || status === "เสนอราคา") {
           finalPrice = winner.totalSellingPricePerUnit * (parseInt(quantity) || globalHeader.quantity || 0);
-          finalFactoryLabel = winner.factoryLabel;
-          winnerValue = winner.factoryValue;
+          if (mode === "procurement") {
+            finalStatus = "เสนอราคา";
+          }
         }
       }
 
@@ -1488,11 +1538,11 @@ export default function AddPriceEstimation({
           customerReferenceImages: [...existingFileUrls, ...uploadedFileUrls],
           artworkImages: [...existingFileUrls, ...uploadedFileUrls],
           // Procurement specific data
-          supplierEntries: mode === "procurement" ? supplierEntries : undefined,
-          globalHeader: mode === "procurement" ? globalHeader : undefined,
+          supplierEntries: supplierEntries.length > 0 ? supplierEntries : undefined,
+          globalHeader: globalHeader && Object.keys(globalHeader).length > 0 ? globalHeader : undefined,
           winnerFactoryValue: winnerValue,
           factoryLabel: finalFactoryLabel,
-          estimationStarted: mode === "procurement"
+          estimationStarted: mode === "procurement" || supplierEntries.length > 0
         },
         product_color: productColor,
         product_size: productSize,
@@ -1530,49 +1580,43 @@ export default function AddPriceEstimation({
 
   // Copy functions for summary popups
   const copyMedalSummary = () => {
-    const productName = `${productCategory} > ${productsByCategory[productCategory]?.find(p => p.value === selectedProductType)?.label}`;
-    let text = `สินค้า:${productName}`;
-    if (material) text += `\n\nวัสดุ:${getMaterialLabel(material)}`;
-    if (jobName) text += `\n\nชื่องาน:${jobName}`;
+    const productTypeName = productsByCategory[productCategory]?.find(p => p.value === selectedProductType)?.label || productCategory;
+    
+    const sizeText = selectedMedalSizes.length > 0
+      ? selectedMedalSizes.map(s => s === "other" ? customMedalSize + " ซม." : medalSizes.find(size => size.value === s)?.label || s).join(", ")
+      : (productSize || "-");
 
-    // Multi-option sizes and thicknesses
-    if (selectedMedalSizes.length > 0) {
-      const sizeLabels = selectedMedalSizes.map(s =>
-        s === "other" ? customMedalSize + " ซม." : medalSizes.find(size => size.value === s)?.label || s
-      );
-      text += `\n\nขนาด (Multi-Select):${sizeLabels.join(", ")}`;
-    }
-    if (selectedMedalThicknesses.length > 0) {
-      const thicknessLabels = selectedMedalThicknesses.map(t =>
-        t === "other" ? customMedalThickness + " มิล" : medalThicknessOptions.find(th => th.value === t)?.label || t
-      );
-      text += `\n\nความหนา (Multi-Select):${thicknessLabels.join(", ")}`;
-    }
+    const thicknessText = selectedMedalThicknesses.length > 0
+      ? selectedMedalThicknesses.map(t => t === "other" ? customMedalThickness + " มม." : medalThicknessOptions.find(th => th.value === t)?.label || t).join(", ")
+      : (thickness || "-");
 
-    // Options for Procurement
-    const options = generateEstimationOptions();
-    if (options.length > 0) {
-      text += `\n\n📋 Options สำหรับจัดซื้อ (${options.length} ตัวเลือก):`;
-      options.forEach((opt, idx) => {
-        text += `\n   Option ${idx + 1}: ${opt}`;
-      });
-    }
+    const finishLabel = (() => {
+      if (finishType === "other") return customFinishType || "อื่นๆ";
+      const found = finishTypes.find(ft => ft.value === finishType);
+      return found ? found.label : (finishType || "-");
+    })();
 
-    // Color quantity sets
-    if (colorQuantityRows.some(r => r.color)) {
-      text += `\n\nสีและจำนวน (${quantitySets.length} ชุด):`;
-      colorQuantityRows.filter(r => r.color).forEach(row => {
-        const colorLabel = metalColors.find(c => c.value === row.color)?.label || row.color;
-        const qtyStr = row.quantities.map((qty, idx) => `ชุด${quantitySets[idx]}:${qty}`).join(", ");
-        text += `\n   ${colorLabel} - ${qtyStr}`;
-      });
-      text += `\n   รวมต่อชุด: ${quantitySets.map((set, idx) => `ชุด${set}:${getSetTotal(idx)}`).join(", ")}`;
-    }
+    const frontText = frontDetails.length > 0 ? frontDetails.join(", ") : "-";
+    const backText = backDetails.length > 0 ? backDetails.join(", ") : "-";
 
-    if (frontDetails.length > 0) text += `\n\nรายละเอียดด้านหน้า:${frontDetails.join(", ")}`;
-    if (backDetails.length > 0) text += `\n\nรายละเอียดด้านหลัง:${backDetails.join(", ")}`;
-    if (lanyardSize) text += `\n\nขนาดสายคล้อง:${getLanyardSizeLabel(lanyardSize)}`;
-    if (lanyardPatterns) text += `\n\nจำนวนแบบสายคล้อง:${lanyardPatterns}`;
+    const qtyVal = quantity || (colorQuantityRows.length > 0 ? getSetTotal(0) : "0");
+    const lanyardInfo = lanyardSize 
+      ? `${getLanyardSizeLabel(lanyardSize)} ( สาย ${lanyardPatterns || 1} แบบ )`
+      : "-";
+
+    const text = `ราคา${productTypeName}
+Line ${customerLineId || "-"}
+วัสดุ : ${getMaterialLabel(material) || "-"}
+สีชุบ (สีเนื้องาน) : ${finishLabel}
+รายละเอียดด้านหน้า : ${frontText}
+รายละเอียดด้านหลัง : ${backText}
+ขนาด ซม. : ${sizeText}
+ความหนา มม. : ${thicknessText}
+จำนวน ${qtyVal} เหรียญ
+ขนาดสาย : ${lanyardInfo}
+Project ${jobName || "-"}
+ราคา ${price || "0"} บาท
+ใช้งาน ${eventDate || "-"}`;
 
     navigator.clipboard.writeText(text);
     toast({ title: "คัดลอกแล้ว", description: "คัดลอกข้อมูลสรุปเรียบร้อย" });
@@ -3918,13 +3962,21 @@ export default function AddPriceEstimation({
                     return (
                       <div key={`existing-${index}`} className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg border border-blue-200 hover:border-blue-300 transition-colors">
                         {isImage ? (
-                          <div className="flex-shrink-0 w-16 h-16 rounded-md overflow-hidden bg-muted border border-border">
+                          <button
+                            type="button"
+                            onClick={() => openImagePreview(displayUrl, fileName)}
+                            className="group relative flex-shrink-0 w-16 h-16 rounded-md overflow-hidden bg-muted border border-border cursor-zoom-in"
+                            aria-label={`ดูรูป ${fileName}`}
+                          >
                             <img 
                               src={displayUrl} 
                               alt={fileName}
                               className="w-full h-full object-cover"
                             />
-                          </div>
+                            <span className="absolute inset-0 flex items-center justify-center bg-black/45 opacity-0 transition-opacity group-hover:opacity-100">
+                              <Eye className="h-5 w-5 text-white" />
+                            </span>
+                          </button>
                         ) : (
                           <div className="flex-shrink-0 w-16 h-16 rounded-md bg-muted border border-border flex items-center justify-center">
                             <FileText className="h-8 w-8 text-muted-foreground" />
@@ -3961,14 +4013,22 @@ export default function AddPriceEstimation({
                     return (
                       <div key={`new-${index}`} className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border border-border hover:border-primary/50 transition-colors">
                         {isImage && imageUrl ? (
-                          <div className="flex-shrink-0 w-16 h-16 rounded-md overflow-hidden bg-muted border border-border">
+                          <button
+                            type="button"
+                            onClick={() => openFileImagePreview(file)}
+                            className="group relative flex-shrink-0 w-16 h-16 rounded-md overflow-hidden bg-muted border border-border cursor-zoom-in"
+                            aria-label={`ดูรูป ${file.name}`}
+                          >
                             <img 
                               src={imageUrl} 
                               alt={file.name}
                               className="w-full h-full object-cover"
                               onLoad={() => URL.revokeObjectURL(imageUrl)}
                             />
-                          </div>
+                            <span className="absolute inset-0 flex items-center justify-center bg-black/45 opacity-0 transition-opacity group-hover:opacity-100">
+                              <Eye className="h-5 w-5 text-white" />
+                            </span>
+                          </button>
                         ) : (
                           <div className="flex-shrink-0 w-16 h-16 rounded-md bg-muted border border-border flex items-center justify-center">
                             <FileText className="h-8 w-8 text-muted-foreground" />
@@ -3997,6 +4057,29 @@ export default function AddPriceEstimation({
           </CardContent>
         </Card>
       )}
+
+      {/* Image Preview Dialog */}
+      <Dialog
+        open={Boolean(previewImage)}
+        onOpenChange={(open) => {
+          if (!open) closeImagePreview();
+        }}
+      >
+        <DialogContent className="max-w-4xl overflow-hidden p-0">
+          <DialogHeader className="px-4 pt-4 pb-2">
+            <DialogTitle className="truncate pr-8">{previewImage?.title || "รูปภาพ"}</DialogTitle>
+          </DialogHeader>
+          {previewImage && (
+            <div className="flex items-center justify-center bg-muted/40 p-4">
+              <img
+                src={previewImage.src}
+                alt={previewImage.title}
+                className="max-h-[78vh] max-w-full rounded-md object-contain"
+              />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Action Buttons - แสดงเมื่อไม่ได้ใช้โมเดลเดิม หรือเมื่อเลือกออเดอร์เดิมแล้ว */}
       {(!usePreviousModel || isFieldLocked) && (

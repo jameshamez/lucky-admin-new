@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo } from "react";
+import { useState, useRef, useMemo, useEffect } from "react";
 import { format, startOfDay, endOfDay } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
@@ -13,12 +13,11 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Upload, Calculator, Plus, Trash2, Settings, Clock, FileCheck, CheckCircle2, Search, AlertCircle, Inbox, RotateCcw, FileImage, Paperclip, AlertTriangle, CheckCircle, X, History, User, FileText, Save, Pencil, Trophy, Copy, ChevronDown, ChevronUp, Package, Factory, Image, Download } from "lucide-react";
+import { Upload, Calculator, Plus, Trash2, Settings, Clock, FileCheck, CheckCircle2, Search, AlertCircle, Inbox, RotateCcw, FileImage, Paperclip, AlertTriangle, CheckCircle, X, History, User, FileText, Save, Pencil, Trophy, Copy, ChevronDown, ChevronUp, Package, Factory, Image, Download, Link2, ArrowUpDown } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import sampleArtwork from "@/assets/sample-artwork.png";
-import sampleArtworkMedal from "@/assets/sample-artwork-medal.png";
 import { toast } from "sonner";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Separator } from "@/components/ui/separator";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -93,6 +92,14 @@ interface FactoryQuotation extends FactoryFormValues {
   totalSellingPrice: number;
   totalProfit: number;
   uploadedFile: File | null;
+}
+
+interface SupplierEvidenceFile {
+  name: string;
+  type: string;
+  size: number;
+  data: string;
+  uploadedAt: string;
 }
 
 // Product Type for Job-based vs Ready-made
@@ -184,20 +191,76 @@ interface FactoryEntry {
   totalProfit: number; // กำไรรวม (THB)
   isWinner: boolean;
   uploadedFile: File | null; // ไฟล์แนบหลักฐานการตีราคา
+  evidenceFile?: SupplierEvidenceFile | null; // serialized file persisted in details JSON
+}
+
+interface JobColorQuantityDraft {
+  color: string;
+  quantity: string;
+}
+
+interface JobDetailsDraft {
+  jobName: string;
+  customerName: string;
+  salesPerson: string;
+  material: string;
+  size: string;
+  thickness: string;
+  finishTypeLabel: string;
+  frontDetails: string;
+  backDetails: string;
+  lanyardSize: string;
+  lanyardPatterns: string;
+  customerBudget: string;
+  eventDate: string;
+  quantity: string;
+  notes: string;
+  colorRows: JobColorQuantityDraft[];
 }
 
 const API_BASE = "https://nacres.co.th/api-lucky/admin";
+const QUOTATION_TAB_VALUES = ["pending", "in-progress", "quoted", "proposed", "production"] as const;
+type QuotationTabValue = typeof QUOTATION_TAB_VALUES[number];
+const PRODUCTION_READY_STATUSES: QuotationStatus[] = ["รายการสั่งผลิต", "ยืนยันเรียบร้อย"];
+
+const isProductionReadyStatus = (status?: QuotationStatus) =>
+  Boolean(status && PRODUCTION_READY_STATUSES.includes(status));
 
 const Quotation = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [isLoading, setIsLoading] = useState(true);
   const [factoriesList, setFactoriesList] = useState<FactoryQuotation[]>([]);
   const [currentFactoryId, setCurrentFactoryId] = useState<string | null>(null);
   const [showManagementModal, setShowManagementModal] = useState(false);
   const [selectedQuotation, setSelectedQuotation] = useState<MockQuotation | null>(null);
+  const openedReviewLinkRef = useRef<string | null>(null);
+  const [isEditingJobDetails, setIsEditingJobDetails] = useState(false);
+  const [isSavingJobDetails, setIsSavingJobDetails] = useState(false);
+  const [jobDetailsDraft, setJobDetailsDraft] = useState<JobDetailsDraft | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState("pending");
   const [productTypeFilter, setProductTypeFilter] = useState<ProductType | "all">("all");
+
+  // Column sorting state
+  type SortDirection = "asc" | "desc" | null;
+  const [sortColumn, setSortColumn] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>(null);
+
+  const handleSort = (column: string) => {
+    if (sortColumn === column) {
+      // Cycle: asc -> desc -> null
+      if (sortDirection === "asc") {
+        setSortDirection("desc");
+      } else if (sortDirection === "desc") {
+        setSortColumn(null);
+        setSortDirection(null);
+      }
+    } else {
+      setSortColumn(column);
+      setSortDirection("asc");
+    }
+  };
 
   // Header column filters for Quotation table
   const [filterJobCode, setFilterJobCode] = useState("");
@@ -218,6 +281,428 @@ const Quotation = () => {
     setFilterDateFrom(undefined);
     setFilterDateTo(undefined);
     setProductTypeFilter("all");
+  };
+
+  const isQuotationTabValue = (value: string | null): value is QuotationTabValue =>
+    Boolean(value && QUOTATION_TAB_VALUES.includes(value as QuotationTabValue));
+
+  const getQuotationTabValue = (status?: QuotationStatus): QuotationTabValue => {
+    switch (status) {
+      case "อยู่ระหว่างการประเมินราคา":
+        return "in-progress";
+      case "เสนอราคา":
+        return "quoted";
+      case "เสนอลูกค้า":
+        return "proposed";
+      case "ยืนยันเรียบร้อย":
+      case "รายการสั่งผลิต":
+        return "production";
+      case "ยื่นคำขอประเมิน":
+      default:
+        return "pending";
+    }
+  };
+
+  const buildQuotationReviewUrl = (quotation: MockQuotation) => {
+    const url = new URL(window.location.origin);
+    url.pathname = "/procurement/estimation/quotation";
+    url.searchParams.set("quotationId", String(quotation.id));
+    url.searchParams.set("tab", getQuotationTabValue(quotation.status));
+    return url.toString();
+  };
+
+  const copyTextToClipboard = async (text: string) => {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    textArea.style.position = "fixed";
+    textArea.style.left = "-9999px";
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    const copied = document.execCommand("copy");
+    document.body.removeChild(textArea);
+
+    if (!copied) {
+      throw new Error("Copy command failed");
+    }
+  };
+
+  const handleCopyReviewLink = async () => {
+    if (!selectedQuotation) return;
+
+    try {
+      const reviewUrl = buildQuotationReviewUrl(selectedQuotation);
+      await copyTextToClipboard(reviewUrl);
+      toast.success("คัดลอกลิงก์สำเร็จ", {
+        description: "ส่งลิงก์นี้ให้หัวหน้าเปิดกลับมาตรวจสอบรายการนี้ได้",
+      });
+    } catch (err) {
+      console.error("Error copying review link:", err);
+      toast.error("ไม่สามารถคัดลอกลิงก์ได้");
+    }
+  };
+
+  const parseDraftNumber = (value: string) => {
+    const parsed = Number(String(value || "").replace(/,/g, ""));
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const detailsValueToText = (value: any) => {
+    if (Array.isArray(value)) return value.filter(Boolean).join(", ");
+    return String(value || "").trim();
+  };
+
+  const splitDetailsText = (value: string) =>
+    value
+      .split(/\s*,\s*|\n/g)
+      .map(item => item.trim())
+      .filter(Boolean);
+
+  const getDraftColorRows = (quotation: MockQuotation): JobColorQuantityDraft[] => {
+    const rawRows = (quotation as any)?.rawDetails?.colorQuantityRows;
+
+    if (Array.isArray(rawRows) && rawRows.length > 0) {
+      const rows = rawRows
+        .map((row: any) => {
+          const quantity = Array.isArray(row?.quantities)
+            ? row.quantities.reduce((sum: number, qty: any) => sum + (Number(qty) || 0), 0)
+            : Number(row?.quantity) || 0;
+
+          return {
+            color: String(row?.color || "").trim(),
+            quantity: quantity ? String(quantity) : "",
+          };
+        })
+        .filter(row => row.color || row.quantity);
+
+      if (rows.length > 0) return rows;
+    }
+
+    if (quotation.colors.length > 0) {
+      const fallbackQuantity = Math.ceil(quotation.quantity / Math.max(quotation.colors.length, 1));
+      return quotation.colors.map(color => ({
+        color,
+        quantity: fallbackQuantity ? String(fallbackQuantity) : "",
+      }));
+    }
+
+    return [{ color: "", quantity: quotation.quantity ? String(quotation.quantity) : "" }];
+  };
+
+  const createJobDetailsDraft = (quotation: MockQuotation): JobDetailsDraft => {
+    const rawDetails = (quotation as any).rawDetails || {};
+
+    return {
+      jobName: quotation.jobName || "",
+      customerName: quotation.customerName || "",
+      salesPerson: quotation.salesPerson || "",
+      material: quotation.material || "",
+      size: quotation.size || "",
+      thickness: quotation.thickness || "",
+      finishTypeLabel: rawDetails.finishTypeLabel || rawDetails.finishType || "",
+      frontDetails: detailsValueToText(rawDetails.frontDetails ?? quotation.frontDetails),
+      backDetails: detailsValueToText(rawDetails.backDetails ?? quotation.backDetails),
+      lanyardSize: quotation.lanyardSize || "",
+      lanyardPatterns: String(quotation.lanyardPatterns || ""),
+      customerBudget: quotation.customerBudget ? String(quotation.customerBudget) : "",
+      eventDate: quotation.eventDate && quotation.eventDate !== "-" ? quotation.eventDate : "",
+      quantity: quotation.quantity ? String(quotation.quantity) : "",
+      notes: quotation.notes && quotation.notes !== "-" ? quotation.notes : "",
+      colorRows: getDraftColorRows(quotation),
+    };
+  };
+
+  const updateJobDetailsDraft = (field: keyof Omit<JobDetailsDraft, "colorRows">, value: string) => {
+    setJobDetailsDraft(prev => prev ? { ...prev, [field]: value } : prev);
+  };
+
+  const updateDraftColorRow = (index: number, field: keyof JobColorQuantityDraft, value: string) => {
+    setJobDetailsDraft(prev => {
+      if (!prev) return prev;
+      const colorRows = prev.colorRows.map((row, rowIndex) =>
+        rowIndex === index ? { ...row, [field]: value } : row
+      );
+      const totalQuantity = colorRows.reduce((sum, row) => sum + parseDraftNumber(row.quantity), 0);
+      return {
+        ...prev,
+        colorRows,
+        quantity: totalQuantity > 0 ? String(totalQuantity) : prev.quantity,
+      };
+    });
+  };
+
+  const addDraftColorRow = () => {
+    setJobDetailsDraft(prev => prev ? {
+      ...prev,
+      colorRows: [...prev.colorRows, { color: "", quantity: "" }],
+    } : prev);
+  };
+
+  const removeDraftColorRow = (index: number) => {
+    setJobDetailsDraft(prev => {
+      if (!prev) return prev;
+      const colorRows = prev.colorRows.filter((_, rowIndex) => rowIndex !== index);
+      const nextRows = colorRows.length > 0 ? colorRows : [{ color: "", quantity: "" }];
+      const totalQuantity = nextRows.reduce((sum, row) => sum + parseDraftNumber(row.quantity), 0);
+      return {
+        ...prev,
+        colorRows: nextRows,
+        quantity: totalQuantity > 0 ? String(totalQuantity) : prev.quantity,
+      };
+    });
+  };
+
+  const handleStartEditJobDetails = () => {
+    if (!selectedQuotation) return;
+    setJobDetailsDraft(createJobDetailsDraft(selectedQuotation));
+    setIsEditingJobDetails(true);
+  };
+
+  const handleCancelEditJobDetails = () => {
+    setJobDetailsDraft(selectedQuotation ? createJobDetailsDraft(selectedQuotation) : null);
+    setIsEditingJobDetails(false);
+  };
+
+  const readFileAsDataUrl = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(reader.error || new Error("Failed to read file"));
+      reader.readAsDataURL(file);
+    });
+
+  const getSupplierEvidenceFile = (entry: Partial<FactoryEntry> | any): SupplierEvidenceFile | null => {
+    const evidence = entry?.evidenceFile || entry?.uploadedEvidence || entry?.supplierEvidence || null;
+    if (evidence?.data || evidence?.url) {
+      return {
+        name: evidence.name || evidence.fileName || evidence.filename || "หลักฐาน",
+        type: evidence.type || evidence.mimeType || "",
+        size: Number(evidence.size) || 0,
+        data: evidence.data || evidence.url || "",
+        uploadedAt: evidence.uploadedAt || evidence.date || "",
+      };
+    }
+
+    if (entry?.uploadedFileData || entry?.uploadedFileUrl) {
+      return {
+        name: entry.uploadedFileName || "หลักฐาน",
+        type: entry.uploadedFileType || "",
+        size: Number(entry.uploadedFileSize) || 0,
+        data: entry.uploadedFileData || entry.uploadedFileUrl,
+        uploadedAt: entry.uploadedAt || "",
+      };
+    }
+
+    return null;
+  };
+
+  const getSupplierEvidenceName = (entry: FactoryEntry) =>
+    entry.uploadedFile?.name || getSupplierEvidenceFile(entry)?.name || "";
+
+  const hasSupplierEvidence = (entry: FactoryEntry) =>
+    Boolean(entry.uploadedFile || getSupplierEvidenceFile(entry));
+
+  const serializeSupplierEntries = (entries: FactoryEntry[]) =>
+    entries.map(entry => {
+      const evidenceFile = getSupplierEvidenceFile(entry);
+      return {
+        ...entry,
+        uploadedFile: null,
+        evidenceFile,
+      };
+    });
+
+  const downloadSupplierEvidence = (entry: FactoryEntry) => {
+    const evidenceFile = getSupplierEvidenceFile(entry);
+    if (!evidenceFile?.data) {
+      toast.error("ไม่พบไฟล์หลักฐาน");
+      return;
+    }
+
+    const link = document.createElement("a");
+    link.href = evidenceFile.data;
+    link.download = evidenceFile.name || "หลักฐาน";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const persistSupplierEntriesDraft = async (entries: FactoryEntry[]) => {
+    if (!selectedQuotation) return;
+
+    const calcQuantity = globalHeader.quantity || selectedQuotation.quantity;
+    const totalSellingPrice = (globalHeader.unitSellingPriceTHB + globalHeader.lanyardSellingPriceTHB) * calcQuantity;
+    const updatedDetails = {
+      ...(selectedQuotation as any).rawDetails,
+      supplierEntries: serializeSupplierEntries(entries),
+      globalHeader,
+      estimationStarted: true,
+      totalSellingPrice,
+      totalCost: entries[0]?.totalCostPerUnit * calcQuantity || 0,
+      profit: entries[0]?.totalProfit || 0,
+    };
+
+    const payload = {
+      price: totalSellingPrice,
+      details: updatedDetails,
+    };
+
+    const res = await fetch(`${API_BASE}/price_estimations.php/${selectedQuotation.id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    const json = await res.json().catch(() => null);
+    if (!res.ok || json?.status === "error") {
+      throw new Error(json?.message || "Failed to persist supplier entries");
+    }
+
+    setSelectedQuotation(prev => prev && prev.id === selectedQuotation.id
+      ? ({
+          ...prev,
+          totalSellingPrice,
+          totalCost: updatedDetails.totalCost,
+          profit: updatedDetails.profit,
+          rawDetails: updatedDetails,
+        } as MockQuotation)
+      : prev
+    );
+    setMockQuotations(prev => prev.map(quotation =>
+      quotation.id === selectedQuotation.id
+        ? ({
+            ...quotation,
+            totalSellingPrice,
+            totalCost: updatedDetails.totalCost,
+            profit: updatedDetails.profit,
+            rawDetails: updatedDetails,
+          } as MockQuotation)
+        : quotation
+    ));
+  };
+
+  const handleSaveJobDetails = async () => {
+    if (!selectedQuotation || !jobDetailsDraft) return;
+    if (!jobDetailsDraft.jobName.trim()) {
+      toast.error("กรุณาระบุชื่องาน");
+      return;
+    }
+
+    const normalizedColorRows = jobDetailsDraft.colorRows
+      .map(row => ({
+        color: row.color.trim(),
+        quantity: parseDraftNumber(row.quantity),
+      }))
+      .filter(row => row.color || row.quantity > 0);
+
+    const totalQuantityFromColors = normalizedColorRows.reduce((sum, row) => sum + row.quantity, 0);
+    const totalQuantity = totalQuantityFromColors || parseDraftNumber(jobDetailsDraft.quantity) || selectedQuotation.quantity || 0;
+    const customerBudget = parseDraftNumber(jobDetailsDraft.customerBudget);
+    const lanyardPatterns = parseDraftNumber(jobDetailsDraft.lanyardPatterns);
+    const rawDetails = (selectedQuotation as any).rawDetails || {};
+    const existingColorRows = Array.isArray(rawDetails.colorQuantityRows) ? rawDetails.colorQuantityRows : [];
+    const updatedColors = normalizedColorRows.map(row => row.color).filter(Boolean);
+    const updatedColorQuantityRows = normalizedColorRows.map((row, index) => ({
+      ...(existingColorRows[index] || {}),
+      id: existingColorRows[index]?.id || `manual-${Date.now()}-${index}`,
+      color: row.color,
+      quantities: [row.quantity],
+      note: existingColorRows[index]?.note || "",
+    }));
+    const updatedFrontDetails = splitDetailsText(jobDetailsDraft.frontDetails);
+    const updatedBackDetails = splitDetailsText(jobDetailsDraft.backDetails);
+    const updatedGlobalHeader = {
+      ...(rawDetails.globalHeader || globalHeader),
+      quantity: totalQuantity,
+    };
+
+    const updatedDetails = {
+      ...rawDetails,
+      jobName: jobDetailsDraft.jobName.trim(),
+      customerName: jobDetailsDraft.customerName.trim(),
+      salesPerson: jobDetailsDraft.salesPerson.trim(),
+      material: jobDetailsDraft.material.trim(),
+      size: jobDetailsDraft.size.trim(),
+      thickness: jobDetailsDraft.thickness.trim(),
+      finishTypeLabel: jobDetailsDraft.finishTypeLabel.trim(),
+      frontDetails: updatedFrontDetails,
+      backDetails: updatedBackDetails,
+      lanyardSize: jobDetailsDraft.lanyardSize.trim(),
+      lanyardPatterns,
+      colors: updatedColors,
+      colorQuantityRows: updatedColorQuantityRows,
+      quantity: totalQuantity,
+      totalQuantity,
+      eventDate: jobDetailsDraft.eventDate.trim() || "-",
+      usage_date: jobDetailsDraft.eventDate.trim() || "",
+      customerBudget,
+      budget: customerBudget,
+      ...(rawDetails.globalHeader ? { globalHeader: updatedGlobalHeader } : {}),
+    };
+
+    const updatedQuotation: MockQuotation = {
+      ...selectedQuotation,
+      jobName: jobDetailsDraft.jobName.trim(),
+      customerName: jobDetailsDraft.customerName.trim(),
+      salesPerson: jobDetailsDraft.salesPerson.trim(),
+      material: jobDetailsDraft.material.trim(),
+      size: jobDetailsDraft.size.trim(),
+      thickness: jobDetailsDraft.thickness.trim(),
+      colors: updatedColors,
+      frontDetails: updatedFrontDetails.join(", ") || "-",
+      backDetails: updatedBackDetails.join(", ") || "-",
+      lanyardSize: jobDetailsDraft.lanyardSize.trim(),
+      lanyardPatterns,
+      customerBudget,
+      eventDate: jobDetailsDraft.eventDate.trim() || "-",
+      quantity: totalQuantity,
+      notes: jobDetailsDraft.notes.trim() || "-",
+      rawDetails: updatedDetails,
+    } as MockQuotation;
+
+    try {
+      setIsSavingJobDetails(true);
+      const payload = {
+        customer_name: updatedQuotation.customerName,
+        sales_owner_id: updatedQuotation.salesPerson,
+        job_name: updatedQuotation.jobName,
+        quantity: totalQuantity,
+        budget: customerBudget,
+        notes: updatedQuotation.notes === "-" ? "" : updatedQuotation.notes,
+        details: updatedDetails,
+      };
+
+      const res = await fetch(`${API_BASE}/price_estimations.php/${selectedQuotation.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const json = await res.json().catch(() => null);
+      if (!res.ok || json?.status === "error") {
+        throw new Error(json?.message || "Failed to save job details");
+      }
+
+      setSelectedQuotation(updatedQuotation);
+      setMockQuotations(prev => prev.map(quotation =>
+        quotation.id === selectedQuotation.id ? updatedQuotation : quotation
+      ));
+      setGlobalHeader(updatedGlobalHeader);
+      setJobDetailsDraft(createJobDetailsDraft(updatedQuotation));
+      setIsEditingJobDetails(false);
+      toast.success("บันทึกรายละเอียดงานสำเร็จ");
+      fetchQuotations();
+    } catch (err) {
+      console.error("Error saving job details:", err);
+      toast.error("เกิดข้อผิดพลาดในการบันทึกรายละเอียดงาน");
+    } finally {
+      setIsSavingJobDetails(false);
+    }
   };
 
   // Translate material to user-friendly label (TH/EN)
@@ -279,38 +764,173 @@ const Quotation = () => {
     });
   };
 
-  // Build unified Thai summary text (for copy/share)
+  const translateMaterialForLanguage = (material: string, language: "th" | "zh" | "en") => {
+    const value = (material || "").toLowerCase();
+    const normalized = translateMaterial(material || "");
+
+    const materialMap = [
+      { test: ["zinc", "ซิงค์"], th: "ซิงค์อัลลอย", zh: "锌合金", en: "Zinc Alloy" },
+      { test: ["brass", "ทองเหลือง"], th: "ทองเหลือง", zh: "黄铜", en: "Brass" },
+      { test: ["acrylic", "อะคริลิค"], th: "อะคริลิค", zh: "亚克力", en: "Acrylic" },
+      { test: ["crystal", "คริสตัล"], th: "คริสตัล", zh: "水晶", en: "Crystal" },
+      { test: ["iron", "เหล็ก"], th: "เหล็ก", zh: "铁", en: "Iron" },
+      { test: ["polyscreen", "โพลีสกรีน"], th: "โพลีสกรีน", zh: "涤纶丝印", en: "Polyscreen" },
+    ];
+
+    const found = materialMap.find(item => item.test.some(token => value.includes(token)));
+    if (found) return found[language];
+    return language === "th" ? normalized : material || "-";
+  };
+
+  const translatePlatingForLanguage = (raw: string, language: "th" | "zh" | "en") => {
+    const thai = getThaiPlatingName(raw);
+    const map: Record<string, { zh: string; en: string }> = {
+      "โรสโกลด์": { zh: "玫瑰金", en: "Rose Gold" },
+      "รมดำ": { zh: "黑镍", en: "Black Nickel" },
+      "ทองโบราณ": { zh: "古金", en: "Antique Gold" },
+      "เงินโบราณ": { zh: "古银", en: "Antique Silver" },
+      "โบราณ": { zh: "古色", en: "Antique" },
+      "ทองด้าน": { zh: "哑光金", en: "Matte Gold" },
+      "เงินด้าน": { zh: "哑光银", en: "Matte Silver" },
+      "ทองแดงด้าน": { zh: "哑光铜", en: "Matte Copper" },
+      "ทองเงา": { zh: "亮金", en: "Shiny Gold" },
+      "เงินเงา": { zh: "亮银", en: "Shiny Silver" },
+      "ทองแดงเงา": { zh: "亮铜", en: "Shiny Copper" },
+      "นิกเกิล": { zh: "镍", en: "Nickel" },
+      "ทอง": { zh: "金色", en: "Gold" },
+      "เงิน": { zh: "银色", en: "Silver" },
+      "ทองแดง": { zh: "铜色", en: "Copper" },
+    };
+
+    if (language === "th") return thai;
+    return map[thai]?.[language] || raw || "-";
+  };
+
+  const translateDetailForLanguage = (details: string, language: "th" | "zh" | "en") => {
+    if (!details || details === "-") return "-";
+
+    const detailMap: Record<string, { zh: string; en: string }> = {
+      "พิมพ์โลโก้": { zh: "印LOGO", en: "Logo printing" },
+      "แกะสลักข้อความ": { zh: "文字雕刻", en: "Text engraving" },
+      "ลงสีสเปรย์": { zh: "喷漆", en: "Spray paint" },
+      "ขัดเงา": { zh: "抛光", en: "Polishing" },
+      "ลงน้ำยาป้องกันสนิม": { zh: "防锈处理", en: "Anti-rust coating" },
+      "แกะลึก": { zh: "深雕", en: "Deep engraving" },
+      "พิมพ์ซิลค์สกรีน": { zh: "丝网印刷", en: "Silk screen printing" },
+      "ปั๊มลาย": { zh: "压纹", en: "Embossing" },
+      "ลงสี": { zh: "上色", en: "Color fill" },
+      "สกรีนUV": { zh: "UV印刷", en: "UV printing" },
+      "พื้นทราย": { zh: "砂面", en: "Sand texture" },
+      "อื่นๆ": { zh: "其他", en: "Other" },
+    };
+
+    return details
+      .split(/\s*,\s*|\s*\/\s*|\n/g)
+      .map(item => {
+        const trimmed = item.trim();
+        if (!trimmed) return "";
+        if (language === "th") return trimmed;
+        return detailMap[trimmed]?.[language] || trimmed;
+      })
+      .filter(Boolean)
+      .join(" , ");
+  };
+
+  const formatLanyardForLanguage = (size: string, patterns: number, language: "th" | "zh" | "en") => {
+    const normalizedSize = size && size !== "-" ? size.replace("x", " × ") : "-";
+    const patternCount = patterns || 0;
+
+    if (language === "zh") return `${normalizedSize} (${patternCount} 个设计)`;
+    if (language === "en") return `${normalizedSize} (${patternCount} designs)`;
+    return `${normalizedSize} (${patternCount}แบบ)`;
+  };
+
+  const escapeHtml = (value: string) =>
+    value
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+
+  // Build unified trilingual summary text (for copy/share)
   const buildUnifiedSummary = (q: MockQuotation): string => {
-    const materialStr = translateMaterial(q.material || "");
-    const colorsThai = (q.colors || []).map(getThaiPlatingName).join(" , ");
     const frontStr = typeof q.frontDetails === 'string' ? q.frontDetails : Array.isArray((q as any).frontDetails) ? (q as any).frontDetails.join(" , ") : "-";
     const backStr = typeof q.backDetails === 'string' ? q.backDetails : Array.isArray((q as any).backDetails) ? (q as any).backDetails.join(" , ") : "-";
     const sizeStr = q.size || "-";
     const thicknessStr = q.thickness || "-";
-    const lanyardStr = `${q.lanyardSize || "-"}  (${q.lanyardPatterns || 0}แบบ)`;
     const totalQty = q.quantity || 0;
     const colorEntries = computeColorQuantities(q);
-    const colorLines = colorEntries.length > 0
-      ? colorEntries.map(e => `${e.thai} ${e.qty.toLocaleString()} เหรียญ`).join("\n")
-      : "ส่งคละสีตามจำนวน";
     const project = q.jobName || "-";
     const eventDate = q.eventDate && q.eventDate !== '-' ? q.eventDate : '-';
-    const header = `ตีเหรียญ${materialStr.includes('ซิงค์') ? 'ซิงค์อัลลอยด์' : materialStr}`;
     const lineOwner = `LINE  ${q.salesPerson || '-'}`;
+    const colorsByLanguage = (language: "th" | "zh" | "en") =>
+      (q.colors || []).map(color => translatePlatingForLanguage(color, language)).join(" , ") || "-";
+    const colorLinesByLanguage = (language: "th" | "zh" | "en") => {
+      if (colorEntries.length === 0) {
+        if (language === "zh") return "按总数量混色";
+        if (language === "en") return "Mixed colors according to total quantity";
+        return "ส่งคละสีตามจำนวน";
+      }
+
+      return colorEntries.map(entry => {
+        const colorName = translatePlatingForLanguage(entry.color, language);
+        const quantityText = entry.qty.toLocaleString();
+        if (language === "zh") return `${colorName} ${quantityText} 枚`;
+        if (language === "en") return `${colorName} ${quantityText} pcs`;
+        return `${entry.thai} ${quantityText} เหรียญ`;
+      }).join("\n");
+    };
+
+    const materialTh = translateMaterialForLanguage(q.material || "", "th");
+    const materialZh = translateMaterialForLanguage(q.material || "", "zh");
+    const materialEn = translateMaterialForLanguage(q.material || "", "en");
+
     return (
-`${header}
+`===== ไทย =====
+ตีเหรียญ${materialTh}
 ${lineOwner}
-วัสดุ : ${materialStr}
-สีชุบ (สีเนื้องาน) : ${colorsThai || '-'}
+วัสดุ : ${materialTh}
+สีชุบ (สีเนื้องาน) : ${colorsByLanguage("th")}
 รายละเอียดด้านหน้า : ${frontStr}
 รายละเอียดด้านหลัง : ${backStr}
 ขนาด ซม. : ${sizeStr}
 ความหนา มม. : ${thicknessStr}
-ขนาดสาย : ${lanyardStr}
+ขนาดสาย : ${formatLanyardForLanguage(q.lanyardSize || "-", q.lanyardPatterns || 0, "th")}
 รวมจำนวน ${totalQty.toLocaleString()} เหรียญ
-${colorLines}
+${colorLinesByLanguage("th")}
 Project : ${project}
-ใช้งาน ${eventDate}`
+ใช้งาน ${eventDate}
+
+===== 中文 =====
+${materialZh}奖牌制作
+${lineOwner}
+材质 : ${materialZh}
+电镀颜色 : ${colorsByLanguage("zh")}
+正面细节 : ${translateDetailForLanguage(frontStr, "zh")}
+背面细节 : ${translateDetailForLanguage(backStr, "zh")}
+尺寸(cm) : ${sizeStr}
+厚度(mm) : ${thicknessStr}
+挂绳尺寸 : ${formatLanyardForLanguage(q.lanyardSize || "-", q.lanyardPatterns || 0, "zh")}
+总数量 ${totalQty.toLocaleString()} 枚
+${colorLinesByLanguage("zh")}
+项目 : ${project}
+使用日期 : ${eventDate}
+
+===== English =====
+${materialEn} Medal Production
+${lineOwner}
+Material : ${materialEn}
+Plating color : ${colorsByLanguage("en")}
+Front details : ${translateDetailForLanguage(frontStr, "en")}
+Back details : ${translateDetailForLanguage(backStr, "en")}
+Size (cm) : ${sizeStr}
+Thickness (mm) : ${thicknessStr}
+Lanyard size : ${formatLanyardForLanguage(q.lanyardSize || "-", q.lanyardPatterns || 0, "en")}
+Total quantity ${totalQty.toLocaleString()} pcs
+${colorLinesByLanguage("en")}
+Project : ${project}
+Use date : ${eventDate}`
     );
   };
 
@@ -443,6 +1063,115 @@ Project : ${project}
   // Mock data state for existing quotations - now fetched from API
   const [mockQuotations, setMockQuotations] = useState<MockQuotation[]>([]);
 
+  const parseStoredImageSource = (image: any): string => {
+    if (!image) return "";
+
+    if (typeof image === "string") {
+      const value = image.trim();
+      if (!value) return "";
+
+      try {
+        const parsed = JSON.parse(value);
+        return parseStoredImageSource(parsed);
+      } catch {
+        return value;
+      }
+    }
+
+    if (typeof image === "object") {
+      return parseStoredImageSource(
+        image.data ||
+        image.url ||
+        image.src ||
+        image.file_url ||
+        image.fileUrl ||
+        image.path ||
+        ""
+      );
+    }
+
+    return "";
+  };
+
+  const isImageSource = (source: string) => {
+    const value = source.trim();
+    if (!value) return false;
+    if (/^data:image\//i.test(value)) return true;
+    if (/^blob:/i.test(value)) return true;
+    if (/\.(png|jpe?g|gif|webp|svg)(\?.*)?(#.*)?$/i.test(value)) return true;
+    if (/^(https?:)?\/\//i.test(value) || value.startsWith("/")) {
+      return !/\.(pdf|ai|psd|eps|docx?|xlsx?)(\?.*)?(#.*)?$/i.test(value);
+    }
+    return false;
+  };
+
+  const isMockArtworkSource = (source: string) => {
+    const value = source.toLowerCase();
+    return value.includes("sample-artwork") || value.includes("placeholder.svg");
+  };
+
+  const uniqueImageSources = (sources: string[]) =>
+    sources.reduce<string[]>((acc, source) => {
+      if (!source || acc.includes(source)) return acc;
+      acc.push(source);
+      return acc;
+    }, []);
+
+  const getArtworkImagesFromDetails = (details: any) => {
+    const imageGroups = [
+      details?.customerReferenceImages,
+      details?.referenceImages,
+      details?.artworkImages,
+      details?.images,
+    ];
+
+    const parsedSources = imageGroups
+      .flatMap(group => Array.isArray(group) ? group : group ? [group] : [])
+      .map(parseStoredImageSource)
+      .filter(isImageSource)
+      .filter(source => !isMockArtworkSource(source));
+
+    return uniqueImageSources(parsedSources);
+  };
+
+  const getPrimaryArtworkSource = (quotation: MockQuotation) => {
+    const sources = uniqueImageSources([
+      ...(quotation.artworkImages || []),
+      ...getArtworkImagesFromDetails((quotation as any).rawDetails || {}),
+    ].map(parseStoredImageSource));
+
+    return sources.find(source => isImageSource(source) && !isMockArtworkSource(source)) || "";
+  };
+
+  const renderArtworkImageHtml = (source: string) => {
+    if (!source) {
+      return `
+        <div style="width:156px;height:140px;display:flex;align-items:center;justify-content:center;border:1px dashed #cbd5e1;border-radius:8px;background:#f8fafc;color:#64748b;font-size:12px;text-align:center;line-height:1.5;padding:12px;">
+          ไม่มีรูปภาพแนบ
+        </div>
+      `;
+    }
+
+    return `<img src="${source}" style="max-width:156px;max-height:140px;object-fit:contain;" crossorigin="anonymous" />`;
+  };
+
+  const waitForImagesToLoad = async (container: HTMLElement) => {
+    const images = Array.from(container.querySelectorAll("img"));
+    if (images.length === 0) return;
+
+    await Promise.race([
+      Promise.all(images.map(image => {
+        if (image.complete && image.naturalWidth > 0) return Promise.resolve();
+
+        return new Promise<void>((resolve) => {
+          image.onload = () => resolve();
+          image.onerror = () => resolve();
+        });
+      })),
+      new Promise(resolve => window.setTimeout(resolve, 3000)),
+    ]);
+  };
+
   // Fetch quotations from API
   const fetchQuotations = async () => {
     try {
@@ -516,32 +1245,10 @@ Project : ${project}
             lanyardPatterns: parseInt(detailObj?.lanyardPatterns || item.lanyard_patterns || 0),
             customerBudget: item.budget || 0,
             designFiles: detailObj?.designFiles || [],
-            artworkImages: (() => {
-              const parseImage = (img: any) => {
-                if (typeof img === 'string') {
-                  try {
-                    // Try to parse as JSON (base64 encoded file)
-                    const parsed = JSON.parse(img);
-                    return parsed.data || img; // Return base64 data URL
-                  } catch {
-                    // Not JSON, return as is (regular URL)
-                    return img.url || img;
-                  }
-                }
-                return img.url || img;
-              };
-
-              if (detailObj?.customerReferenceImages && Array.isArray(detailObj.customerReferenceImages)) {
-                return detailObj.customerReferenceImages.map(parseImage);
-              } else if (detailObj?.referenceImages && Array.isArray(detailObj.referenceImages)) {
-                return detailObj.referenceImages.map(parseImage);
-              } else if (detailObj?.artworkImages && Array.isArray(detailObj.artworkImages)) {
-                return detailObj.artworkImages.map(parseImage);
-              }
-              return [];
-            })(),
+            artworkImages: getArtworkImagesFromDetails(detailObj),
             notes: item.notes || "-",
             rejectionLogs: detailObj?.rejectionLogs || [],
+            customerConfirmed: finalStatus === "ยืนยันเรียบร้อย" || detailObj?.customerConfirmed === true || item.customer_confirmed === true || item.customer_confirmed === "1",
             winnerFactoryValue: detailObj?.winnerFactoryValue || item.factory,
             productionStep: detailObj?.productionStep,
             productionStepHistory: detailObj?.productionStepHistory || [],
@@ -570,9 +1277,9 @@ Project : ${project}
   };
 
   // call fetch on mount
-  useState(() => {
+  useEffect(() => {
     fetchQuotations();
-  });
+  }, []);
 
   const form = useForm<FactoryFormValues>({
     resolver: zodResolver(factoryFormSchema),
@@ -670,7 +1377,7 @@ Project : ${project}
       case "proposed":
         return filtered.filter(q => q.status === "เสนอลูกค้า");
       case "production":
-        return filtered.filter(q => q.status === "รายการสั่งผลิต");
+        return filtered.filter(q => isProductionReadyStatus(q.status));
       case "history":
         return filtered.filter(q => q.status === "ยืนยันเรียบร้อย" || q.status === "ยกเลิก");
       default:
@@ -679,7 +1386,7 @@ Project : ${project}
   };
 
   // Count quotations by status
-  const getStatusCount = (statuses: QuotationStatus[]) => {
+  const getStatusCount = (statuses: readonly QuotationStatus[]) => {
     return mockQuotations.filter(q => statuses.includes(q.status)).length;
   };
 
@@ -937,7 +1644,8 @@ Project : ${project}
       totalSellingPricePerUnit: 0,
       totalProfit: 0,
       isWinner: false,
-      uploadedFile: null
+      uploadedFile: null,
+      evidenceFile: null
     };
     setSupplierEntries(prev => [...prev, newEntry]);
   };
@@ -964,15 +1672,35 @@ Project : ${project}
   };
 
   // Handle file upload for supplier entry
-  const handleSupplierFileUpload = (entryId: string, file: File | null) => {
-    setSupplierEntries(prev => prev.map(entry => {
-      if (entry.id === entryId) {
-        return { ...entry, uploadedFile: file };
-      }
-      return entry;
-    }));
-    if (file) {
-      toast.success(`อัพโหลดไฟล์ ${file.name} สำเร็จ`);
+  const handleSupplierFileUpload = async (entryId: string, file: File | null) => {
+    if (!file) {
+      setSupplierEntries(prev => prev.map(entry =>
+        entry.id === entryId ? { ...entry, uploadedFile: null, evidenceFile: null } : entry
+      ));
+      return;
+    }
+
+    try {
+      const data = await readFileAsDataUrl(file);
+      const evidenceFile: SupplierEvidenceFile = {
+        name: file.name,
+        type: file.type || "application/octet-stream",
+        size: file.size,
+        data,
+        uploadedAt: new Date().toISOString(),
+      };
+
+      const nextSupplierEntries = supplierEntries.map(entry =>
+        entry.id === entryId ? { ...entry, uploadedFile: file, evidenceFile } : entry
+      );
+      setSupplierEntries(nextSupplierEntries);
+      await persistSupplierEntriesDraft(nextSupplierEntries);
+      toast.success(`อัพโหลดไฟล์ ${file.name} สำเร็จ`, {
+        description: "บันทึกหลักฐานไว้กับรายการนี้แล้ว",
+      });
+    } catch (err) {
+      console.error("Error reading supplier evidence file:", err);
+      toast.error("ไม่สามารถอ่านไฟล์หลักฐานได้");
     }
   };
 
@@ -1037,6 +1765,8 @@ Project : ${project}
   // Open management modal - initialize selling prices from Sales data
   const openManagementModal = (quotation: MockQuotation) => {
     setSelectedQuotation(quotation);
+    setJobDetailsDraft(createJobDetailsDraft(quotation));
+    setIsEditingJobDetails(false);
     setSelectedWinner(null);
     setSelectedFactories([]); // Reset factory selection
     setFactorySelectOpen(false);
@@ -1101,10 +1831,31 @@ Project : ${project}
     setShowManagementModal(true);
   };
 
+  const clearQuotationReviewParams = () => {
+    const params = new URLSearchParams(location.search);
+    if (!params.has("quotationId")) return;
+
+    params.delete("quotationId");
+    params.delete("tab");
+    openedReviewLinkRef.current = null;
+    navigate(
+      {
+        pathname: location.pathname,
+        search: params.toString() ? `?${params.toString()}` : "",
+        hash: location.hash,
+      },
+      { replace: true }
+    );
+  };
+
   // Close management modal
   const closeManagementModal = () => {
+    clearQuotationReviewParams();
     setShowManagementModal(false);
     setSelectedQuotation(null);
+    setJobDetailsDraft(null);
+    setIsEditingJobDetails(false);
+    setIsSavingJobDetails(false);
     setSupplierEntries([]);
     setSelectedWinner(null);
     setSelectedFactories([]); // Reset factory selection
@@ -1124,6 +1875,31 @@ Project : ${project}
       lanyardSellingPriceTHB: 0,
     });
   };
+
+  useEffect(() => {
+    if (isLoading) return;
+
+    const params = new URLSearchParams(location.search);
+    const quotationId = params.get("quotationId");
+    if (!quotationId || openedReviewLinkRef.current === quotationId) return;
+
+    const targetQuotation = mockQuotations.find(
+      quotation => String(quotation.id) === quotationId || quotation.jobCode === quotationId
+    );
+    openedReviewLinkRef.current = quotationId;
+
+    if (!targetQuotation) {
+      toast.error("ไม่พบรายการจากลิงก์", {
+        description: "รายการอาจถูกลบ หรือผู้ใช้ไม่มีสิทธิ์เข้าถึงข้อมูลนี้",
+      });
+      return;
+    }
+
+    const linkedTab = params.get("tab");
+    resetAllQuotationFilters();
+    setActiveTab(isQuotationTabValue(linkedTab) ? linkedTab : getQuotationTabValue(targetQuotation.status));
+    openManagementModal(targetQuotation);
+  }, [isLoading, mockQuotations, location.search]);
 
   // Handle enable editing for read-only mode
   const handleEnableEditing = () => {
@@ -1284,10 +2060,7 @@ Project : ${project}
         // Merge procurement data into details JSON
         const updatedDetails = {
           ...(selectedQuotation as any).rawDetails,
-          supplierEntries: supplierEntries.map(e => ({
-            ...e,
-            uploadedFile: null // Can't stringify File object
-          })),
+          supplierEntries: serializeSupplierEntries(supplierEntries),
           globalHeader,
           estimationStarted: true,
           totalSellingPrice: totalSellingPrice,
@@ -1346,10 +2119,7 @@ Project : ${project}
         
         const updatedDetails = {
           ...(selectedQuotation as any).rawDetails,
-          supplierEntries: supplierEntries.map(e => ({
-            ...e,
-            uploadedFile: null
-          })),
+          supplierEntries: serializeSupplierEntries(supplierEntries),
           globalHeader,
           estimationStarted: true,
           totalSellingPrice: totalSellingPrice,
@@ -1409,10 +2179,7 @@ Project : ${project}
         
         const updatedDetails = {
           ...(selectedQuotation as any).rawDetails,
-          supplierEntries: supplierEntries.map(e => ({
-            ...e,
-            uploadedFile: null
-          })),
+          supplierEntries: serializeSupplierEntries(supplierEntries),
           globalHeader,
           estimationStarted: true,
           totalSellingPrice: totalSellingPrice,
@@ -1477,10 +2244,7 @@ Project : ${project}
         
         const updatedDetails = {
           ...(selectedQuotation as any).rawDetails,
-          supplierEntries: supplierEntries.map(e => ({
-            ...e,
-            uploadedFile: null
-          })),
+          supplierEntries: serializeSupplierEntries(supplierEntries),
           globalHeader,
           winnerFactoryValue: winnerEntry.factoryValue,
           factoryLabel: winnerEntry.factoryLabel,
@@ -1545,9 +2309,10 @@ Project : ${project}
     const q = quotation || selectedQuotation;
     if (!q) return;
 
-    const artworkSrc = q.artworkImages?.[0] || sampleArtworkMedal;
+    const artworkSrc = getPrimaryArtworkSource(q);
     const jobCode = generateJobCode(entry.factoryValue, index);
     const quantity = globalHeader.quantity || q.quantity;
+    const productionSummaryHtml = escapeHtml(buildUnifiedSummary(q));
 
     const container = document.createElement('div');
     container.style.cssText = 'position:fixed;left:-9999px;top:0;background:#fff;width:860px;font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;color:#1f2937;';
@@ -1570,7 +2335,7 @@ Project : ${project}
             <!-- Left: Image + Job ID -->
             <div style="flex-shrink:0;width:180px;">
               <div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:10px;padding:12px;display:flex;align-items:center;justify-content:center;min-height:160px;margin-bottom:10px;">
-                <img src="${artworkSrc}" style="max-width:156px;max-height:140px;object-fit:contain;" crossorigin="anonymous" />
+                ${renderArtworkImageHtml(artworkSrc)}
               </div>
               <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:8px 12px;text-align:center;">
                 <span style="font-size:11px;color:#6b7280;display:block;">JOB ID</span>
@@ -1619,6 +2384,12 @@ Project : ${project}
           </div>
         </div>
 
+        <!-- Trilingual Production Details Section -->
+        <div style="background:#f8fafc;border:1px solid #dbeafe;border-radius:12px;padding:20px;margin-bottom:20px;">
+          <h3 style="font-size:15px;font-weight:700;color:#1d4ed8;margin:0 0 12px 0;">ข้อมูลสั่งผลิต 3 ภาษา</h3>
+          <pre style="white-space:pre-wrap;word-break:break-word;margin:0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;line-height:1.55;color:#1f2937;background:#ffffff;border:1px solid #e5e7eb;border-radius:8px;padding:14px;">${productionSummaryHtml}</pre>
+        </div>
+
         <!-- Factory Comparison Table -->
         <div style="background:#fafafa;border:1px solid #e5e7eb;border-radius:12px;padding:20px;">
           <h3 style="font-size:15px;font-weight:700;color:#374151;margin:0 0 16px 0;">ตารางเปรียบเทียบโรงงาน</h3>
@@ -1647,6 +2418,8 @@ Project : ${project}
     document.body.appendChild(container);
 
     try {
+      await waitForImagesToLoad(container);
+
       const canvas = await html2canvas(container, {
         backgroundColor: '#ffffff',
         scale: 2,
@@ -1659,7 +2432,7 @@ Project : ${project}
               new ClipboardItem({ 'image/png': blob })
             ]);
             toast.success('คัดลอกรูปภาพสำเร็จ', {
-              description: 'ครบทั้งรายละเอียดสินค้าและข้อมูลราคาโรงงาน'
+              description: 'ครบทั้งรายละเอียดสินค้า ข้อมูลสั่งผลิต 3 ภาษา และข้อมูลราคาโรงงาน'
             });
           } catch {
             const url = URL.createObjectURL(blob);
@@ -1837,7 +2610,7 @@ Project : ${project}
       icon: Factory,
       color: "text-blue-600",
       bgColor: "bg-blue-500",
-      count: getStatusCount(["รายการสั่งผลิต"])
+      count: getStatusCount(PRODUCTION_READY_STATUSES)
     },
   ];
 
@@ -1863,8 +2636,117 @@ Project : ${project}
     </div>
   );
 
+  // SortableTableHead component for clickable sortable column headers
+  const SortableTableHead = ({ column, children, className }: { column: string; children: React.ReactNode; className?: string }) => (
+    <TableHead
+      className={cn("cursor-pointer select-none hover:bg-muted/50 transition-colors", className)}
+      onClick={() => handleSort(column)}
+    >
+      <div className={cn("flex items-center gap-1", className?.includes("text-right") ? "justify-end" : className?.includes("text-center") ? "justify-center" : "")}>
+        <span>{children}</span>
+        {sortColumn === column ? (
+          sortDirection === "asc" ? (
+            <ChevronUp className="w-3.5 h-3.5 text-primary flex-shrink-0" />
+          ) : (
+            <ChevronDown className="w-3.5 h-3.5 text-primary flex-shrink-0" />
+          )
+        ) : (
+          <ArrowUpDown className="w-3.5 h-3.5 text-muted-foreground/40 flex-shrink-0" />
+        )}
+      </div>
+    </TableHead>
+  );
+
+  // Sort quotations based on current sort state
+  const sortQuotations = (data: MockQuotation[]): MockQuotation[] => {
+    if (!sortColumn || !sortDirection) return data;
+
+    return [...data].sort((a, b) => {
+      let valA: any;
+      let valB: any;
+
+      switch (sortColumn) {
+        case "jobCode":
+          valA = a.jobCode || "";
+          valB = b.jobCode || "";
+          break;
+        case "jobName":
+          valA = a.jobName || "";
+          valB = b.jobName || "";
+          break;
+        case "productType":
+          valA = a.productType || "";
+          valB = b.productType || "";
+          break;
+        case "customerName":
+          valA = a.customerName || "";
+          valB = b.customerName || "";
+          break;
+        case "salesPerson":
+          valA = a.salesPerson || "";
+          valB = b.salesPerson || "";
+          break;
+        case "createdDate":
+          valA = new Date(a.createdDate).getTime() || 0;
+          valB = new Date(b.createdDate).getTime() || 0;
+          break;
+        case "eventDate":
+          valA = a.eventDate && a.eventDate !== "-" ? new Date(a.eventDate).getTime() : 0;
+          valB = b.eventDate && b.eventDate !== "-" ? new Date(b.eventDate).getTime() : 0;
+          break;
+        case "quantity":
+          valA = a.quantity || 0;
+          valB = b.quantity || 0;
+          break;
+        case "factory":
+          valA = a.factoryLabel || "";
+          valB = b.factoryLabel || "";
+          break;
+        case "costPerUnit":
+          valA = a.quantity > 0 ? a.totalCost / a.quantity : 0;
+          valB = b.quantity > 0 ? b.totalCost / b.quantity : 0;
+          break;
+        case "sellingPerUnit":
+          valA = a.quantity > 0 ? a.totalSellingPrice / a.quantity : 0;
+          valB = b.quantity > 0 ? b.totalSellingPrice / b.quantity : 0;
+          break;
+        case "profit":
+          valA = a.profit || 0;
+          valB = b.profit || 0;
+          break;
+        case "totalCost":
+          valA = a.totalCost || 0;
+          valB = b.totalCost || 0;
+          break;
+        case "totalSellingPrice":
+          valA = a.totalSellingPrice || 0;
+          valB = b.totalSellingPrice || 0;
+          break;
+        case "status":
+          valA = a.status || "";
+          valB = b.status || "";
+          break;
+        case "productionStep":
+          valA = a.productionStep || "";
+          valB = b.productionStep || "";
+          break;
+        default:
+          return 0;
+      }
+
+      // Compare
+      if (typeof valA === "string" && typeof valB === "string") {
+        const cmp = valA.localeCompare(valB, "th");
+        return sortDirection === "asc" ? cmp : -cmp;
+      }
+      const diff = (valA as number) - (valB as number);
+      return sortDirection === "asc" ? diff : -diff;
+    });
+  };
+
   // Quotation table component - Updated with single manage button
   const QuotationTable = ({ quotations, tabValue }: { quotations: MockQuotation[]; tabValue: string }) => {
+    const sortedQuotations = sortQuotations(quotations);
     if (quotations.length === 0) {
       const tabLabel = tabConfig.find(t => t.value === tabValue)?.label || "";
       const hasDataWithoutSearch = mockQuotations.some(q => {
@@ -1873,7 +2755,7 @@ Project : ${project}
           case "in-progress": return q.status === "อยู่ระหว่างการประเมินราคา";
           case "quoted": return q.status === "เสนอราคา";
           case "proposed": return q.status === "เสนอลูกค้า";
-          case "production": return q.status === "รายการสั่งผลิต";
+          case "production": return isProductionReadyStatus(q.status);
           case "history": return q.status === "ยืนยันเรียบร้อย" || q.status === "ยกเลิก";
           default: return false;
         }
@@ -1889,20 +2771,20 @@ Project : ${project}
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>รหัสงาน</TableHead>
-                <TableHead>ชื่องาน</TableHead>
-                <TableHead>โรงงานผู้ชนะ</TableHead>
-                <TableHead>ลูกค้า</TableHead>
-                <TableHead>วันที่ต้องส่งมอบ</TableHead>
-                <TableHead className="text-right">จำนวน</TableHead>
-                <TableHead className="text-right">ต้นทุนรวม</TableHead>
-                <TableHead className="text-right">ราคาขาย</TableHead>
-                <TableHead>สถานะการผลิต</TableHead>
+                <SortableTableHead column="jobCode">รหัสงาน</SortableTableHead>
+                <SortableTableHead column="jobName">ชื่องาน</SortableTableHead>
+                <SortableTableHead column="factory">โรงงานผู้ชนะ</SortableTableHead>
+                <SortableTableHead column="customerName">ลูกค้า</SortableTableHead>
+                <SortableTableHead column="eventDate">วันที่ต้องส่งมอบ</SortableTableHead>
+                <SortableTableHead column="quantity" className="text-right">จำนวน</SortableTableHead>
+                <SortableTableHead column="totalCost" className="text-right">ต้นทุนรวม</SortableTableHead>
+                <SortableTableHead column="totalSellingPrice" className="text-right">ราคาขาย</SortableTableHead>
+                <SortableTableHead column="productionStep">สถานะการผลิต</SortableTableHead>
                 <TableHead className="text-center">จัดการ</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {quotations.map((quotation) => (
+              {sortedQuotations.map((quotation) => (
                 <TableRow key={quotation.id}>
                   <TableCell className="font-mono font-medium">
                     <button onClick={() => openProductionModal(quotation)} className="text-blue-600 hover:underline whitespace-nowrap">
@@ -1952,23 +2834,23 @@ Project : ${project}
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>รหัสงาน</TableHead>
-              <TableHead>ชื่องาน</TableHead>
-              <TableHead>ประเภทสินค้า</TableHead>
-              <TableHead>ลูกค้า</TableHead>
-              <TableHead>พนักงานขาย</TableHead>
-              <TableHead>วันที่สร้าง</TableHead>
-              <TableHead>วันที่ต้องส่งมอบ</TableHead>
-              <TableHead className="text-right">จำนวน</TableHead>
+              <SortableTableHead column="jobCode">รหัสงาน</SortableTableHead>
+              <SortableTableHead column="jobName">ชื่องาน</SortableTableHead>
+              <SortableTableHead column="productType">ประเภทสินค้า</SortableTableHead>
+              <SortableTableHead column="customerName">ลูกค้า</SortableTableHead>
+              <SortableTableHead column="salesPerson">พนักงานขาย</SortableTableHead>
+              <SortableTableHead column="createdDate">วันที่สร้าง</SortableTableHead>
+              <SortableTableHead column="eventDate">วันที่ต้องส่งมอบ</SortableTableHead>
+              <SortableTableHead column="quantity" className="text-right">จำนวน</SortableTableHead>
               {tabValue !== "pending" && tabValue !== "info-needed" && (
                 <>
-                  <TableHead>โรงงาน</TableHead>
-                  <TableHead className="text-right">ต้นทุน/ชิ้น</TableHead>
-                  <TableHead className="text-right">ราคาขาย/ชิ้น</TableHead>
-                  <TableHead className="text-right">กำไรรวม</TableHead>
+                  <SortableTableHead column="factory">โรงงาน</SortableTableHead>
+                  <SortableTableHead column="costPerUnit" className="text-right">ต้นทุน/ชิ้น</SortableTableHead>
+                  <SortableTableHead column="sellingPerUnit" className="text-right">ราคาขาย/ชิ้น</SortableTableHead>
+                  <SortableTableHead column="profit" className="text-right">กำไรรวม</SortableTableHead>
                 </>
               )}
-              <TableHead>สถานะ</TableHead>
+              <SortableTableHead column="status">สถานะ</SortableTableHead>
               <TableHead className="text-center">จัดการ</TableHead>
             </TableRow>
             {/* Header Filter Row */}
@@ -2021,7 +2903,7 @@ Project : ${project}
             </TableRow>
           </TableHeader>
           <TableBody>
-            {quotations.map((quotation) => (
+            {sortedQuotations.map((quotation) => (
               <TableRow key={quotation.id}>
                 <TableCell className="font-mono font-medium">
                   <button onClick={() => openManagementModal(quotation)} className="text-blue-600 hover:underline whitespace-nowrap">
@@ -2521,18 +3403,59 @@ Project : ${project}
       </Card>
 
       {/* Management Drawer */}
-      <Sheet open={showManagementModal} onOpenChange={closeManagementModal}>
+      <Sheet open={showManagementModal} onOpenChange={(open) => {
+        if (!open) closeManagementModal();
+      }}>
         <SheetContent side="right" className="w-3/4 max-w-none sm:max-w-none overflow-y-auto scrollbar-littleboy p-6">
-          <SheetHeader>
-            <SheetTitle className="flex items-center gap-3">
-              <Settings className="w-6 h-6" />
-              จัดการคำขอประเมินราคา
+          <SheetHeader className="pr-12">
+            <div className="flex items-center justify-between gap-4">
+              <SheetTitle className="flex items-center gap-3">
+                <Settings className="w-6 h-6" />
+                จัดการคำขอประเมินราคา
+                {selectedQuotation && (
+                  <Badge variant="outline" className="ml-2 font-mono">
+                    {selectedQuotation.jobCode}
+                  </Badge>
+                )}
+              </SheetTitle>
               {selectedQuotation && (
-                <Badge variant="outline" className="ml-2 font-mono">
-                  {selectedQuotation.jobCode}
-                </Badge>
+                <div className="flex items-center gap-2">
+                  {isEditingJobDetails ? (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-2"
+                        onClick={handleCancelEditJobDetails}
+                        disabled={isSavingJobDetails}
+                      >
+                        <X className="h-4 w-4" />
+                        ยกเลิกแก้ไข
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="gap-2"
+                        onClick={handleSaveJobDetails}
+                        disabled={isSavingJobDetails}
+                      >
+                        <Save className="h-4 w-4" />
+                        {isSavingJobDetails ? "กำลังบันทึก..." : "บันทึกรายละเอียดงาน"}
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-2"
+                      onClick={handleStartEditJobDetails}
+                    >
+                      <Pencil className="h-4 w-4" />
+                      แก้ไข
+                    </Button>
+                  )}
+                </div>
               )}
-            </SheetTitle>
+            </div>
           </SheetHeader>
 
           {selectedQuotation && (
@@ -2554,15 +3477,39 @@ Project : ${project}
                     </div>
                     <div className="space-y-1">
                       <p className="text-xs text-muted-foreground">ชื่องาน</p>
-                      <p className="font-medium text-sm">{selectedQuotation.jobName}</p>
+                      {isEditingJobDetails && jobDetailsDraft ? (
+                        <Input
+                          value={jobDetailsDraft.jobName}
+                          onChange={(e) => updateJobDetailsDraft("jobName", e.target.value)}
+                          className="h-8 text-sm"
+                        />
+                      ) : (
+                        <p className="font-medium text-sm">{selectedQuotation.jobName}</p>
+                      )}
                     </div>
                     <div className="space-y-1">
                       <p className="text-xs text-muted-foreground">ลูกค้า</p>
-                      <p className="font-medium text-sm">{selectedQuotation.customerName}</p>
+                      {isEditingJobDetails && jobDetailsDraft ? (
+                        <Input
+                          value={jobDetailsDraft.customerName}
+                          onChange={(e) => updateJobDetailsDraft("customerName", e.target.value)}
+                          className="h-8 text-sm"
+                        />
+                      ) : (
+                        <p className="font-medium text-sm">{selectedQuotation.customerName}</p>
+                      )}
                     </div>
                     <div className="space-y-1">
                       <p className="text-xs text-muted-foreground">พนักงานขาย</p>
-                      <p className="font-medium text-sm">{selectedQuotation.salesPerson}</p>
+                      {isEditingJobDetails && jobDetailsDraft ? (
+                        <Input
+                          value={jobDetailsDraft.salesPerson}
+                          onChange={(e) => updateJobDetailsDraft("salesPerson", e.target.value)}
+                          className="h-8 text-sm"
+                        />
+                      ) : (
+                        <p className="font-medium text-sm">{selectedQuotation.salesPerson}</p>
+                      )}
                     </div>
                   </div>
 
@@ -2582,19 +3529,51 @@ Project : ${project}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
                       <div className="bg-muted/40 rounded-lg p-3">
                         <p className="text-xs text-muted-foreground mb-1">วัสดุ</p>
-                        <p className="font-medium text-sm">{selectedQuotation.material}</p>
+                        {isEditingJobDetails && jobDetailsDraft ? (
+                          <Input
+                            value={jobDetailsDraft.material}
+                            onChange={(e) => updateJobDetailsDraft("material", e.target.value)}
+                            className="h-8 text-sm bg-background"
+                          />
+                        ) : (
+                          <p className="font-medium text-sm">{selectedQuotation.material}</p>
+                        )}
                       </div>
                       <div className="bg-muted/40 rounded-lg p-3">
                         <p className="text-xs text-muted-foreground mb-1">ขนาด</p>
-                        <p className="font-medium text-sm">{selectedQuotation.size}</p>
+                        {isEditingJobDetails && jobDetailsDraft ? (
+                          <Input
+                            value={jobDetailsDraft.size}
+                            onChange={(e) => updateJobDetailsDraft("size", e.target.value)}
+                            className="h-8 text-sm bg-background"
+                          />
+                        ) : (
+                          <p className="font-medium text-sm">{selectedQuotation.size}</p>
+                        )}
                       </div>
                       <div className="bg-muted/40 rounded-lg p-3">
                         <p className="text-xs text-muted-foreground mb-1">ความหนา</p>
-                        <p className="font-medium text-sm">{selectedQuotation.thickness}</p>
+                        {isEditingJobDetails && jobDetailsDraft ? (
+                          <Input
+                            value={jobDetailsDraft.thickness}
+                            onChange={(e) => updateJobDetailsDraft("thickness", e.target.value)}
+                            className="h-8 text-sm bg-background"
+                          />
+                        ) : (
+                          <p className="font-medium text-sm">{selectedQuotation.thickness}</p>
+                        )}
                       </div>
                       <div className="bg-muted/40 rounded-lg p-3">
                         <p className="text-xs text-muted-foreground mb-1">ชนิดการชุบ</p>
-                        <p className="font-medium text-sm">{(selectedQuotation as any).rawDetails?.finishTypeLabel || "-"}</p>
+                        {isEditingJobDetails && jobDetailsDraft ? (
+                          <Input
+                            value={jobDetailsDraft.finishTypeLabel}
+                            onChange={(e) => updateJobDetailsDraft("finishTypeLabel", e.target.value)}
+                            className="h-8 text-sm bg-background"
+                          />
+                        ) : (
+                          <p className="font-medium text-sm">{(selectedQuotation as any).rawDetails?.finishTypeLabel || "-"}</p>
+                        )}
                       </div>
                     </div>
 
@@ -2610,94 +3589,193 @@ Project : ${project}
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {(() => {
-                              const rawDetails = (selectedQuotation as any).rawDetails;
-                              const colorQuantityRows = rawDetails?.colorQuantityRows;
-                              
-                              // Use actual colorQuantityRows data if available
-                              if (colorQuantityRows && Array.isArray(colorQuantityRows) && colorQuantityRows.some((r: any) => r.color)) {
-                                return colorQuantityRows.filter((r: any) => r.color).map((row: any, idx: number) => {
-                                  const totalQty = Array.isArray(row.quantities)
-                                    ? row.quantities.reduce((sum: number, q: number) => sum + (q || 0), 0)
-                                    : 0;
+                            {isEditingJobDetails && jobDetailsDraft ? (
+                              jobDetailsDraft.colorRows.map((row, idx) => (
+                                <TableRow key={idx}>
+                                  <TableCell className="py-2">
+                                    <Input
+                                      value={row.color}
+                                      onChange={(e) => updateDraftColorRow(idx, "color", e.target.value)}
+                                      placeholder="เช่น gold"
+                                      className="h-8 text-sm"
+                                    />
+                                  </TableCell>
+                                  <TableCell className="py-2">
+                                    <div className="flex items-center justify-end gap-2">
+                                      <Input
+                                        type="number"
+                                        min={0}
+                                        value={row.quantity}
+                                        onChange={(e) => updateDraftColorRow(idx, "quantity", e.target.value)}
+                                        placeholder="0"
+                                        className="h-8 text-sm text-right max-w-36"
+                                      />
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8 text-destructive"
+                                        onClick={() => removeDraftColorRow(idx)}
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </Button>
+                                    </div>
+                                  </TableCell>
+                                </TableRow>
+                              ))
+                            ) : (
+                              (() => {
+                                const rawDetails = (selectedQuotation as any).rawDetails;
+                                const colorQuantityRows = rawDetails?.colorQuantityRows;
+
+                                // Use actual colorQuantityRows data if available
+                                if (colorQuantityRows && Array.isArray(colorQuantityRows) && colorQuantityRows.some((r: any) => r.color)) {
+                                  return colorQuantityRows.filter((r: any) => r.color).map((row: any, idx: number) => {
+                                    const totalQty = Array.isArray(row.quantities)
+                                      ? row.quantities.reduce((sum: number, q: number) => sum + (q || 0), 0)
+                                      : 0;
+                                    return (
+                                      <TableRow key={idx}>
+                                        <TableCell className="py-2 text-sm">{row.color}</TableCell>
+                                        <TableCell className="text-right py-2 text-sm">{totalQty.toLocaleString()} ชิ้น</TableCell>
+                                      </TableRow>
+                                    );
+                                  });
+                                }
+
+                                // Fallback to colors array
+                                return selectedQuotation.colors.map((color, idx) => {
+                                  const qty = Math.ceil(selectedQuotation.quantity / Math.max(selectedQuotation.colors.length, 1));
                                   return (
                                     <TableRow key={idx}>
-                                      <TableCell className="py-2 text-sm">{row.color}</TableCell>
-                                      <TableCell className="text-right py-2 text-sm">{totalQty.toLocaleString()} ชิ้น</TableCell>
+                                      <TableCell className="py-2 text-sm">{color}</TableCell>
+                                      <TableCell className="text-right py-2 text-sm">{qty.toLocaleString()} ชิ้น</TableCell>
                                     </TableRow>
                                   );
                                 });
-                              }
-                              
-                              // Fallback to colors array
-                              return selectedQuotation.colors.map((color, idx) => {
-                                const qty = Math.ceil(selectedQuotation.quantity / Math.max(selectedQuotation.colors.length, 1));
-                                return (
-                                  <TableRow key={idx}>
-                                    <TableCell className="py-2 text-sm">{color}</TableCell>
-                                    <TableCell className="text-right py-2 text-sm">{qty.toLocaleString()} ชิ้น</TableCell>
-                                  </TableRow>
-                                );
-                              });
-                            })()}
+                              })()
+                            )}
                             <TableRow className="bg-muted/30 font-medium">
                               <TableCell className="py-2 text-sm">รวม</TableCell>
-                              <TableCell className="text-right py-2 text-sm font-semibold">{selectedQuotation.quantity.toLocaleString()} ชิ้น</TableCell>
+                              <TableCell className="text-right py-2 text-sm font-semibold">
+                                {isEditingJobDetails && jobDetailsDraft
+                                  ? (jobDetailsDraft.colorRows.reduce((sum, row) => sum + parseDraftNumber(row.quantity), 0) || parseDraftNumber(jobDetailsDraft.quantity)).toLocaleString()
+                                  : selectedQuotation.quantity.toLocaleString()} ชิ้น
+                              </TableCell>
                             </TableRow>
                           </TableBody>
                         </Table>
                       </div>
+                      {isEditingJobDetails && (
+                        <Button type="button" variant="outline" size="sm" className="gap-2 mt-2" onClick={addDraftColorRow}>
+                          <Plus className="h-4 w-4" />
+                          เพิ่มสี
+                        </Button>
+                      )}
                     </div>
 
                     {/* Front/Back Details - Side by Side */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                      {/* Front Details - Collapsible */}
-                      <Collapsible className="bg-muted/40 rounded-lg">
-                        <CollapsibleTrigger className="w-full p-3 flex items-center justify-between hover:bg-muted/60 transition-colors rounded-lg">
-                          <p className="text-xs text-muted-foreground font-medium">รายละเอียดด้านหน้า</p>
-                          <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform duration-200 data-[state=open]:rotate-180" />
-                        </CollapsibleTrigger>
-                        <CollapsibleContent className="px-3 pb-3">
-                          <div className="flex gap-1.5 flex-wrap pt-2">
-                            {(typeof selectedQuotation.frontDetails === 'string' ? selectedQuotation.frontDetails.split(", ") : []).map((detail, idx) => (
-                              <Badge key={idx} variant="secondary" className="text-xs">{detail}</Badge>
-                            )) || <span className="text-muted-foreground text-sm">-</span>}
+                      {isEditingJobDetails && jobDetailsDraft ? (
+                        <>
+                          <div className="bg-muted/40 rounded-lg p-3">
+                            <p className="text-xs text-muted-foreground font-medium mb-2">รายละเอียดด้านหน้า</p>
+                            <Textarea
+                              value={jobDetailsDraft.frontDetails}
+                              onChange={(e) => updateJobDetailsDraft("frontDetails", e.target.value)}
+                              placeholder="คั่นแต่ละรายการด้วย comma หรือขึ้นบรรทัดใหม่"
+                              className="min-h-[92px] bg-background text-sm"
+                            />
                           </div>
-                        </CollapsibleContent>
-                      </Collapsible>
+                          <div className="bg-muted/40 rounded-lg p-3">
+                            <p className="text-xs text-muted-foreground font-medium mb-2">รายละเอียดด้านหลัง</p>
+                            <Textarea
+                              value={jobDetailsDraft.backDetails}
+                              onChange={(e) => updateJobDetailsDraft("backDetails", e.target.value)}
+                              placeholder="คั่นแต่ละรายการด้วย comma หรือขึ้นบรรทัดใหม่"
+                              className="min-h-[92px] bg-background text-sm"
+                            />
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          {/* Front Details - Collapsible */}
+                          <Collapsible className="bg-muted/40 rounded-lg">
+                            <CollapsibleTrigger className="w-full p-3 flex items-center justify-between hover:bg-muted/60 transition-colors rounded-lg">
+                              <p className="text-xs text-muted-foreground font-medium">รายละเอียดด้านหน้า</p>
+                              <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform duration-200 data-[state=open]:rotate-180" />
+                            </CollapsibleTrigger>
+                            <CollapsibleContent className="px-3 pb-3">
+                              <div className="flex gap-1.5 flex-wrap pt-2">
+                                {(typeof selectedQuotation.frontDetails === 'string' ? selectedQuotation.frontDetails.split(", ") : []).map((detail, idx) => (
+                                  <Badge key={idx} variant="secondary" className="text-xs">{detail}</Badge>
+                                )) || <span className="text-muted-foreground text-sm">-</span>}
+                              </div>
+                            </CollapsibleContent>
+                          </Collapsible>
 
-                      {/* Back Details - Collapsible */}
-                      <Collapsible className="bg-muted/40 rounded-lg">
-                        <CollapsibleTrigger className="w-full p-3 flex items-center justify-between hover:bg-muted/60 transition-colors rounded-lg">
-                          <p className="text-xs text-muted-foreground font-medium">รายละเอียดด้านหลัง</p>
-                          <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform duration-200 data-[state=open]:rotate-180" />
-                        </CollapsibleTrigger>
-                        <CollapsibleContent className="px-3 pb-3">
-                          <div className="flex gap-1.5 flex-wrap pt-2">
-                            {(typeof selectedQuotation.backDetails === 'string' ? selectedQuotation.backDetails.split(", ") : []).map((detail, idx) => (
-                              <Badge key={idx} variant="secondary" className="text-xs">{detail}</Badge>
-                            )) || <span className="text-muted-foreground text-sm">-</span>}
-                          </div>
-                        </CollapsibleContent>
-                      </Collapsible>
+                          {/* Back Details - Collapsible */}
+                          <Collapsible className="bg-muted/40 rounded-lg">
+                            <CollapsibleTrigger className="w-full p-3 flex items-center justify-between hover:bg-muted/60 transition-colors rounded-lg">
+                              <p className="text-xs text-muted-foreground font-medium">รายละเอียดด้านหลัง</p>
+                              <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform duration-200 data-[state=open]:rotate-180" />
+                            </CollapsibleTrigger>
+                            <CollapsibleContent className="px-3 pb-3">
+                              <div className="flex gap-1.5 flex-wrap pt-2">
+                                {(typeof selectedQuotation.backDetails === 'string' ? selectedQuotation.backDetails.split(", ") : []).map((detail, idx) => (
+                                  <Badge key={idx} variant="secondary" className="text-xs">{detail}</Badge>
+                                )) || <span className="text-muted-foreground text-sm">-</span>}
+                              </div>
+                            </CollapsibleContent>
+                          </Collapsible>
+                        </>
+                      )}
                     </div>
 
                     {/* Lanyard */}
                     <div className="grid grid-cols-2 gap-4 mb-4">
                       <div className="bg-muted/40 rounded-lg p-3">
                         <p className="text-xs text-muted-foreground mb-1">ขนาดสายคล้องคอ</p>
-                        <p className="font-medium text-sm">{selectedQuotation.lanyardSize.replace("x", " × ")}</p>
+                        {isEditingJobDetails && jobDetailsDraft ? (
+                          <Input
+                            value={jobDetailsDraft.lanyardSize}
+                            onChange={(e) => updateJobDetailsDraft("lanyardSize", e.target.value)}
+                            className="h-8 text-sm bg-background"
+                          />
+                        ) : (
+                          <p className="font-medium text-sm">{selectedQuotation.lanyardSize.replace("x", " × ")}</p>
+                        )}
                       </div>
                       <div className="bg-muted/40 rounded-lg p-3">
                         <p className="text-xs text-muted-foreground mb-1">จำนวนลาย</p>
-                        <p className="font-medium text-sm">{selectedQuotation.lanyardPatterns} ลาย</p>
+                        {isEditingJobDetails && jobDetailsDraft ? (
+                          <Input
+                            type="number"
+                            min={0}
+                            value={jobDetailsDraft.lanyardPatterns}
+                            onChange={(e) => updateJobDetailsDraft("lanyardPatterns", e.target.value)}
+                            className="h-8 text-sm bg-background"
+                          />
+                        ) : (
+                          <p className="font-medium text-sm">{selectedQuotation.lanyardPatterns} ลาย</p>
+                        )}
                       </div>
                     </div>
 
                     {/* Customer Budget - Highlighted */}
                     <div className="bg-primary/5 border border-primary/20 rounded-lg p-4">
                       <p className="text-xs text-muted-foreground mb-1">งบประมาณต่อชิ้น</p>
-                      <p className="font-bold text-xl text-primary">{selectedQuotation.customerBudget.toLocaleString()} บาท</p>
+                      {isEditingJobDetails && jobDetailsDraft ? (
+                        <Input
+                          type="number"
+                          min={0}
+                          value={jobDetailsDraft.customerBudget}
+                          onChange={(e) => updateJobDetailsDraft("customerBudget", e.target.value)}
+                          className="h-10 max-w-xs bg-background font-semibold text-primary"
+                        />
+                      ) : (
+                        <p className="font-bold text-xl text-primary">{selectedQuotation.customerBudget.toLocaleString()} บาท</p>
+                      )}
                     </div>
                   </div>
 
@@ -2706,7 +3784,16 @@ Project : ${project}
                   {/* Deadline */}
                   <div>
                     <p className="text-sm text-muted-foreground">วันที่ต้องส่งมอบ</p>
-                    <div>{getDeadlineDisplay(selectedQuotation.eventDate)}</div>
+                    {isEditingJobDetails && jobDetailsDraft ? (
+                      <Input
+                        value={jobDetailsDraft.eventDate}
+                        onChange={(e) => updateJobDetailsDraft("eventDate", e.target.value)}
+                        placeholder="เช่น 2026-05-17 หรือ 17/5/2569"
+                        className="mt-2 h-9 max-w-sm"
+                      />
+                    ) : (
+                      <div>{getDeadlineDisplay(selectedQuotation.eventDate)}</div>
+                    )}
                   </div>
 
                   {/* Artwork Section - Sales Style */}
@@ -2905,12 +3992,21 @@ Project : ${project}
                   </div>
 
                   {/* Notes */}
-                  {selectedQuotation.notes && (
+                  {(selectedQuotation.notes || isEditingJobDetails) && (
                     <>
                       <Separator />
                       <div>
                         <p className="text-sm text-muted-foreground mb-1">หมายเหตุจากเซลล์</p>
-                        <p className="font-medium bg-yellow-50 p-3 rounded-lg border border-yellow-200">{selectedQuotation.notes}</p>
+                        {isEditingJobDetails && jobDetailsDraft ? (
+                          <Textarea
+                            value={jobDetailsDraft.notes}
+                            onChange={(e) => updateJobDetailsDraft("notes", e.target.value)}
+                            placeholder="หมายเหตุเพิ่มเติม"
+                            className="min-h-[84px]"
+                          />
+                        ) : (
+                          <p className="font-medium bg-yellow-50 p-3 rounded-lg border border-yellow-200">{selectedQuotation.notes}</p>
+                        )}
                       </div>
                     </>
                   )}
@@ -3532,16 +4628,31 @@ Quantity: ${quantityFormatted}`;
                                   </TableCell>
                                   <TableCell className="text-center">
                                     {isReadOnlyMode ? (
-                                      <div className="flex items-center justify-center gap-1">
-                                        <Button
-                                          variant="outline"
-                                          size="sm"
-                                          className="gap-1 text-xs px-2"
-                                          onClick={() => handleCopyRowAsImage(entry, index)}
-                                        >
-                                          <Copy className="w-3 h-3" />
-                                          คัดลอก
-                                        </Button>
+                                      <div className="space-y-1">
+                                        <div className="flex items-center justify-center gap-1">
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="gap-1 text-xs px-2"
+                                            onClick={() => handleCopyRowAsImage(entry, index)}
+                                          >
+                                            <Copy className="w-3 h-3" />
+                                            คัดลอก
+                                          </Button>
+                                        </div>
+                                        {hasSupplierEvidence(entry) && (
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-auto max-w-[128px] gap-1 px-2 py-1 text-xs text-green-600"
+                                            title={getSupplierEvidenceName(entry)}
+                                            onClick={() => downloadSupplierEvidence(entry)}
+                                          >
+                                            <Paperclip className="h-3 w-3 shrink-0" />
+                                            <span className="truncate">{getSupplierEvidenceName(entry)}</span>
+                                          </Button>
+                                        )}
                                       </div>
                                     ) : (
                                       <>
@@ -3562,7 +4673,8 @@ Quantity: ${quantityFormatted}`;
                                             accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
                                             onChange={(e) => {
                                               const file = e.target.files?.[0] || null;
-                                              handleSupplierFileUpload(entry.id, file);
+                                              void handleSupplierFileUpload(entry.id, file);
+                                              e.currentTarget.value = "";
                                             }}
                                           />
                                           <Button
@@ -3583,12 +4695,18 @@ Quantity: ${quantityFormatted}`;
                                             <Trash2 className="w-4 h-4" />
                                           </Button>
                                         </div>
-                                        {entry.uploadedFile && (
-                                          <span className="text-xs text-green-600 truncate max-w-[100px] block mt-1" title={entry.uploadedFile.name}>
-                                            ✓ {entry.uploadedFile.name.length > 12
-                                              ? `${entry.uploadedFile.name.slice(0, 10)}...`
-                                              : entry.uploadedFile.name}
-                                          </span>
+                                        {hasSupplierEvidence(entry) && (
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            className="mx-auto mt-1 h-auto max-w-[128px] gap-1 px-2 py-1 text-xs text-green-600"
+                                            title={getSupplierEvidenceName(entry)}
+                                            onClick={() => downloadSupplierEvidence(entry)}
+                                          >
+                                            <Paperclip className="h-3 w-3 shrink-0" />
+                                            <span className="truncate">{getSupplierEvidenceName(entry)}</span>
+                                          </Button>
                                         )}
                                       </>
                                     )}
@@ -3664,9 +4782,15 @@ Quantity: ${quantityFormatted}`;
               <div className="flex justify-end gap-3 pt-4 border-t">
                 {/* Show close button when not started yet */}
                 {!estimationStarted && !isReadOnlyMode && (
-                  <Button variant="outline" onClick={closeManagementModal}>
-                    ปิด
-                  </Button>
+                  <>
+                    <Button variant="outline" onClick={closeManagementModal}>
+                      ปิด
+                    </Button>
+                    <Button variant="outline" className="gap-2" onClick={handleCopyReviewLink}>
+                      <Link2 className="w-4 h-4" />
+                      คัดลอกลิงก์
+                    </Button>
+                  </>
                 )}
 
                 {/* Show full action buttons only after estimation started or in read-only mode */}
@@ -3674,6 +4798,10 @@ Quantity: ${quantityFormatted}`;
                   <>
                     <Button variant="outline" onClick={closeManagementModal}>
                       {isReadOnlyMode ? "ปิด" : "ยกเลิก"}
+                    </Button>
+                    <Button variant="outline" className="gap-2" onClick={handleCopyReviewLink}>
+                      <Link2 className="w-4 h-4" />
+                      คัดลอกลิงก์
                     </Button>
                     {/* Show approve button for อยู่ระหว่างประเมิน and เสนอราคา */}
                     {isReadOnlyMode && (selectedQuotation?.status === "อยู่ระหว่างการประเมินราคา" || selectedQuotation?.status === "เสนอราคา") && (
@@ -3935,6 +5063,7 @@ Quantity: ${quantityFormatted}`;
               onClick={async () => {
                 if (approvalContentRef.current) {
                   try {
+                    await waitForImagesToLoad(approvalContentRef.current);
                     const canvas = await html2canvas(approvalContentRef.current, {
                       backgroundColor: "#ffffff",
                       scale: 2,
@@ -3983,7 +5112,7 @@ Quantity: ${quantityFormatted}`;
                     {/* Artwork Image */}
                     <div className="w-32 h-32 border rounded-lg overflow-hidden bg-muted/30 flex items-center justify-center">
                       <img
-                        src={selectedQuotation.artworkImages?.[0] || "/placeholder.svg"}
+                        src={getPrimaryArtworkSource(selectedQuotation) || "/placeholder.svg"}
                         alt="Artwork"
                         className="w-full h-full object-contain"
                       />
@@ -4100,10 +5229,10 @@ Quantity: ${quantityFormatted}`;
                             <span className="font-medium">{entry.moldCostAdditionalTHB?.toFixed(2) || "0.00"}</span>
                           </TableCell>
                           <TableCell className="text-center">
-                            {entry.uploadedFile ? (
+                            {hasSupplierEvidence(entry) ? (
                               <div className="flex items-center justify-center gap-1">
                                 <Upload className="w-4 h-4 text-green-600" />
-                                <span className="text-xs text-green-600">อัพโหลด</span>
+                                <span className="text-xs text-green-600">มีไฟล์</span>
                               </div>
                             ) : (
                               <div className="flex items-center justify-center gap-1">
@@ -4179,6 +5308,7 @@ Quantity: ${quantityFormatted}`;
               onClick={async () => {
                 if (summaryContentRef.current) {
                   try {
+                    await waitForImagesToLoad(summaryContentRef.current);
                     const canvas = await html2canvas(summaryContentRef.current, {
                       backgroundColor: "#ffffff",
                       scale: 2,
@@ -4227,7 +5357,7 @@ Quantity: ${quantityFormatted}`;
                     {/* Artwork Image */}
                     <div className="w-32 h-32 border rounded-lg overflow-hidden bg-muted/30 flex items-center justify-center">
                       <img
-                        src={summaryQuotation.artworkImages?.[0] || "/placeholder.svg"}
+                        src={getPrimaryArtworkSource(summaryQuotation) || "/placeholder.svg"}
                         alt="Artwork"
                         className="w-full h-full object-contain"
                       />
@@ -4359,10 +5489,10 @@ Quantity: ${quantityFormatted}`;
                             <span className="font-medium">{entry.moldCostAdditionalTHB?.toFixed(2) || "0.00"}</span>
                           </TableCell>
                           <TableCell className="text-center">
-                            {entry.uploadedFile ? (
+                            {hasSupplierEvidence(entry) ? (
                               <div className="flex items-center justify-center gap-1">
                                 <Upload className="w-4 h-4 text-green-600" />
-                                <span className="text-xs text-green-600">อัพโหลด</span>
+                                <span className="text-xs text-green-600">มีไฟล์</span>
                               </div>
                             ) : (
                               <div className="flex items-center justify-center gap-1">
@@ -4395,10 +5525,7 @@ Quantity: ${quantityFormatted}`;
                     const headerForSummary = ((summaryQuotation as any)?.rawDetails?.globalHeader) || (globalHeader as any) || { quantity: summaryQuotation.quantity };
                     const updatedDetails = {
                       ...(summaryQuotation as any).rawDetails,
-                      supplierEntries: summarySupplierEntries.map(e => ({
-                        ...e,
-                        uploadedFile: null
-                      })),
+                      supplierEntries: serializeSupplierEntries(summarySupplierEntries),
                       globalHeader: headerForSummary,
                       winnerFactoryValue: selectedEntry.factoryValue,
                       factoryLabel: selectedEntry.factoryLabel,

@@ -57,6 +57,28 @@ const loadFilters = () => {
   return null;
 };
 
+const parsePositiveInteger = (value: unknown) => {
+  if (typeof value === "number") {
+    return Number.isFinite(value) && value > 0 ? Math.floor(value) : undefined;
+  }
+
+  if (typeof value !== "string") return undefined;
+
+  const normalized = value.trim().replace(/,/g, "");
+  if (!/^\d+(\.\d+)?$/.test(normalized)) return undefined;
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : undefined;
+};
+
+const getPatternCount = (...values: unknown[]) => {
+  for (const value of values) {
+    const count = parsePositiveInteger(value);
+    if (count) return count;
+  }
+  return 1;
+};
+
 // Helper to save filters to session storage
 const saveFilters = (filters: Record<string, any>) => {
   try {
@@ -151,7 +173,9 @@ export default function PriceEstimation() {
             salesOwner: item.sales_owner_id || "ระบบ", // normally fetch name
             material: (detailObj as any)?.material || "-",
             finish: (detailObj as any)?.finish || "-",
-            notes: item.notes || ""
+            notes: item.notes || "",
+            details: detailObj,
+            jobName: item.job_name || "-"
           };
         });
         setEstimations(mappedData);
@@ -911,23 +935,83 @@ export default function PriceEstimation() {
             <DialogTitle>คัดลอกข้อมูลเสนอราคา</DialogTitle>
             <DialogDescription>คัดลอกรูปภาพเพื่อส่งให้ลูกค้า</DialogDescription>
           </DialogHeader>
-          {captureEstimation && (
-            <EstimationCaptureCard
-              data={{
-                estimateId: captureEstimation.estimateId,
-                productType: captureEstimation.productType,
-                material: captureEstimation.material || "ซิงค์อัลลอย",
-                size: "5 ซม.",
-                thickness: "3 มม.",
-                finish: captureEstimation.finish || "ชุบทอง",
-                totalQuantity: captureEstimation.quantity,
-                designCount: 2,
-                medalPrice: 16000,
-                strapPrice: 1500,
-                totalPrice: 17500,
-              }}
-            />
-          )}
+          {captureEstimation && (() => {
+            const details = captureEstimation.details || {};
+            const artworkImages = details.artworkImages || details.customerReferenceImages || [];
+            const rawArtworkUrl = artworkImages.length > 0 ? artworkImages[0] : undefined;
+            const artworkUrl = (() => {
+              if (!rawArtworkUrl) return undefined;
+              if (typeof rawArtworkUrl === "string") {
+                if (rawArtworkUrl.trim().startsWith("{")) {
+                  try {
+                    const parsed = JSON.parse(rawArtworkUrl);
+                    return parsed.data || parsed.url || undefined;
+                  } catch (e) {
+                    return rawArtworkUrl;
+                  }
+                }
+                return rawArtworkUrl;
+              }
+              if (typeof rawArtworkUrl === "object") {
+                return (rawArtworkUrl as any).data || (rawArtworkUrl as any).url || undefined;
+              }
+              return undefined;
+            })();
+
+            const size = details.size || (details.selectedMedalSizes?.length > 0 ? details.selectedMedalSizes[0] : null) || "5 ซม.";
+            const thickness = details.thickness || (details.selectedMedalThicknesses?.length > 0 ? details.selectedMedalThicknesses[0] : null) || "3 มม.";
+            const finish = details.finishTypeLabel || captureEstimation.finish || "ชุบทอง";
+            const designCount = getPatternCount(
+              details.lanyardPatterns,
+              details.lanyardPatternCount,
+              details.strapPatternCount,
+              details.designCount
+            );
+
+            const quantity = captureEstimation.quantity || 1;
+            const winner = details.supplierEntries?.find((e: any) => e.isWinner || e.id === details.winnerFactoryValue || e.factoryValue === details.winnerFactoryValue) || details.supplierEntries?.[0];
+
+            let medalPrice = 0;
+            let strapPrice = 0;
+            let totalPrice = captureEstimation.price || 0;
+
+            if (winner) {
+              const unitMedalPrice = winner.sellingPricePerUnit || 0;
+              const unitStrapPrice = winner.sellingPriceLanyard || 0;
+              medalPrice = unitMedalPrice * quantity;
+              strapPrice = unitStrapPrice * quantity;
+              totalPrice = (unitMedalPrice + unitStrapPrice) * quantity;
+            } else {
+              medalPrice = totalPrice;
+              strapPrice = 0;
+            }
+
+            return (
+              <EstimationCaptureCard
+                data={{
+                  estimateId: captureEstimation.estimateId,
+                  productType: captureEstimation.productType,
+                  material: captureEstimation.material || "ซิงค์อัลลอย",
+                  size,
+                  thickness,
+                  finish,
+                  totalQuantity: captureEstimation.quantity,
+                  designCount,
+                  medalPrice,
+                  strapPrice,
+                  totalPrice,
+                  artworkUrl,
+                  lineName: captureEstimation.lineName,
+                  jobName: captureEstimation.jobName,
+                  frontDetails: details.frontDetails,
+                  backDetails: details.backDetails,
+                  lanyardSize: details.lanyardSize,
+                  lanyardPatterns: designCount,
+                  eventDate: details.eventDate || details.usage_date
+                }}
+              />
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </div>

@@ -3,7 +3,7 @@ import html2canvas from "html2canvas";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ImageIcon, Copy } from "lucide-react";
+import { ImageIcon, Copy, FileText } from "lucide-react";
 import { toast } from "sonner";
 import sampleArtwork from "@/assets/sample-artwork.png";
 
@@ -19,6 +19,14 @@ interface EstimationCaptureData {
   medalPrice: number;
   strapPrice: number;
   totalPrice: number;
+  artworkUrl?: string;
+  lineName?: string;
+  jobName?: string;
+  frontDetails?: string[];
+  backDetails?: string[];
+  lanyardSize?: string;
+  lanyardPatterns?: string | number;
+  eventDate?: string;
 }
 
 interface EstimationCaptureCardProps {
@@ -26,8 +34,69 @@ interface EstimationCaptureCardProps {
   onClose?: () => void;
 }
 
+const parsePositiveInteger = (value: unknown) => {
+  if (typeof value === "number") {
+    return Number.isFinite(value) && value > 0 ? Math.floor(value) : undefined;
+  }
+
+  if (typeof value !== "string") return undefined;
+
+  const normalized = value.trim().replace(/,/g, "");
+  if (!/^\d+(\.\d+)?$/.test(normalized)) return undefined;
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : undefined;
+};
+
 export function EstimationCaptureCard({ data, onClose }: EstimationCaptureCardProps) {
   const captureRef = useRef<HTMLDivElement>(null);
+
+  const unitMedalPrice = data.totalQuantity > 0 ? (data.medalPrice / data.totalQuantity) : 0;
+  const unitStrapPrice = data.totalQuantity > 0 ? (data.strapPrice / data.totalQuantity) : 0;
+  const unitTotalPrice = data.totalQuantity > 0 ? (data.totalPrice / data.totalQuantity) : 0;
+  const lanyardPatternCount = parsePositiveInteger(data.lanyardPatterns) ?? parsePositiveInteger(data.designCount) ?? 1;
+
+  const handleCopyText = useCallback(async () => {
+    const unitLabel = data.productType.includes("เหรียญ") ? "เหรียญ" : "ชิ้น";
+    const frontText = data.frontDetails && data.frontDetails.length > 0 ? data.frontDetails.join(", ") : "-";
+    const backText = data.backDetails && data.backDetails.length > 0 ? data.backDetails.join(", ") : "-";
+    const lanyardInfo = data.lanyardSize 
+      ? `${data.lanyardSize} ( สาย ${lanyardPatternCount} แบบ )`
+      : "-";
+
+    const isMedal = data.productType.includes("เหรียญ") || !!data.lanyardSize;
+    let priceLines = "";
+    if (isMedal && unitMedalPrice > 0) {
+      priceLines = `ราคาเหรียญต่อชิ้น : ${unitMedalPrice.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} บาท
+ราคาสายต่อชิ้น : ${unitStrapPrice.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} บาท
+ราคาเหรียญสายต่อชิ้น : ${unitTotalPrice.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} บาท
+ราคารวมทั้งหมด : ${data.totalPrice.toLocaleString()} บาท`;
+    } else {
+      priceLines = `ราคาต่อชิ้น : ${unitTotalPrice.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} บาท
+ราคารวมทั้งหมด : ${data.totalPrice.toLocaleString()} บาท`;
+    }
+
+    const text = `ราคา${data.productType}
+Line ${data.lineName || "-"}
+วัสดุ : ${data.material}
+สีชุบ (สีเนื้องาน) : ${data.finish || "-"}
+รายละเอียดด้านหน้า : ${frontText}
+รายละเอียดด้านหลัง : ${backText}
+ขนาด ซม. : ${data.size}
+ความหนา มม. : ${data.thickness}
+จำนวน ${data.totalQuantity} ${unitLabel}
+ขนาดสาย : ${lanyardInfo}
+Project ${data.jobName || "-"}
+${priceLines}
+ใช้งาน ${data.eventDate || "-"}`;
+
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success("คัดลอกข้อความเรียบร้อยแล้ว");
+    } catch {
+      toast.error("ไม่สามารถคัดลอกข้อความได้");
+    }
+  }, [data, unitMedalPrice, unitStrapPrice, unitTotalPrice, lanyardPatternCount]);
 
   const handleCopyImage = useCallback(async () => {
     if (!captureRef.current) return;
@@ -67,7 +136,11 @@ export function EstimationCaptureCard({ data, onClose }: EstimationCaptureCardPr
     <div className="space-y-4">
       {/* Action buttons */}
       <div className="flex justify-end gap-2">
-        <Button onClick={handleCopyImage} className="gap-2">
+        <Button onClick={handleCopyText} variant="outline" className="gap-2">
+          <FileText className="h-4 w-4" />
+          คัดลอกข้อความ
+        </Button>
+        <Button onClick={handleCopyImage} className="gap-2 bg-red-500 hover:bg-red-600 text-white">
           <Copy className="h-4 w-4" />
           คัดลอกรูปภาพ
         </Button>
@@ -96,7 +169,7 @@ export function EstimationCaptureCard({ data, onClose }: EstimationCaptureCardPr
           <div className="flex-shrink-0 w-[160px]">
             <div className="bg-gray-50 rounded-xl p-3 border">
               <img
-                src={sampleArtwork}
+                src={data.artworkUrl || sampleArtwork}
                 alt="Product"
                 className="w-full h-auto object-contain rounded-lg"
               />
@@ -116,7 +189,7 @@ export function EstimationCaptureCard({ data, onClose }: EstimationCaptureCardPr
               { label: "ความหนา", value: data.thickness },
               { label: "ชนิดการชุบ", value: data.finish },
               { label: "จำนวนรวม", value: `${data.totalQuantity.toLocaleString()} ชิ้น` },
-              { label: "จำนวนลาย", value: `${data.designCount} ลาย`, highlight: true },
+              { label: "จำนวนลาย", value: `${lanyardPatternCount} ลาย`, highlight: true },
             ].map((spec, i) => (
               <div
                 key={i}
@@ -139,30 +212,42 @@ export function EstimationCaptureCard({ data, onClose }: EstimationCaptureCardPr
             <thead>
               <tr>
                 <th className="bg-blue-100 text-blue-800 px-4 py-2.5 text-left font-semibold border-r border-white">
-                  ราคาเหรียญ
+                  ราคาเหรียญ (ต่อชิ้น)
                 </th>
                 <th className="bg-green-100 text-green-800 px-4 py-2.5 text-left font-semibold border-r border-white">
-                  ราคาสาย
+                  ราคาสาย (ต่อชิ้น)
                 </th>
                 <th className="bg-yellow-100 text-yellow-800 px-4 py-2.5 text-left font-semibold">
-                  ราคาเหรียญรวมสาย
+                  ราคาเหรียญรวมสาย (ต่อชิ้น)
                 </th>
               </tr>
             </thead>
             <tbody>
               <tr className="border-t border-gray-100">
                 <td className="px-4 py-3 text-gray-700 font-medium bg-blue-50/50 border-r border-gray-100">
-                  {data.medalPrice.toLocaleString()} บาท
+                  {unitMedalPrice.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} บาท
                 </td>
                 <td className="px-4 py-3 text-gray-700 font-medium bg-green-50/50 border-r border-gray-100">
-                  {data.strapPrice.toLocaleString()} บาท
+                  {unitStrapPrice.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} บาท
                 </td>
                 <td className="px-4 py-3 text-gray-800 font-bold bg-yellow-50/50">
-                  {data.totalPrice.toLocaleString()} บาท
+                  {unitTotalPrice.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} บาท
                 </td>
               </tr>
             </tbody>
           </table>
+
+          {/* ราคารวมทั้งหมด (Total Price) */}
+          <div className="mt-3 flex justify-end">
+            <div className="bg-red-50/85 border border-red-200 rounded-xl px-5 py-2 text-right min-w-[200px]">
+              <span className="text-[10px] uppercase font-bold text-red-500 tracking-wider block mb-0.5">
+                ราคารวมทั้งหมด (Total Price)
+              </span>
+              <span className="text-xl font-black text-red-600">
+                {data.totalPrice.toLocaleString()} <span className="text-xs font-bold text-red-500">บาท</span>
+              </span>
+            </div>
+          </div>
         </div>
 
         {/* Footer notes */}

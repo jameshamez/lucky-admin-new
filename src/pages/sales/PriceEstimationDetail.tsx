@@ -37,6 +37,34 @@ interface DesignFileUpload {
   uploadedBy: string;
 }
 
+const EMPTY_ARTWORK_IMAGES: string[] = [];
+
+const createImageObjectUrl = (src: string) => {
+  if (!src || !src.startsWith("data:image/")) return "";
+
+  try {
+    const commaIndex = src.indexOf(",");
+    if (commaIndex === -1) return "";
+
+    const header = src.slice(0, commaIndex);
+    const data = src.slice(commaIndex + 1);
+    const mime = header.match(/^data:([^;,]+)/i)?.[1] || "image/png";
+
+    if (header.includes(";base64")) {
+      const binary = atob(data);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i += 1) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return URL.createObjectURL(new Blob([bytes], { type: mime }));
+    }
+
+    return URL.createObjectURL(new Blob([decodeURIComponent(data)], { type: mime }));
+  } catch {
+    return "";
+  }
+};
+
 export default function PriceEstimationDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -93,11 +121,32 @@ export default function PriceEstimationDetail() {
   const [isLoading, setIsLoading] = useState(true);
 
   // Dynamic values from estimation
-  const artworkImages = estimation?.artworkImages || [];
+  const artworkImages = estimation?.artworkImages || EMPTY_ARTWORK_IMAGES;
+  const [displayArtworkImages, setDisplayArtworkImages] = useState<string[]>([]);
   const designFileHistory: DesignFileUpload[] = estimation?.designFiles || [];
   
   // Get the latest uploaded file (first item in history)
   const latestDesignFile = designFileHistory.length > 0 ? designFileHistory[0] : null;
+  const renderedArtworkImages = displayArtworkImages.length > 0 ? displayArtworkImages : artworkImages;
+
+  useEffect(() => {
+    const objectUrls: string[] = [];
+    const nextImages = artworkImages.map((src: string) => {
+      const objectUrl = createImageObjectUrl(src);
+      if (objectUrl) {
+        objectUrls.push(objectUrl);
+        return objectUrl;
+      }
+      return src;
+    });
+
+    setDisplayArtworkImages(nextImages);
+    setSelectedArtwork(prev => Math.min(prev, Math.max(nextImages.length - 1, 0)));
+
+    return () => {
+      objectUrls.forEach(url => URL.revokeObjectURL(url));
+    };
+  }, [artworkImages]);
 
   useEffect(() => {
     const fetchDetail = async () => {
@@ -123,22 +172,62 @@ export default function PriceEstimationDetail() {
             });
           }
 
+          const parseStoredFile = (file: any) => {
+            if (!file) return null;
+            if (typeof file === "string") {
+              const trimmed = file.trim();
+              if (trimmed.startsWith("{")) {
+                try {
+                  return JSON.parse(trimmed);
+                } catch {
+                  return { url: file };
+                }
+              }
+              return { url: file };
+            }
+            if (typeof file === "object") return file;
+            return null;
+          };
+
+          const getImageUrl = (img: any): string => {
+            const parsed = parseStoredFile(img);
+            if (!parsed) return "";
+
+            const url = parsed.data || parsed.url || parsed.fileUrl || parsed.preview || "";
+            if (!url) return "";
+
+            const mime = parsed.type || String(url).match(/^data:([^;,]+)/i)?.[1] || "";
+            const isImage =
+              String(mime).startsWith("image/") ||
+              /^data:image\//i.test(String(url)) ||
+              /\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i.test(String(url));
+
+            return isImage ? String(url) : "";
+          };
+
           let parsedArtworkImages = [];
           if (detailObj.customerReferenceImages && Array.isArray(detailObj.customerReferenceImages)) {
-             parsedArtworkImages = detailObj.customerReferenceImages.map((img: any) => img.url || img);
+             parsedArtworkImages = detailObj.customerReferenceImages.map((img: any) => getImageUrl(img)).filter(Boolean);
           } else if (detailObj.referenceImages && Array.isArray(detailObj.referenceImages)) {
-             parsedArtworkImages = detailObj.referenceImages.map((img: any) => img.url || img);
+             parsedArtworkImages = detailObj.referenceImages.map((img: any) => getImageUrl(img)).filter(Boolean);
           }
 
           let parsedDesignFiles: DesignFileUpload[] = [];
-          if (detailObj.attachedFiles && Array.isArray(detailObj.attachedFiles)) {
-             parsedDesignFiles = detailObj.attachedFiles.map((file: any, i: number) => {
+          const designFileSources = Array.isArray(detailObj.attachedFiles)
+            ? detailObj.attachedFiles
+            : (Array.isArray(detailObj.customerReferenceImages)
+              ? detailObj.customerReferenceImages
+              : (Array.isArray(detailObj.artworkImages) ? detailObj.artworkImages : []));
+
+          if (designFileSources.length > 0) {
+             parsedDesignFiles = designFileSources.map((file: any, i: number) => {
                 const isObj = typeof file === 'object' && file !== null;
+                const parsedFile = parseStoredFile(file);
                 const uploadRaw = item.estimation_date || '';
                 const parts = uploadRaw.split(' ');
                 
                 return {
-                  fileName: isObj && file.name ? file.name : (isObj && file.fileName ? file.fileName : `ไฟล์แนบ_${i+1}`),
+                  fileName: parsedFile?.name || parsedFile?.fileName || (isObj && file.name ? file.name : (isObj && file.fileName ? file.fileName : `ไฟล์แนบ_${i+1}`)),
                   uploadDate: parts[0] || new Date().toISOString().split('T')[0],
                   uploadTime: parts[1] || '00:00:00',
                   uploadedBy: item.sales_owner_id || "ลูกค้า"
@@ -177,7 +266,19 @@ export default function PriceEstimationDetail() {
             attachedFiles: parsedDesignFiles.map(f => f.fileName), // compatibility for bottom section
             artworkImages: parsedArtworkImages,
             designFiles: parsedDesignFiles,
-            approvedUnitPrice: item.price ? parseFloat(item.price) : 0,
+            approvedUnitPrice: (() => {
+              const qty = item.quantity ? parseInt(item.quantity) : (detailObj.totalQuantity || 1);
+              const totalQty = qty > 0 ? qty : 1;
+              const winner = detailObj.supplierEntries?.find((e: any) => e.isWinner || e.id === detailObj.winnerFactoryValue || e.factoryValue === detailObj.winnerFactoryValue || e.id === detailObj.selectedFactory || e.factoryValue === detailObj.selectedFactory) || detailObj.supplierEntries?.[0];
+              if (winner) {
+                return winner.totalSellingPricePerUnit || (parseFloat(item.price || "0") / totalQty);
+              }
+              const rawPrice = parseFloat(item.price || "0");
+              if (item.status !== "ยื่นคำขอประเมิน" && item.status !== "รอประเมินราคา" && rawPrice > 1000 && totalQty > 1) {
+                return rawPrice / totalQty;
+              }
+              return rawPrice;
+            })(),
             genericDesignDetails: detailObj.genericDesignDetails || "",
             selectedFactory: detailObj.selectedFactory || null
           });
@@ -355,7 +456,7 @@ export default function PriceEstimationDetail() {
                   className="w-full bg-muted rounded-lg p-4 flex items-center justify-center min-h-[300px] max-h-[500px] cursor-zoom-in hover:bg-muted/80 transition-colors"
                 >
                   <img
-                    src={artworkImages[selectedArtwork]}
+                    src={renderedArtworkImages[selectedArtwork] || artworkImages[selectedArtwork]}
                     alt={`Artwork preview ${selectedArtwork + 1}`}
                     className="max-w-full max-h-[460px] object-contain"
                   />
@@ -365,7 +466,7 @@ export default function PriceEstimationDetail() {
                 {/* Thumbnails */}
                 {artworkImages.length > 1 && (
                   <div className="flex gap-2 flex-wrap mt-3">
-                    {artworkImages.map((img, index) => (
+                    {renderedArtworkImages.map((img, index) => (
                       <button
                         key={index}
                         onClick={() => setSelectedArtwork(index)}
@@ -842,7 +943,7 @@ export default function PriceEstimationDetail() {
           </button>
           <div className="w-full h-full flex items-center justify-center p-4">
             <img
-              src={artworkImages[selectedArtwork]}
+              src={renderedArtworkImages[selectedArtwork] || artworkImages[selectedArtwork]}
               alt={`Artwork fullscreen ${selectedArtwork + 1}`}
               className="max-w-full max-h-[90vh] object-contain"
             />

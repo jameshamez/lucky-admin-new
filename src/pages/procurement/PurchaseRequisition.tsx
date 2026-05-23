@@ -20,6 +20,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { format, startOfDay, endOfDay } from "date-fns";
@@ -51,6 +52,7 @@ interface PRPayment {
   date: Date;
   amount: number;
   method: string;
+  evidence?: PRAttachment | null;
 }
 
 interface PRAttachment {
@@ -94,7 +96,8 @@ const staffList = [
 
 const channelOptions = ["Local", "Import", "Online", "Shopee", "Lazada", "ร้านค้าประจำ", "ติดต่อตรง"];
 
-const paymentMethods = ["โอนเงิน", "เงินสด", "เช็ค", "บัตรเครดิต"];
+const TRANSFER_PAYMENT_METHOD = "โอนเงิน";
+const paymentMethods = [TRANSFER_PAYMENT_METHOD, "เงินสด", "เช็ค", "บัตรเครดิต"];
 
 const jobIdOptions = [
   { id: "JOB-2026-001", label: "JOB-2026-001 — ถ้วยรางวัลเกียรติยศ", items: [
@@ -249,6 +252,11 @@ const calcPRTotal = (pr: PRItem) => {
   return beforeVat + vat;
 };
 
+const calcPRTotalPaid = (pr: PRItem) => pr.payments.reduce((s, p) => s + p.amount, 0);
+
+const getPaymentStatus = (total: number, paid: number) =>
+  total > 0 && paid >= total ? "paid" : "unpaid";
+
 // ========== Main Component ==========
 export default function PurchaseRequisition() {
   const [requests, setRequests] = useState<PRItem[]>(initialData);
@@ -294,6 +302,7 @@ export default function PurchaseRequisition() {
   // File input ref
   const fileInputRef = useRef<HTMLInputElement>(null);
   const receiveFileInputRef = useRef<HTMLInputElement>(null);
+  const [imagePreview, setImagePreview] = useState<{ src: string; title: string } | null>(null);
 
   const filteredJobOptions = useMemo(() => {
     if (!jobSearchTerm) return jobIdOptions;
@@ -355,6 +364,7 @@ export default function PurchaseRequisition() {
           case "issueDate": va = a.issueDate.getTime(); vb = b.issueDate.getTime(); break;
           case "requester": va = a.requester; vb = b.requester; break;
           case "total": va = calcPRTotal(a); vb = calcPRTotal(b); break;
+          case "paymentStatus": va = getPaymentStatus(calcPRTotal(a), calcPRTotalPaid(a)); vb = getPaymentStatus(calcPRTotal(b), calcPRTotalPaid(b)); break;
           case "status": va = a.status; vb = b.status; break;
           default: return 0;
         }
@@ -521,20 +531,51 @@ export default function PurchaseRequisition() {
   };
 
   // Payments
-  const addPayment = () => setForm(f => ({ ...f, payments: [...f.payments, { id: String(Date.now()), date: new Date(), amount: 0, method: "โอนเงิน" }] }));
+  const addPayment = () => setForm(f => ({ ...f, payments: [...f.payments, { id: String(Date.now()), date: new Date(), amount: 0, method: TRANSFER_PAYMENT_METHOD, evidence: null }] }));
   const removePayment = (id: string) => setForm(f => ({ ...f, payments: f.payments.filter(p => p.id !== id) }));
   const updatePayment = (id: string, field: keyof PRPayment, value: any) => {
-    setForm(f => ({ ...f, payments: f.payments.map(p => p.id === id ? { ...p, [field]: value } : p) }));
+    setForm(f => ({
+      ...f,
+      payments: f.payments.map(p => {
+        if (p.id !== id) return p;
+        const nextPayment = { ...p, [field]: value };
+        if (field === "method" && value !== TRANSFER_PAYMENT_METHOD) {
+          nextPayment.evidence = null;
+        }
+        return nextPayment;
+      }),
+    }));
   };
 
   // Attachments
+  const createAttachment = (file: File): PRAttachment => ({
+    id: String(Date.now()) + Math.random(),
+    file,
+    preview: file.type.startsWith("image/") ? URL.createObjectURL(file) : "",
+  });
+
+  const handlePaymentEvidence = (paymentId: string, files: FileList | null) => {
+    const file = files?.[0];
+    if (!file) return;
+
+    const evidence = createAttachment(file);
+    setForm(f => ({
+      ...f,
+      payments: f.payments.map(p => p.id === paymentId ? { ...p, evidence } : p),
+    }));
+    toast.success("แนบหลักฐานการโอนเงินแล้ว");
+  };
+
+  const removePaymentEvidence = (paymentId: string) => {
+    setForm(f => ({
+      ...f,
+      payments: f.payments.map(p => p.id === paymentId ? { ...p, evidence: null } : p),
+    }));
+  };
+
   const handleFiles = (files: FileList | null) => {
     if (!files) return;
-    const newAttachments: PRAttachment[] = Array.from(files).map(file => ({
-      id: String(Date.now()) + Math.random(),
-      file,
-      preview: file.type.startsWith("image/") ? URL.createObjectURL(file) : "",
-    }));
+    const newAttachments: PRAttachment[] = Array.from(files).map(createAttachment);
     setForm(f => ({ ...f, attachments: [...f.attachments, ...newAttachments] }));
   };
 
@@ -547,11 +588,7 @@ export default function PurchaseRequisition() {
 
   const handleReceiveFiles = (files: FileList | null) => {
     if (!files) return;
-    const newAttachments: PRAttachment[] = Array.from(files).map(file => ({
-      id: String(Date.now()) + Math.random(),
-      file,
-      preview: file.type.startsWith("image/") ? URL.createObjectURL(file) : "",
-    }));
+    const newAttachments: PRAttachment[] = Array.from(files).map(createAttachment);
     setForm(f => ({ ...f, receiveAttachments: [...f.receiveAttachments, ...newAttachments] }));
   };
 
@@ -562,11 +599,31 @@ export default function PurchaseRequisition() {
     handleReceiveFiles(e.dataTransfer.files);
   };
 
+  const openAttachmentPreview = (att: PRAttachment) => {
+    if (!att.preview) return;
+    setImagePreview({ src: att.preview, title: att.file.name });
+  };
+
+  const renderAttachmentImageButton = (att: PRAttachment, className = "w-full h-full object-cover rounded") => (
+    <button
+      type="button"
+      className="group relative h-full w-full overflow-hidden rounded cursor-zoom-in"
+      onClick={() => openAttachmentPreview(att)}
+      aria-label={`ดูรูป ${att.file.name}`}
+    >
+      <img src={att.preview} alt={att.file.name} className={className} />
+      <span className="absolute inset-0 flex items-center justify-center bg-black/45 opacity-0 transition-opacity group-hover:opacity-100">
+        <Eye className="h-5 w-5 text-white" />
+      </span>
+    </button>
+  );
+
   // Export CSV
   const handleExport = () => {
     const bom = "\uFEFF";
-    const headers = ["เลข PR", "วันที่ออก", "วันที่ใช้งาน", "ผู้ขอซื้อ", "รายการ", "ยอดรวมสุทธิ", "สถานะ"];
+    const headers = ["เลข PR", "วันที่ออก", "วันที่ใช้งาน", "ผู้ขอซื้อ", "รายการ", "ยอดรวมสุทธิ", "สถานะการชำระเงิน", "สถานะ"];
     const statusLabel: Record<string, string> = { pending: "รอสั่งซื้อ", ordered: "สั่งซื้อแล้ว", received: "รับของแล้ว", rejected: "ไม่อนุมัติ" };
+    const paymentStatusLabel: Record<string, string> = { unpaid: "ยังไม่ชำระ", paid: "ชำระแล้ว" };
     const rows = filteredRequests.map(r => [
       r.prNumber,
       format(r.issueDate, "dd/MM/yyyy"),
@@ -574,6 +631,7 @@ export default function PurchaseRequisition() {
       r.requester,
       r.items.map(i => `${i.description} x${i.qty}`).join("; "),
       calcPRTotal(r).toFixed(2),
+      paymentStatusLabel[getPaymentStatus(calcPRTotal(r), calcPRTotalPaid(r))],
       statusLabel[r.status] || r.status,
     ]);
     const csv = bom + [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
@@ -598,6 +656,14 @@ export default function PurchaseRequisition() {
       case "rejected":
         return <Badge className="whitespace-nowrap" style={{ backgroundColor: CI_PRIMARY, color: "#fff" }}>❌ ไม่อนุมัติ</Badge>;
     }
+  };
+
+  const getPaymentStatusBadge = (total: number, paid: number) => {
+    const status = getPaymentStatus(total, paid);
+    if (status === "paid") {
+      return <Badge className="bg-green-600 text-white whitespace-nowrap">ชำระแล้ว</Badge>;
+    }
+    return <Badge variant="secondary" className="whitespace-nowrap">ยังไม่ชำระ</Badge>;
   };
 
   const SortButton = ({ field, children }: { field: string; children: React.ReactNode }) => (
@@ -641,6 +707,7 @@ export default function PurchaseRequisition() {
   const displayNetTotal = displayBeforeVat + displayVat;
   const displayTotalPaid = displayPayments.reduce((s, p) => s + p.amount, 0);
   const displayRemaining = displayNetTotal - displayTotalPaid;
+  const displayPaymentStatusBadge = getPaymentStatusBadge(displayNetTotal, displayTotalPaid);
 
   return (
     <div className="space-y-6">
@@ -691,6 +758,7 @@ export default function PurchaseRequisition() {
                 <TableHead className="text-white"><SortButton field="requester">ผู้ขอซื้อ</SortButton></TableHead>
                 <TableHead className="text-white">รายการสินค้า</TableHead>
                 <TableHead className="text-white text-right"><SortButton field="total">ยอดรวมสุทธิ</SortButton></TableHead>
+                <TableHead className="text-white"><SortButton field="paymentStatus">สถานะการชำระเงิน</SortButton></TableHead>
                 <TableHead className="text-white"><SortButton field="status">สถานะ</SortButton></TableHead>
                 <TableHead className="text-white">เปลี่ยนสถานะ</TableHead>
                 <TableHead className="text-white">การจัดการ</TableHead>
@@ -721,6 +789,7 @@ export default function PurchaseRequisition() {
                 <TableHead className="py-1"><Input placeholder="กรองผู้ขอ..." value={filterRequester} onChange={e => setFilterRequester(e.target.value)} className="h-7 text-xs" /></TableHead>
                 <TableHead className="py-1"><Input placeholder="กรองสินค้า..." value={filterProduct} onChange={e => setFilterProduct(e.target.value)} className="h-7 text-xs" /></TableHead>
                 <TableHead className="py-1" />
+                <TableHead className="py-1" />
                 <TableHead className="py-1">
                   <Select value={filterStatus} onValueChange={setFilterStatus}>
                     <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
@@ -740,7 +809,7 @@ export default function PurchaseRequisition() {
             <TableBody>
               {filteredRequests.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">ไม่พบรายการ</TableCell>
+                  <TableCell colSpan={9} className="text-center text-muted-foreground py-8">ไม่พบรายการ</TableCell>
                 </TableRow>
               ) : (
                 filteredRequests.map(req => (
@@ -770,6 +839,7 @@ export default function PurchaseRequisition() {
                     <TableCell className="text-right font-bold whitespace-nowrap" style={{ color: CI_PRIMARY }}>
                       ฿{calcPRTotal(req).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </TableCell>
+                    <TableCell>{getPaymentStatusBadge(calcPRTotal(req), calcPRTotalPaid(req))}</TableCell>
                     <TableCell>{getStatusBadge(req.status)}</TableCell>
                     <TableCell>
                       <Select value={req.status} onValueChange={v => handleStatusChange(req.id, v as PRItem["status"])}>
@@ -802,7 +872,12 @@ export default function PurchaseRequisition() {
           {/* Header */}
           <SheetHeader className="px-6 py-4 border-b shrink-0" style={{ backgroundColor: CI_HEADER }}>
             <SheetTitle className="text-white text-lg">{drawerTitle}</SheetTitle>
-            {isReadonly && activePR && <div className="mt-1">{getStatusBadge(activePR.status)}</div>}
+            {isReadonly && activePR && (
+              <div className="mt-1 flex flex-wrap gap-2">
+                {getStatusBadge(activePR.status)}
+                {getPaymentStatusBadge(calcPRTotal(activePR), calcPRTotalPaid(activePR))}
+              </div>
+            )}
           </SheetHeader>
 
           {/* Scrollable Body */}
@@ -1167,6 +1242,68 @@ export default function PurchaseRequisition() {
                             )}
                           </div>
                         </div>
+                        {pay.method === TRANSFER_PAYMENT_METHOD && (
+                          <div className="mt-3 rounded-lg border border-dashed bg-background/70 p-3">
+                            <div className="mb-2 flex items-center justify-between gap-3">
+                              <Label className="text-xs font-semibold">แนบหลักฐานการโอนเงิน</Label>
+                              {!isReadonly && (
+                                <>
+                                  <input
+                                    type="file"
+                                    id={`payment-evidence-${pay.id}`}
+                                    className="hidden"
+                                    accept="image/*,.pdf"
+                                    onChange={(e) => {
+                                      handlePaymentEvidence(pay.id, e.target.files);
+                                      e.currentTarget.value = "";
+                                    }}
+                                  />
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 gap-1 text-xs"
+                                    onClick={() => document.getElementById(`payment-evidence-${pay.id}`)?.click()}
+                                  >
+                                    <Upload className="h-3.5 w-3.5" />
+                                    {pay.evidence ? "เปลี่ยนไฟล์" : "แนบไฟล์"}
+                                  </Button>
+                                </>
+                              )}
+                            </div>
+
+                            {pay.evidence ? (
+                              <div className="flex items-center gap-3 rounded-md border bg-muted/30 p-2">
+                                {pay.evidence.preview ? (
+                                  <div className="h-14 w-14 shrink-0 overflow-hidden rounded-md border bg-white">
+                                    {renderAttachmentImageButton(pay.evidence, "h-full w-full object-cover")}
+                                  </div>
+                                ) : (
+                                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md border bg-white">
+                                    <FileText className="h-6 w-6 text-muted-foreground" />
+                                  </div>
+                                )}
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-sm font-medium">{pay.evidence.file.name}</p>
+                                  <p className="text-xs text-muted-foreground">{(pay.evidence.file.size / 1024).toFixed(1)} KB</p>
+                                </div>
+                                {!isReadonly && (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 shrink-0 text-destructive hover:text-destructive"
+                                    onClick={() => removePaymentEvidence(pay.id)}
+                                  >
+                                    <X className="h-4 w-4" />
+                                  </Button>
+                                )}
+                              </div>
+                            ) : (
+                              <p className="text-xs text-muted-foreground">ยังไม่ได้แนบหลักฐานการโอนเงิน</p>
+                            )}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -1174,9 +1311,12 @@ export default function PurchaseRequisition() {
 
                 {/* Payment Summary */}
                 <div className="mt-3 flex justify-between items-center text-sm p-3 rounded-lg" style={{ backgroundColor: `${CI_ACCENT}30` }}>
-                  <span>ยอดชำระแล้ว: <span className="font-bold">฿{displayTotalPaid.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></span>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span>ยอดชำระแล้ว: <span className="font-bold">฿{displayTotalPaid.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></span>
+                    {displayPaymentStatusBadge}
+                  </div>
                   <span>ยอดคงเหลือ: <span className="font-bold" style={{ color: displayRemaining > 0 ? CI_PRIMARY : "#16a34a" }}>
-                    ฿{displayRemaining.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    ฿{Math.max(displayRemaining, 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </span></span>
                 </div>
               </div>
@@ -1205,7 +1345,7 @@ export default function PurchaseRequisition() {
                       {form.attachments.map(att => (
                         <div key={att.id} className="relative border rounded-lg p-1 w-24 h-24 flex items-center justify-center bg-muted/30 group">
                           {att.preview ? (
-                            <img src={att.preview} alt={att.file.name} className="w-full h-full object-cover rounded" />
+                            renderAttachmentImageButton(att)
                           ) : (
                             <div className="text-center">
                               <FileText className="w-6 h-6 mx-auto text-muted-foreground" />
@@ -1237,7 +1377,7 @@ export default function PurchaseRequisition() {
                     {viewData.attachments.map(att => (
                       <div key={att.id} className="border rounded-lg p-1 w-24 h-24 flex items-center justify-center bg-muted/30">
                         {att.preview ? (
-                          <img src={att.preview} alt={att.file.name} className="w-full h-full object-cover rounded" />
+                          renderAttachmentImageButton(att)
                         ) : (
                           <div className="text-center">
                             <FileText className="w-6 h-6 mx-auto text-muted-foreground" />
@@ -1276,7 +1416,7 @@ export default function PurchaseRequisition() {
                           {form.receiveAttachments.map(att => (
                             <div key={att.id} className="relative border-2 border-green-200 rounded-lg p-1 w-24 h-24 flex items-center justify-center bg-white group">
                               {att.preview ? (
-                                <img src={att.preview} alt={att.file.name} className="w-full h-full object-cover rounded" />
+                                renderAttachmentImageButton(att)
                               ) : (
                                 <div className="text-center text-green-700">
                                   <ImageIcon className="w-6 h-6 mx-auto mb-1 opacity-70" />
@@ -1303,9 +1443,7 @@ export default function PurchaseRequisition() {
                           {viewData.receiveAttachments.map(att => (
                             <div key={att.id} className="border-2 border-green-200 rounded-lg p-1 w-28 h-28 flex items-center justify-center bg-white shadow-sm">
                               {att.preview ? (
-                                <a href={att.preview} target="_blank" rel="noopener noreferrer">
-                                  <img src={att.preview} alt={att.file.name} className="w-full h-full object-cover rounded hover:opacity-90" />
-                                </a>
+                                renderAttachmentImageButton(att)
                               ) : (
                                 <div className="text-center text-green-700">
                                   <ImageIcon className="w-6 h-6 mx-auto mb-1 opacity-70" />
@@ -1337,6 +1475,28 @@ export default function PurchaseRequisition() {
           )}
         </SheetContent>
       </Sheet>
+
+      <Dialog
+        open={Boolean(imagePreview)}
+        onOpenChange={(open) => {
+          if (!open) setImagePreview(null);
+        }}
+      >
+        <DialogContent className="max-w-4xl overflow-hidden p-0">
+          <DialogHeader className="px-4 pt-4 pb-2">
+            <DialogTitle className="truncate pr-8">{imagePreview?.title || "รูปภาพ"}</DialogTitle>
+          </DialogHeader>
+          {imagePreview && (
+            <div className="flex items-center justify-center bg-muted/40 p-4">
+              <img
+                src={imagePreview.src}
+                alt={imagePreview.title}
+                className="max-h-[78vh] max-w-full rounded-md object-contain"
+              />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
