@@ -47,6 +47,9 @@ const API_BASE_URL = "https://nacres.co.th/api-lucky/admin";
 
 // Status list for "เหรียญสั่งผลิต + ลูกค้ามีแบบแล้ว"
 const productStatusList = [
+  { status: "สร้างคำสั่งซื้อใหม่", department: "เซลล์" },
+  { status: "ยืนยันคำสั่งซื้อ", department: "เซลล์" },
+  { status: "สร้างงานแล้ว", department: "เซลล์" },
   { status: "รอจัดซื้อส่งประเมิน", department: "เซลล์" },
   { status: "อยู่ระหว่างการประเมินราคา", department: "จัดซื้อ" },
   { status: "ได้รับราคา", department: "จัดซื้อ" },
@@ -59,6 +62,9 @@ const productStatusList = [
   { status: "ไฟล์ผลิตพร้อมสั่งผลิต", department: "กราฟิก" },
   { status: "รอจัดซื้อออก PO / สั่งผลิต", department: "จัดซื้อ" },
   { status: "สั่งผลิตแล้ว", department: "จัดซื้อ" },
+  { status: "รอประกอบ", department: "ผลิต" },
+  { status: "รอผูกโบว์", department: "ผลิต" },
+  { status: "รอติดป้ายจารึก", department: "ผลิต" },
   { status: "กำลังผลิต", department: "โรงงาน" },
   { status: "รอตรวจ QC", department: "QC" },
   { status: "ตรวจสอบ Artwork จากโรงงาน", department: "โรงงาน" },
@@ -67,8 +73,14 @@ const productStatusList = [
   { status: "อัปเดตสาย", department: "โรงงาน" },
   { status: "อัปเดตชิ้นงานก่อนจัดส่ง", department: "QC" },
   { status: "งานเสร็จสมบูรณ์", department: "QC" },
+  { status: "ผ่าน QC - รอแพ็ก", department: "QC" },
+  { status: "แพ็กเสร็จ - รอพิมพ์ใบส่งของ", department: "ผลิต" },
+  { status: "พิมพ์เอกสารแล้ว - รอจัดส่ง", department: "ผลิต" },
   { status: "อยู่ระหว่างขนส่ง", department: "ขนส่ง" },
   { status: "สินค้ามาส่งที่ร้าน", department: "คลัง" },
+  { status: "จัดส่งเรียบร้อย", department: "ขนส่ง" },
+  { status: "จัดส่งสำเร็จ", department: "ขนส่ง" },
+  { status: "จัดส่งแล้ว", department: "ขนส่ง" },
 ];
 
 interface StatusHistoryItem {
@@ -755,11 +767,31 @@ export default function OrderDetail() {
 
         let broadStatus = "pending_approval";
         const os = apiData.order_status;
-        if (["กำลังผลิต", "รอเซลล์ตรวจแบบป้าย", "รอกราฟิกแก้ไขแบบป้าย", "รอตรวจ QC", "ตรวจสอบ Artwork จากโรงงาน", "ตรวจสอบ CNC", "อัปเดทปั้มชิ้นงาน", "อัปเดตสาย"].includes(os)) {
+        if ([
+          "สร้างงานแล้ว",
+          "รอกราฟิกปรับไฟล์เพื่อผลิต",
+          "กำลังปรับไฟล์ผลิต",
+          "รอเซลล์ตรวจแบบป้าย",
+          "รอกราฟิกแก้ไขแบบป้าย",
+          "ไฟล์ผลิตพร้อมสั่งผลิต",
+          "รอจัดซื้อออก PO / สั่งผลิต",
+          "สั่งผลิตแล้ว",
+          "รอประกอบ",
+          "รอผูกโบว์",
+          "รอติดป้ายจารึก",
+          "กำลังผลิต",
+          "รอตรวจ QC",
+          "ตรวจสอบ Artwork จากโรงงาน",
+          "ตรวจสอบ CNC",
+          "อัปเดทปั้มชิ้นงาน",
+          "อัปเดตสาย",
+          "อัปเดตชิ้นงานก่อนจัดส่ง",
+          "งานเสร็จสมบูรณ์",
+        ].includes(os)) {
           broadStatus = "in_production";
-        } else if (["อัปเดตชิ้นงานก่อนจัดส่ง", "งานเสร็จสมบูรณ์"].includes(os)) {
+        } else if (["ผ่าน QC - รอแพ็ก", "แพ็กเสร็จ - รอพิมพ์ใบส่งของ", "พิมพ์เอกสารแล้ว - รอจัดส่ง"].includes(os)) {
           broadStatus = "ready_to_ship";
-        } else if (["อยู่ระหว่างขนส่ง", "สินค้ามาส่งที่ร้าน", "จัดส่งเรียบร้อย"].includes(os)) {
+        } else if (["อยู่ระหว่างขนส่ง", "สินค้ามาส่งที่ร้าน", "จัดส่งเรียบร้อย", "จัดส่งสำเร็จ", "จัดส่งแล้ว"].includes(os)) {
           broadStatus = "shipped";
         }
 

@@ -38,6 +38,9 @@ import { Copy, Check } from "lucide-react";
 
 // Status list for "เหรียญสั่งผลิต + ลูกค้ามีแบบแล้ว"
 const productStatusList = [
+  { status: "สร้างคำสั่งซื้อใหม่", department: "เซลล์" },
+  { status: "ยืนยันคำสั่งซื้อ", department: "เซลล์" },
+  { status: "สร้างงานแล้ว", department: "เซลล์" },
   { status: "รอจัดซื้อส่งประเมิน", department: "เซลล์" },
   { status: "อยู่ระหว่างการประเมินราคา", department: "จัดซื้อ" },
   { status: "ได้รับราคา", department: "จัดซื้อ" },
@@ -45,19 +48,93 @@ const productStatusList = [
   { status: "ลูกค้าอนุมัติราคา", department: "เซลล์" },
   { status: "รอกราฟิกปรับไฟล์เพื่อผลิต", department: "กราฟิก" },
   { status: "กำลังปรับไฟล์ผลิต", department: "กราฟิก" },
+  { status: "รอเซลล์ตรวจแบบป้าย", department: "เซลล์" },
+  { status: "รอกราฟิกแก้ไขแบบป้าย", department: "กราฟิก" },
   { status: "ไฟล์ผลิตพร้อมสั่งผลิต", department: "กราฟิก" },
   { status: "รอจัดซื้อออก PO / สั่งผลิต", department: "จัดซื้อ" },
   { status: "สั่งผลิตแล้ว", department: "จัดซื้อ" },
+  { status: "รอประกอบ", department: "ผลิต" },
+  { status: "รอผูกโบว์", department: "ผลิต" },
+  { status: "รอติดป้ายจารึก", department: "ผลิต" },
   { status: "กำลังผลิต", department: "โรงงาน" },
+  { status: "รอตรวจ QC", department: "QC" },
   { status: "ตรวจสอบ Artwork จากโรงงาน", department: "โรงงาน" },
   { status: "ตรวจสอบ CNC", department: "โรงงาน" },
   { status: "อัปเดทปั้มชิ้นงาน", department: "โรงงาน" },
   { status: "อัปเดตสาย", department: "โรงงาน" },
   { status: "อัปเดตชิ้นงานก่อนจัดส่ง", department: "QC" },
   { status: "งานเสร็จสมบูรณ์", department: "QC" },
+  { status: "ผ่าน QC - รอแพ็ก", department: "QC" },
+  { status: "แพ็กเสร็จ - รอพิมพ์ใบส่งของ", department: "ผลิต" },
+  { status: "พิมพ์เอกสารแล้ว - รอจัดส่ง", department: "ผลิต" },
   { status: "อยู่ระหว่างขนส่ง", department: "ขนส่ง" },
   { status: "สินค้ามาส่งที่ร้าน", department: "คลัง" },
+  { status: "จัดส่งเรียบร้อย", department: "ขนส่ง" },
+  { status: "จัดส่งสำเร็จ", department: "ขนส่ง" },
+  { status: "จัดส่งแล้ว", department: "ขนส่ง" },
 ];
+
+const salesActionStatuses = new Set([
+  "รอเซลล์ตรวจแบบป้าย",
+]);
+
+const priceApprovalStatuses = new Set([
+  "สร้างคำสั่งซื้อใหม่",
+  "ยืนยันคำสั่งซื้อ",
+  "รอจัดซื้อส่งประเมิน",
+  "อยู่ระหว่างการประเมินราคา",
+  "ได้รับราคา",
+  "เสนอราคาให้ลูกค้า",
+  "ลูกค้าอนุมัติราคา",
+]);
+
+const graphicStatuses = new Set([
+  "สร้างงานแล้ว",
+  "รอกราฟิกปรับไฟล์เพื่อผลิต",
+  "กำลังปรับไฟล์ผลิต",
+  "รอเซลล์ตรวจแบบป้าย",
+  "รอกราฟิกแก้ไขแบบป้าย",
+  "ไฟล์ผลิตพร้อมสั่งผลิต",
+]);
+
+const procurementStatuses = new Set([
+  "รอจัดซื้อออก PO / สั่งผลิต",
+  "สั่งผลิตแล้ว",
+]);
+
+const productionStatuses = new Set([
+  "รอประกอบ",
+  "รอผูกโบว์",
+  "รอติดป้ายจารึก",
+  "กำลังผลิต",
+  "ตรวจสอบ Artwork จากโรงงาน",
+  "ตรวจสอบ CNC",
+  "อัปเดทปั้มชิ้นงาน",
+  "อัปเดตสาย",
+]);
+
+const qcStatuses = new Set([
+  "รอตรวจ QC",
+  "อัปเดตชิ้นงานก่อนจัดส่ง",
+  "งานเสร็จสมบูรณ์",
+  "ผ่าน QC - รอแพ็ก",
+]);
+
+const readyToShipStatuses = new Set([
+  "แพ็กเสร็จ - รอพิมพ์ใบส่งของ",
+  "พิมพ์เอกสารแล้ว - รอจัดส่ง",
+]);
+
+const shippingStatuses = new Set([
+  "อยู่ระหว่างขนส่ง",
+]);
+
+const deliveredStatuses = new Set([
+  "สินค้ามาส่งที่ร้าน",
+  "จัดส่งเรียบร้อย",
+  "จัดส่งสำเร็จ",
+  "จัดส่งแล้ว",
+]);
 
 interface StatusHistoryItem {
   status: string;
@@ -395,15 +472,15 @@ const getStatusIndex = (status: string) => productStatusList.findIndex(s => s.st
 
 // Map item-level status to a broad progress category for bubble filters
 const getProgressCategory = (status: string): string => {
-  const idx = getStatusIndex(status);
-  if (idx < 0) return "อื่นๆ";
-  if (idx <= 4) return "ประเมินราคา/อนุมัติ";
-  if (idx <= 7) return "ออกแบบกราฟิก";
-  if (idx <= 9) return "จัดซื้อ/สั่งผลิต";
-  if (idx <= 14) return "กำลังผลิต";
-  if (idx <= 16) return "QC/ตรวจสอบ";
-  if (idx <= 17) return "ขนส่ง";
-  return "ส่งถึงแล้ว";
+  if (priceApprovalStatuses.has(status)) return "ประเมินราคา/อนุมัติ";
+  if (graphicStatuses.has(status)) return "ออกแบบกราฟิก";
+  if (procurementStatuses.has(status)) return "จัดซื้อ/สั่งผลิต";
+  if (productionStatuses.has(status)) return "กำลังผลิต";
+  if (qcStatuses.has(status)) return "QC/ตรวจสอบ";
+  if (readyToShipStatuses.has(status)) return "พร้อมจัดส่ง";
+  if (shippingStatuses.has(status)) return "ขนส่ง";
+  if (deliveredStatuses.has(status)) return "ส่งถึงแล้ว";
+  return "อื่นๆ";
 };
 
 export default function OrderTracking() {
@@ -439,13 +516,20 @@ export default function OrderTracking() {
             return [];
           })();
 
+          const currentOrderStatus = o.order_status || "สร้างคำสั่งซื้อใหม่";
+
           // Map standard order status for KPI
           let broadStatus = "pending_approval";
-          if (["กำลังผลิต", "ตรวจสอบ Artwork จากโรงงาน", "ตรวจสอบ CNC", "อัปเดทปั้มชิ้นงาน", "อัปเดตสาย", "สร้างงานแล้ว"].includes(o.order_status)) {
+          if (
+            graphicStatuses.has(currentOrderStatus) ||
+            procurementStatuses.has(currentOrderStatus) ||
+            productionStatuses.has(currentOrderStatus) ||
+            qcStatuses.has(currentOrderStatus)
+          ) {
             broadStatus = "in_production";
-          } else if (["อัปเดตชิ้นงานก่อนจัดส่ง", "งานเสร็จสมบูรณ์"].includes(o.order_status)) {
+          } else if (readyToShipStatuses.has(currentOrderStatus)) {
             broadStatus = "ready_to_ship";
-          } else if (["อยู่ระหว่างขนส่ง", "สินค้ามาส่งที่ร้าน", "จัดส่งเรียบร้อย", "จัดส่งสำเร็จ"].includes(o.order_status)) {
+          } else if (shippingStatuses.has(currentOrderStatus) || deliveredStatuses.has(currentOrderStatus)) {
             broadStatus = "shipped";
           }
 
@@ -477,7 +561,7 @@ export default function OrderTracking() {
                 name: productCategoryDisplay,
                 description: jobName || o.notes || "สร้างจาก Order",
                 quantity: 1,
-                currentStatus: o.order_status || "สร้างคำสั่งซื้อใหม่",
+                currentStatus: currentOrderStatus,
                 statusHistory: []
               }
             ]
@@ -549,13 +633,14 @@ export default function OrderTracking() {
     return counts;
   }, [orders]);
 
-  const progressCategories = ["ประเมินราคา/อนุมัติ", "ออกแบบกราฟิก", "จัดซื้อ/สั่งผลิต", "กำลังผลิต", "QC/ตรวจสอบ", "ขนส่ง", "ส่งถึงแล้ว"];
+  const progressCategories = ["ประเมินราคา/อนุมัติ", "ออกแบบกราฟิก", "จัดซื้อ/สั่งผลิต", "กำลังผลิต", "QC/ตรวจสอบ", "พร้อมจัดส่ง", "ขนส่ง", "ส่งถึงแล้ว"];
   const progressColors: Record<string, string> = {
     "ประเมินราคา/อนุมัติ": "bg-gray-100 text-gray-700 border-gray-300",
     "ออกแบบกราฟิก": "bg-purple-100 text-purple-700 border-purple-300",
     "จัดซื้อ/สั่งผลิต": "bg-amber-100 text-amber-700 border-amber-300",
     "กำลังผลิต": "bg-orange-100 text-orange-700 border-orange-300",
     "QC/ตรวจสอบ": "bg-blue-100 text-blue-700 border-blue-300",
+    "พร้อมจัดส่ง": "bg-sky-100 text-sky-700 border-sky-300",
     "ขนส่ง": "bg-cyan-100 text-cyan-700 border-cyan-300",
     "ส่งถึงแล้ว": "bg-green-100 text-green-700 border-green-300",
   };
@@ -995,6 +1080,15 @@ export default function OrderTracking() {
                             </TableCell>
                             <TableCell className="text-center py-3">
                               <div className="flex items-center justify-center gap-1.5">
+                                {salesActionStatuses.has(item.currentStatus) && (
+                                  <Button
+                                    size="sm"
+                                    onClick={() => navigate(`/sales/track-orders/${order.id}?item=${item.id}`)}
+                                    className="bg-blue-600 text-white hover:bg-blue-700 transition-colors text-xs"
+                                  >
+                                    ตรวจ/ตอบกลับ
+                                  </Button>
+                                )}
                                 <Button
                                   variant="outline"
                                   size="sm"
