@@ -38,6 +38,7 @@ interface DesignFileUpload {
 }
 
 const EMPTY_ARTWORK_IMAGES: string[] = [];
+const API_BASE = "https://nacres.co.th/api-lucky/admin";
 
 const createImageObjectUrl = (src: string) => {
   if (!src || !src.startsWith("data:image/")) return "";
@@ -77,44 +78,13 @@ export default function PriceEstimationDetail() {
   // Modal states for approved status actions
   const [isRevisionModalOpen, setIsRevisionModalOpen] = useState(false);
   const [revisionNotes, setRevisionNotes] = useState("");
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
   const handleDelete = () => {
     // Perform delete action
     toast.success("ลบรายการประเมินราคาเรียบร้อยแล้ว");
     setIsDeleteDialogOpen(false);
     navigate("/sales/price-estimation");
-  };
-
-  // Handle revision request submission
-  const handleRevisionSubmit = () => {
-    if (!revisionNotes.trim()) {
-      toast.error("กรุณากรอกเหตุผลในการขอแก้ไขราคา");
-      return;
-    }
-    // Submit revision request - would update status to "รอแก้ไข" and notify procurement
-    toast.success("ส่งคำขอแก้ไขราคาเรียบร้อยแล้ว");
-    setIsRevisionModalOpen(false);
-    setRevisionNotes("");
-    // In real implementation, this would update the status and redirect
-  };
-
-  // Handle confirm price and navigate to add price estimation with customer data pre-filled
-  const handleConfirmPrice = () => {
-    if (!estimation) return;
-
-    // Navigate to add price estimation page with pre-filled customer data
-    navigate('/sales/price-estimation/add', {
-      state: {
-        fromApprovedEstimation: true,
-        customerData: {
-          customerName: estimation.customerName,
-          customerPhone: estimation.customerPhone,
-          customerLineId: estimation.customerLineId,
-          customerEmail: estimation.customerEmail,
-          customerTags: estimation.customerTags,
-        }
-      }
-    });
   };
 
   const [estimation, setEstimation] = useState<any>(null);
@@ -128,6 +98,74 @@ export default function PriceEstimationDetail() {
   // Get the latest uploaded file (first item in history)
   const latestDesignFile = designFileHistory.length > 0 ? designFileHistory[0] : null;
   const renderedArtworkImages = displayArtworkImages.length > 0 ? displayArtworkImages : artworkImages;
+
+  const appendWorkflowNote = (label: string, note?: string) => {
+    const existingNotes = estimation?.notes ? `${estimation.notes}\n` : "";
+    const detail = note?.trim() ? ` - ${note.trim()}` : "";
+    return `${existingNotes}${label}${detail}`;
+  };
+
+  const updateEstimation = async (payload: Record<string, any>) => {
+    if (!estimation?.id) return false;
+
+    setIsUpdatingStatus(true);
+    try {
+      const res = await fetch(`${API_BASE}/price_estimations.php/${estimation.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json.status === "error") {
+        throw new Error(json.message || "Failed to update estimation");
+      }
+
+      setEstimation((prev: any) => prev ? { ...prev, ...payload } : prev);
+      return true;
+    } catch (error) {
+      console.error(error);
+      toast.error("อัปเดตสถานะไม่สำเร็จ");
+      return false;
+    } finally {
+      setIsUpdatingStatus(false);
+    }
+  };
+
+  const handleSendToCustomer = async () => {
+    const ok = await updateEstimation({
+      status: "เสนอลูกค้า",
+      notes: appendWorkflowNote("ฝ่ายขายส่งราคาให้ลูกค้าแล้ว"),
+    });
+    if (ok) toast.success("เปลี่ยนสถานะเป็น 'เสนอลูกค้า' แล้ว");
+  };
+
+  const handleConfirmPrice = async () => {
+    const ok = await updateEstimation({
+      status: "ยืนยันเรียบร้อย",
+      notes: appendWorkflowNote("ลูกค้ายืนยันราคาแล้ว"),
+    });
+    if (ok) toast.success("ยืนยันราคาเรียบร้อยแล้ว");
+  };
+
+  const handleRevisionSubmit = async () => {
+    if (!revisionNotes.trim()) {
+      toast.error("กรุณากรอกเหตุผลในการขอแก้ไขราคา");
+      return;
+    }
+
+    const ok = await updateEstimation({
+      status: "อยู่ระหว่างการประเมินราคา",
+      revision_count: (estimation?.revisionCount || 0) + 1,
+      revisionCount: (estimation?.revisionCount || 0) + 1,
+      notes: appendWorkflowNote("การขอแก้ราคา", revisionNotes),
+    });
+
+    if (ok) {
+      toast.success("ส่งคำขอแก้ไขราคาให้จัดซื้อเรียบร้อยแล้ว");
+      setIsRevisionModalOpen(false);
+      setRevisionNotes("");
+    }
+  };
 
   useEffect(() => {
     const objectUrls: string[] = [];
@@ -151,12 +189,21 @@ export default function PriceEstimationDetail() {
   useEffect(() => {
     const fetchDetail = async () => {
       try {
-        const res = await fetch(`https://nacres.co.th/api-lucky/admin/price_estimations.php/${id}`);
+        const routeId = String(id || "");
+        const isNumericRouteId = /^\d+$/.test(routeId);
+        const res = await fetch(
+          isNumericRouteId
+            ? `${API_BASE}/price_estimations.php/${routeId}`
+            : `${API_BASE}/price_estimations.php`
+        );
         if (!res.ok) throw new Error("Failed to fetch");
         const json = await res.json();
 
         if (json.status === "success" && json.data) {
-          const item = json.data;
+          const item = Array.isArray(json.data)
+            ? json.data.find((row: any) => String(row.estimate_id) === routeId)
+            : json.data;
+          if (!item) throw new Error("Price estimation not found");
           let detailObj: any = {};
           try {
             detailObj = typeof item.details === 'string' ? JSON.parse(item.details) : (item.details || {});
@@ -239,6 +286,7 @@ export default function PriceEstimationDetail() {
             id: item.id,
             estimateId: item.estimate_id,
             status: String(item.status) === "0" ? "ยื่นคำขอประเมิน" : item.status,
+            revisionCount: item.revision_count || 0,
             customerName: item.customer_name || "-",
             customerPhone: item.customer_phone || "-",
             customerLineId: item.customer_line || "-",
@@ -319,9 +367,15 @@ export default function PriceEstimationDetail() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case "อนุมัติแล้ว":
+      case "ยืนยันเรียบร้อย":
         return "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400";
+      case "เสนอลูกค้า":
+        return "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400";
+      case "เสนอราคา":
+        return "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400";
       case "อยู่ระหว่างการประเมินราคา":
         return "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400";
+      case "ยื่นคำขอประเมิน":
       case "รอจัดซื้อส่งประเมิน":
         return "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400";
       case "ยกเลิก":
@@ -335,6 +389,17 @@ export default function PriceEstimationDetail() {
   const isMedal = estimation.productType === "เหรียญสั่งผลิต";
   const isAward = estimation.productType === "โล่สั่งผลิต";
   const isLanyard = estimation.productCategory === "หมวดสายคล้อง";
+  const priceReadyStatuses = ["เสนอราคา", "เสนอลูกค้า", "อนุมัติแล้ว", "ยืนยันเรียบร้อย"];
+  const isPriceReady = priceReadyStatuses.includes(estimation.status);
+  const isSentToCustomer = estimation.status === "เสนอลูกค้า" || estimation.status === "อนุมัติแล้ว";
+  const isCustomerConfirmed = estimation.status === "ยืนยันเรียบร้อย";
+  const statusCardBorder = isCustomerConfirmed
+    ? "border-l-green-500"
+    : isSentToCustomer
+      ? "border-l-amber-500"
+      : estimation.status === "เสนอราคา"
+        ? "border-l-purple-500"
+        : "border-l-blue-500";
 
   return (
     <div className="space-y-6">
@@ -359,7 +424,7 @@ export default function PriceEstimationDetail() {
           </Button>
           <Button
             variant="outline"
-            onClick={() => navigate(`/sales/price-estimation/edit/${id}`)}
+            onClick={() => navigate(`/sales/price-estimation/edit/${estimation.id}`)}
             className="border-yellow-500 text-yellow-600 hover:bg-yellow-50 hover:text-yellow-700"
           >
             <Edit className="h-4 w-4 mr-2" />
@@ -763,21 +828,36 @@ export default function PriceEstimationDetail() {
       )}
 
       {/* สถานะการประเมินราคา - Read-only */}
-      <Card className={`border-l-4 ${estimation.status === "อนุมัติแล้ว" ? "border-l-green-500" : "border-l-blue-500"}`}>
+      <Card className={`border-l-4 ${statusCardBorder}`}>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <CircleDot className="h-5 w-5 text-primary" />
               <CardTitle className="text-lg">สถานะการประเมินราคา</CardTitle>
             </div>
-            {/* Status Badge - Based on estimation status */}
-            {estimation.status === "อนุมัติแล้ว" ? (
+            {isCustomerConfirmed ? (
               <Badge
                 variant="outline"
                 className="bg-green-500/10 text-green-600 border-green-500/30 px-3 py-1 gap-1.5"
               >
                 <CheckCircle2 className="h-3.5 w-3.5" />
-                อนุมัติราคาแล้ว
+                ยืนยันเรียบร้อย
+              </Badge>
+            ) : isSentToCustomer ? (
+              <Badge
+                variant="outline"
+                className="bg-amber-500/10 text-amber-600 border-amber-500/30 px-3 py-1 gap-1.5"
+              >
+                <Send className="h-3.5 w-3.5" />
+                เสนอลูกค้า
+              </Badge>
+            ) : estimation.status === "เสนอราคา" ? (
+              <Badge
+                variant="outline"
+                className="bg-purple-500/10 text-purple-600 border-purple-500/30 px-3 py-1 gap-1.5"
+              >
+                <Factory className="h-3.5 w-3.5" />
+                เสนอราคา
               </Badge>
             ) : estimation.status === "อยู่ระหว่างการประเมินราคา" ? (
               <Badge
@@ -793,14 +873,13 @@ export default function PriceEstimationDetail() {
                 className="bg-orange-500/10 text-orange-600 border-orange-500/30 px-3 py-1 gap-1.5"
               >
                 <Clock className="h-3.5 w-3.5" />
-                รอจัดซื้อส่งประเมิน
+                {estimation.status || "รอจัดซื้อส่งประเมิน"}
               </Badge>
             )}
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* แสดงราคาเมื่อสถานะ = อนุมัติราคาแล้ว */}
-          {estimation.status === "อนุมัติแล้ว" ? (
+          {isPriceReady ? (
             <>
               {/* Selected Factory Info - Green themed */}
               {(estimation as any).selectedFactory && (
@@ -855,24 +934,47 @@ export default function PriceEstimationDetail() {
                 </div>
               </div>
 
-              {/* Action Buttons for Approved Status */}
-              <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t">
-                <Button
-                  variant="outline"
-                  onClick={() => setIsRevisionModalOpen(true)}
-                  className="flex-1 border-orange-400 bg-orange-50 text-orange-600 hover:bg-orange-100 hover:text-orange-700 dark:bg-orange-950/20 dark:border-orange-600 dark:text-orange-400 dark:hover:bg-orange-950/40"
-                >
-                  <Edit className="h-4 w-4 mr-2" />
-                  ขอแก้ไขราคา
-                </Button>
-                <Button
-                  onClick={handleConfirmPrice}
-                  className="flex-1 bg-green-600 text-white hover:bg-green-700"
-                >
-                  <CheckCircle2 className="h-4 w-4 mr-2" />
-                  ยืนยันราคา
-                </Button>
-              </div>
+              {estimation.status === "เสนอราคา" && (
+                <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t">
+                  <Button
+                    onClick={handleSendToCustomer}
+                    disabled={isUpdatingStatus}
+                    className="flex-1 bg-purple-600 text-white hover:bg-purple-700"
+                  >
+                    <Send className="h-4 w-4 mr-2" />
+                    ส่งเสนอลูกค้าแล้ว
+                  </Button>
+                </div>
+              )}
+
+              {isSentToCustomer && (
+                <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t">
+                  <Button
+                    variant="outline"
+                    onClick={() => setIsRevisionModalOpen(true)}
+                    disabled={isUpdatingStatus}
+                    className="flex-1 border-orange-400 bg-orange-50 text-orange-600 hover:bg-orange-100 hover:text-orange-700 dark:bg-orange-950/20 dark:border-orange-600 dark:text-orange-400 dark:hover:bg-orange-950/40"
+                  >
+                    <Edit className="h-4 w-4 mr-2" />
+                    ขอแก้ไขราคา
+                  </Button>
+                  <Button
+                    onClick={handleConfirmPrice}
+                    disabled={isUpdatingStatus}
+                    className="flex-1 bg-green-600 text-white hover:bg-green-700"
+                  >
+                    <CheckCircle2 className="h-4 w-4 mr-2" />
+                    ลูกค้ายืนยันราคา
+                  </Button>
+                </div>
+              )}
+
+              {isCustomerConfirmed && (
+                <div className="flex items-center justify-center gap-2 rounded-lg border border-green-200 bg-green-50 p-3 text-sm font-medium text-green-700">
+                  <CheckCircle2 className="h-4 w-4" />
+                  จบขั้นตอนประเมินราคาแล้ว
+                </div>
+              )}
             </>
           ) : (
             /* ยังไม่ได้ราคา */
@@ -922,6 +1024,7 @@ export default function PriceEstimationDetail() {
             </Button>
             <Button
               onClick={handleRevisionSubmit}
+              disabled={isUpdatingStatus}
               className="bg-orange-500 text-white hover:bg-orange-600"
             >
               <Send className="h-4 w-4 mr-2" />

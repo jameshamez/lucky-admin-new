@@ -798,7 +798,7 @@ export default function PriceEstimation() {
                     <TableRow key={estimation.id} className="hover:bg-muted/50">
                       <TableCell>
                         <a
-                          href={`/sales/price-estimation/${estimation.estimateId}`}
+                          href={`/sales/price-estimation/${estimation.id}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-blue-600 hover:underline hover:text-blue-800 cursor-pointer"
