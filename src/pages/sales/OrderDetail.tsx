@@ -39,6 +39,8 @@ import { toast } from "sonner";
 import artworkSample from "@/assets/artwork-sample.png";
 import QCVerificationCards from "@/components/sales/QCVerificationCards";
 import LogisticsDeliveryCards from "@/components/sales/LogisticsDeliveryCards";
+import { useAuth } from "@/contexts/AuthContext";
+import { mapThaiDepartmentToKey } from "@/lib/departments";
 import ProductionProgressBar from "@/components/sales/ProductionProgressBar";
 import { ProductionOrderInfoReadOnly, OrderShippingData } from "@/components/procurement/ProductionOrderInfo";
 import { designJobService, DesignJob } from "@/services/designJobService";
@@ -400,6 +402,13 @@ const getStatusCounts = (items: any[]) => {
 export default function OrderDetail() {
   const { orderId } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  // เดิม hardcode "เซลล์" ทุกกรณี — ตอนนี้ derive จากแผนกของผู้ใช้ที่ login จริง
+  // (คลังคำ "เซลล์"/"จัดซื้อ"/"คลังสินค้า"/"ขนส่ง" ยังเป็น vocab แคบเฉพาะ 2 component นี้
+  // ซึ่งข้อมูลภายในยังเป็น mock อยู่ — เป็นงานแยกต่างหาก)
+  const viewerDepartmentKey = mapThaiDepartmentToKey(user?.department);
+  const qcUserRole: "เซลล์" | "จัดซื้อ" = viewerDepartmentKey === "procurement" ? "จัดซื้อ" : "เซลล์";
+  const logisticsUserRole: "เซลล์" | "คลังสินค้า" | "ขนส่ง" = viewerDepartmentKey === "production" ? "คลังสินค้า" : "เซลล์";
   const [showUploadHistory, setShowUploadHistory] = useState(false);
   const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
   const [showDeliveryDetail, setShowDeliveryDetail] = useState(false);
@@ -1756,7 +1765,7 @@ export default function OrderDetail() {
           {/* QC Verification Cards - for JOB-2024-001 */}
           {/* ============================== */}
           {order.id === "JOB-2024-001" && (
-            <QCVerificationCards orderId={order.id} userRole="เซลล์" />
+            <QCVerificationCards orderId={order.id} userRole={qcUserRole} />
           )}
 
           {/* ============================== */}
@@ -1853,7 +1862,7 @@ export default function OrderDetail() {
           {/* ============================== */}
           {/* Logistics & Delivery Cards - shown when ready to ship or shipped */}
           {(order.status === "shipped" || order.status === "ready_to_ship") && (
-            <LogisticsDeliveryCards orderId={order.id} userRole="เซลล์" />
+            <LogisticsDeliveryCards orderId={order.id} userRole={logisticsUserRole} />
           )}
 
           {/* ============================== */}

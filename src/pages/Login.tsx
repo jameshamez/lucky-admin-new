@@ -6,19 +6,20 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Loader2, Lock, User, ShieldCheck } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 
 const API_AUTH_URL = "https://nacres.co.th/api-lucky/admin/auth.php";
 
 export default function Login() {
     const navigate = useNavigate();
+    const { user, login } = useAuth();
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
-        const user = localStorage.getItem("user");
         if (user) {
             navigate("/select-department");
         }
-    }, [navigate]);
+    }, [user, navigate]);
     const [formData, setFormData] = useState({
         username: "",
         password: ""
@@ -44,8 +45,7 @@ export default function Login() {
             const result = await response.json();
 
             if (result.status === "success") {
-                // Save user info to localStorage
-                localStorage.setItem("user", JSON.stringify(result.user));
+                login(result.user);
                 toast.success(`ยินดีต้อนรับคุณ ${result.user.full_name}`);
 
                 // Redirect to department selection

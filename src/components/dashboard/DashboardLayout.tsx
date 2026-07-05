@@ -1,25 +1,32 @@
-import { ReactNode } from "react";
+import { ReactNode, useEffect } from "react";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "./AppSidebar";
 import { DashboardHeader } from "./DashboardHeader";
-import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
+import { canAccessDepartment, DepartmentKey } from "@/lib/departments";
 
 interface DashboardLayoutProps {
   children: ReactNode;
+  requiredDepartment?: DepartmentKey;
 }
 
-export function DashboardLayout({ children }: DashboardLayoutProps) {
+export function DashboardLayout({ children, requiredDepartment }: DashboardLayoutProps) {
   const navigate = useNavigate();
-  const user = localStorage.getItem("user");
+  const { user } = useAuth();
+  const hasAccess = !requiredDepartment || canAccessDepartment(user, requiredDepartment);
 
   useEffect(() => {
     if (!user) {
       navigate("/");
+    } else if (!hasAccess) {
+      toast.error("คุณไม่มีสิทธิ์เข้าถึงหน้านี้");
+      navigate("/select-department");
     }
-  }, [user, navigate]);
+  }, [user, hasAccess, navigate]);
 
-  if (!user) return null; // Don't render layout if not authenticated
+  if (!user || !hasAccess) return null; // Don't render layout if not authenticated or not authorized
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full bg-background">

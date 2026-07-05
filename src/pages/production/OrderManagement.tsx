@@ -32,6 +32,8 @@ import { ProductionWorkspace } from "@/components/production/ProductionWorkspace
 import { productionService } from "@/services/productionService";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useAuth } from "@/contexts/AuthContext";
+import { mapThaiDepartmentToKey } from "@/lib/departments";
 
 // Helper to map API order to Component Order format
 const mapOrder = (o: any) => ({
@@ -85,17 +87,8 @@ export default function OrderManagement() {
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
-  const getCurrentDepartmentKey = () => {
-    try {
-      const user = JSON.parse(localStorage.getItem("user") || "{}");
-      const department = String(user.department || "");
-      if (department.includes("ขาย")) return "sales";
-      if (department.includes("กราฟิก") || department.includes("กราฟฟิก")) return "design";
-      return "production";
-    } catch {
-      return "production";
-    }
-  };
+  const { user } = useAuth();
+  const getCurrentDepartmentKey = () => mapThaiDepartmentToKey(user?.department) ?? "production";
 
   const fetchOrders = async () => {
     setLoading(true);

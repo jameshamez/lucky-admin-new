@@ -11,13 +11,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useAuth } from "@/contexts/AuthContext";
 
 export function DashboardHeader() {
   const navigate = useNavigate();
-  const userData = JSON.parse(localStorage.getItem("user") || "{}");
+  const { user, logout } = useAuth();
+  const userData = user ?? { full_name: "", role: "", department: "", email: "" };
 
   const handleLogout = () => {
-    localStorage.removeItem("user");
+    logout();
     navigate("/");
   };
 

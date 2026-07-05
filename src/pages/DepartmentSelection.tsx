@@ -12,94 +12,35 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { useNavigate } from "react-router-dom";
 import { useEffect } from "react";
+import { useAuth } from "@/contexts/AuthContext";
+import { DEPARTMENTS, DepartmentInfo, canAccessDepartment } from "@/lib/departments";
 
-const departments = [
-  {
-    id: "sales",
-    name: "ฝ่ายขาย",
-    icon: ShoppingCart,
-    route: "/sales",
-    allowedDepartments: ["ฝ่ายขาย"], // เฉพาะฝ่ายขายเท่านั้น (Admin/Manager เข้าได้เสมอ)
-  },
-  {
-    id: "design",
-    name: "ฝ่ายกราฟิก",
-    icon: Palette,
-    route: "/design",
-    allowedDepartments: ["ฝ่ายกราฟิก"], // เฉพาะฝ่ายกราฟิกเท่านั้น (Admin/Manager เข้าได้เสมอ)
-  },
-  {
-    id: "procurement",
-    name: "ฝ่ายจัดซื้อ",
-    icon: Package,
-    route: "/procurement",
-    allowedDepartments: ["ฝ่ายจัดซื้อ"], // เฉพาะฝ่ายจัดซื้อเท่านั้น (Admin/Manager เข้าได้เสมอ)
-  },
-  {
-    id: "production",
-    name: "ฝ่ายผลิตและจัดส่ง",
-    icon: Factory,
-    route: "/production",
-    allowedDepartments: ["ฝ่ายผลิตและจัดส่ง"], // เฉพาะฝ่ายผลิตและจัดส่งเท่านั้น (Admin/Manager เข้าได้เสมอ)
-  },
-  {
-    id: "accounting",
-    name: "ฝ่ายบัญชี",
-    icon: Calculator,
-    route: "/accounting",
-    allowedDepartments: ["ฝ่ายบัญชี"], // เฉพาะฝ่ายบัญชีเท่านั้น (Admin/Manager เข้าได้เสมอ)
-  },
-  {
-    id: "hr",
-    name: "ฝ่ายบุคคล",
-    icon: Users,
-    route: "/hr",
-    allowedDepartments: ["ฝ่ายบุคคล"], // เฉพาะฝ่ายบุคคลเท่านั้น (Admin/Manager เข้าได้เสมอ)
-  },
-  {
-    id: "manager",
-    name: "ผู้จัดการ",
-    icon: Crown,
-    route: "/manager",
-    allowedDepartments: ["ผู้จัดการ"], // เฉพาะผู้จัดการเท่านั้น (Admin/Manager เข้าได้เสมอ)
-  },
-  {
-    id: "petty-cash",
-    name: "เงินสดย่อย",
-    icon: Calculator,
-    route: "/petty-cash",
-    allowedDepartments: ["เงินสดย่อย"], // เฉพาะเงินสดย่อยเท่านั้น (Admin/Manager เข้าได้เสมอ)
-  },
-];
+const departmentIcons: Record<DepartmentInfo["id"], typeof ShoppingCart> = {
+  sales: ShoppingCart,
+  design: Palette,
+  procurement: Package,
+  production: Factory,
+  accounting: Calculator,
+  hr: Users,
+  manager: Crown,
+  "petty-cash": Calculator,
+};
+
+const departments = DEPARTMENTS.map((dept) => ({ ...dept, icon: departmentIcons[dept.id] }));
 
 export default function DepartmentSelection() {
   const navigate = useNavigate();
-  const userDataString = localStorage.getItem("user");
+  const { user, logout } = useAuth();
 
   useEffect(() => {
-    if (!userDataString) {
+    if (!user) {
       navigate("/");
     }
-  }, [userDataString, navigate]);
+  }, [user, navigate]);
 
-  const userData = JSON.parse(userDataString || "{}");
+  const userData = user ?? { full_name: "", role: "", department: "" };
 
-  // role จาก API เป็น "Admin", "Manager", "User" → เช็คแบบ case-insensitive
-  const userRole = (userData.role ?? "").toLowerCase();
-  const isAdminOrManager = userRole === "admin" || userRole === "manager";
-
-  /**
-   * ตรวจสอบว่า user มีสิทธิ์เข้า department นี้หรือไม่
-   * - Admin / Manager → เข้าได้ทุก department
-   * - ถ้า department มี allowedDepartments → user ต้องอยู่ใน list นั้น
-   * - ถ้า department ไม่มี allowedDepartments → เปิดให้ทุกคน
-   * department จาก API เป็นภาษาไทย เช่น "ฝ่ายขาย", "IT"
-   */
-  const canAccess = (dept: (typeof departments)[number]) => {
-    if (isAdminOrManager) return true;
-    if (!dept.allowedDepartments) return true;
-    return dept.allowedDepartments.includes(userData.department ?? "");
-  };
+  const canAccess = (dept: (typeof departments)[number]) => canAccessDepartment(userData, dept.id);
 
   const handleDepartmentClick = (dept: (typeof departments)[number]) => {
     if (!canAccess(dept)) return;
@@ -107,7 +48,7 @@ export default function DepartmentSelection() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("user");
+    logout();
     navigate("/");
   };
 

@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { DashboardLayout } from "@/components/dashboard/DashboardLayout";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 
 import Orders from "./pages/Orders";
 import SalesMain from "./pages/sales/SalesMain";
@@ -104,7 +105,7 @@ import UserManual from "./pages/UserManual";
 const queryClient = new QueryClient();
 
 const RootRedirect = () => {
-  const user = localStorage.getItem("user");
+  const { user } = useAuth();
   return user ? <Navigate to="/select-department" replace /> : <Login />;
 };
 
@@ -114,12 +115,13 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
+        <AuthProvider>
         <Routes>
           <Route path="/" element={<RootRedirect />} />
           <Route path="/login" element={<Login />} />
           <Route path="/select-department" element={<DepartmentSelection />} />
           <Route path="/petty-cash" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="petty-cash">
               <StandalonePettyCash />
             </DashboardLayout>
           } />
@@ -148,82 +150,82 @@ const App = () => (
           } />
           {/* Department Routes */}
           <Route path="/sales" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="sales">
               <SalesMain />
             </DashboardLayout>
           } />
           <Route path="/sales/customers" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="sales">
               <CustomerManagement />
             </DashboardLayout>
           } />
           <Route path="/sales/customers/:id" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="sales">
               <CustomerProfile />
             </DashboardLayout>
           } />
           <Route path="/sales/create-order" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="sales">
               <CreateOrder />
             </DashboardLayout>
           } />
           <Route path="/sales/production-order" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="sales">
               <ProductionOrder />
             </DashboardLayout>
           } />
           <Route path="/sales/track-orders" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="sales">
               <OrderTracking />
             </DashboardLayout>
           } />
           <Route path="/sales/track-orders/:orderId" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="sales">
               <OrderDetail />
             </DashboardLayout>
           } />
           <Route path="/sales/price-estimation" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="sales">
               <PriceEstimation />
             </DashboardLayout>
           } />
           <Route path="/sales/price-estimation/add" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="sales">
               <AddPriceEstimation />
             </DashboardLayout>
           } />
           <Route path="/sales/price-estimation/:id" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="sales">
               <PriceEstimationDetail />
             </DashboardLayout>
           } />
           <Route path="/sales/price-estimation/edit/:id" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="sales">
               <AddPriceEstimation />
             </DashboardLayout>
           } />
           <Route path="/sales/inventory" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="sales">
               <SalesInventoryStock />
             </DashboardLayout>
           } />
           <Route path="/sales/product-inventory" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="sales">
               <ProductionProductInventory isSalesMode />
             </DashboardLayout>
           } />
           <Route path="/sales/internal-requests" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="sales">
               <InternalRequisitions />
             </DashboardLayout>
           } />
           <Route path="/sales/settings" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="sales">
               <SalesSettings />
             </DashboardLayout>
           } />
           <Route path="/sales/reports" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="sales">
               <SalesReports />
             </DashboardLayout>
           } />
@@ -233,372 +235,372 @@ const App = () => (
             </DashboardLayout>
           } />
           <Route path="/design" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="design">
               <DesignMain />
             </DashboardLayout>
           } />
           <Route path="/design/jobs" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="design">
               <JobOrderManagement />
             </DashboardLayout>
           } />
           <Route path="/design/job-tracking" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="design">
               <DesignJobTracking />
             </DashboardLayout>
           } />
           <Route path="/design/tracking" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="design">
               <DesignJobTracking />
             </DashboardLayout>
           } />
           <Route path="/design/materials" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="design">
               <MaterialStock />
             </DashboardLayout>
           } />
           <Route path="/design/reports" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="design">
               <DesignReports />
             </DashboardLayout>
           } />
           <Route path="/procurement" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="procurement">
               <ProcurementMain />
             </DashboardLayout>
           } />
           <Route path="/procurement/dashboard" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="procurement">
               <ProcurementDashboard />
             </DashboardLayout>
           } />
           <Route path="/procurement/estimation" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="procurement">
               <ProcurementPriceEstimation />
             </DashboardLayout>
           } />
           <Route path="/procurement/estimation/quotation" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="procurement">
               <Quotation />
             </DashboardLayout>
           } />
           <Route path="/procurement/estimation/history" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="procurement">
               <PricingHistory />
             </DashboardLayout>
           } />
           <Route path="/procurement/estimation/add" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="procurement">
               <ProcurementAddPriceEstimation />
             </DashboardLayout>
           } />
           <Route path="/procurement/requisitions" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="procurement">
               <ProcurementInternalRequisitions />
             </DashboardLayout>
           } />
           <Route path="/procurement/orders" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="procurement">
               <PurchaseOrders />
             </DashboardLayout>
           } />
           <Route path="/procurement/purchase-requisition" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="procurement">
               <PurchaseRequisition />
             </DashboardLayout>
           } />
           <Route path="/procurement/inventory-stock" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="procurement">
               <ProductionProductInventory isProcurementMode />
             </DashboardLayout>
           } />
           <Route path="/procurement/requisition-center" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="procurement">
               <RequisitionCenter />
             </DashboardLayout>
           } />
           <Route path="/procurement/reports" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="procurement">
               <ProcurementReports />
             </DashboardLayout>
           } />
           <Route path="/procurement/settings" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="procurement">
               <ProcurementSettings />
             </DashboardLayout>
           } />
           <Route path="/procurement/user-manual" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="procurement">
               <ProcurementUserManual />
             </DashboardLayout>
           } />
           <Route path="/production" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="production">
               <ProductionDashboard />
             </DashboardLayout>
           } />
           <Route path="/production/dashboard" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="production">
               <ProductionDashboard />
             </DashboardLayout>
           } />
           <Route path="/production/orders" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="production">
               <OrderManagement />
             </DashboardLayout>
           } />
           <Route path="/production/orders/:orderId" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="production">
               <ProductionOrderDetail />
             </DashboardLayout>
           } />
           <Route path="/production/order-management" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="production">
               <OrderManagement />
             </DashboardLayout>
           } />
           <Route path="/production/employee-tasks" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="production">
               <EmployeeTaskDetails />
             </DashboardLayout>
           } />
           <Route path="/production/inventory-deduct" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="production">
               <InventoryDeduct />
             </DashboardLayout>
           } />
           <Route path="/production/inventory-management" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="production">
               <InventoryManagement />
             </DashboardLayout>
           } />
           <Route path="/production/inventory-dashboard" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="production">
               <InventoryDashboard />
             </DashboardLayout>
           } />
           <Route path="/production/inventory-all" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="production">
               <InventoryAll />
             </DashboardLayout>
           } />
           <Route path="/production/inventory-receive" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="production">
               <InventoryReceive />
             </DashboardLayout>
           } />
           <Route path="/production/inventory-defective" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="production">
               <InventoryAll />
             </DashboardLayout>
           } />
           <Route path="/production/inventory-damaged" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="production">
               <InventoryAll />
             </DashboardLayout>
           } />
           <Route path="/production/inventory-transfer" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="production">
               <InventoryTransfer />
             </DashboardLayout>
           } />
           <Route path="/production/inventory-adjust" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="production">
               <InventoryAdjust />
             </DashboardLayout>
           } />
           <Route path="/production/inventory-history" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="production">
               <InventoryHistory />
             </DashboardLayout>
           } />
           <Route path="/production/inventory-settings" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="production">
               <InventorySettings />
             </DashboardLayout>
           } />
           <Route path="/production/requests-management" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="production">
               <RequestsManagement />
             </DashboardLayout>
           } />
           <Route path="/production/vehicle-management" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="production">
               <VehicleRequestManagement />
             </DashboardLayout>
           } />
           <Route path="/production/vehicle-request/:id" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="production">
               <VehicleRequestDetail />
             </DashboardLayout>
           } />
           <Route path="/production/reports" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="production">
               <ProductionReports />
             </DashboardLayout>
           } />
           <Route path="/production/inventory" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="production">
               <ProductionProductInventory />
             </DashboardLayout>
           } />
           <Route path="/accounting" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="accounting">
               <AccountingDashboard />
             </DashboardLayout>
           } />
           <Route path="/accounting/dashboard" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="accounting">
               <AccountingDashboard />
             </DashboardLayout>
           } />
           <Route path="/accounting/revenue-expenses" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="accounting">
               <RevenueExpenses />
             </DashboardLayout>
           } />
           <Route path="/accounting/work-orders" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="accounting">
               <WorkOrders />
             </DashboardLayout>
           } />
           <Route path="/accounting/revenue" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="accounting">
               <Revenue />
             </DashboardLayout>
           } />
           <Route path="/accounting/expenses" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="accounting">
               <Expenses />
             </DashboardLayout>
           } />
           <Route path="/accounting/customer-accounts" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="accounting">
               <CustomerAccounts />
             </DashboardLayout>
           } />
           <Route path="/accounting/product-inventory" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="accounting">
               <ProductionProductInventory isProcurementMode />
             </DashboardLayout>
           } />
           <Route path="/accounting/office-inventory" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="accounting">
               <OfficeInventory />
             </DashboardLayout>
           } />
           <Route path="/accounting/petty-cash" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="accounting">
               <PettyCash />
             </DashboardLayout>
           } />
           <Route path="/accounting/office-requisitions" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="accounting">
               <OfficeRequisitions />
             </DashboardLayout>
           } />
           <Route path="/accounting/internal-requests" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="accounting">
               <InternalRequests />
             </DashboardLayout>
           } />
           <Route path="/accounting/financial-reports" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="accounting">
               <FinancialReports />
             </DashboardLayout>
           } />
           <Route path="/accounting/reports" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="accounting">
               <ReportsMain />
             </DashboardLayout>
           } />
           <Route path="/accounting/reports/sales" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="accounting">
               <SalesReport />
             </DashboardLayout>
           } />
           <Route path="/accounting/reports/inventory" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="accounting">
               <InventoryReport />
             </DashboardLayout>
           } />
           <Route path="/accounting/reports/office-supplies" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="accounting">
               <OfficeSuppliesReport />
             </DashboardLayout>
           } />
           <Route path="/accounting/reports/office-equipment" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="accounting">
               <OfficeEquipmentReport />
             </DashboardLayout>
           } />
           <Route path="/accounting/reports/petty-cash" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="accounting">
               <PettyCashReport />
             </DashboardLayout>
           } />
           <Route path="/hr" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="hr">
               <HRDashboard />
             </DashboardLayout>
           } />
           <Route path="/hr/dashboard" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="hr">
               <HRDashboard />
             </DashboardLayout>
           } />
           <Route path="/hr/employee-management" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="hr">
               <EmployeeManagement />
             </DashboardLayout>
           } />
           <Route path="/hr/commission-made-to-order" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="hr">
               <CommissionMadeToOrder />
             </DashboardLayout>
           } />
           <Route path="/hr/commission-ready-made" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="hr">
               <CommissionReadyMade />
             </DashboardLayout>
           } />
           <Route path="/hr/settings" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="hr">
               <HRSettings />
             </DashboardLayout>
           } />
           <Route path="/hr/reports" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="hr">
               <HRReports />
             </DashboardLayout>
           } />
           <Route path="/hr/monthly-commission-report" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="hr">
               <MonthlyCommissionReport />
             </DashboardLayout>
           } />
           <Route path="/hr/user-management" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="hr">
               <HRUserManagement />
             </DashboardLayout>
           } />
           <Route path="/manager" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="manager">
               <ExecutiveDashboard />
             </DashboardLayout>
           } />
           <Route path="/manager/users" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="manager">
               <UserManagement />
             </DashboardLayout>
           } />
           <Route path="/manager/settings" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="manager">
               <SystemSettings />
             </DashboardLayout>
           } />
           <Route path="/manager/reports" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="manager">
               <ComprehensiveReports />
             </DashboardLayout>
           } />
@@ -608,33 +610,34 @@ const App = () => (
             </DashboardLayout>
           } />
           <Route path="/sales/user-manual" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="sales">
               <UserManual />
             </DashboardLayout>
           } />
           <Route path="/design/user-manual" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="design">
               <UserManual />
             </DashboardLayout>
           } />
           <Route path="/production/user-manual" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="production">
               <UserManual />
             </DashboardLayout>
           } />
           <Route path="/accounting/user-manual" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="accounting">
               <UserManual />
             </DashboardLayout>
           } />
           <Route path="/hr/user-manual" element={
-            <DashboardLayout>
+            <DashboardLayout requiredDepartment="hr">
               <UserManual />
             </DashboardLayout>
           } />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
+        </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>

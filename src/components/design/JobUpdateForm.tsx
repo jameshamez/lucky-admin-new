@@ -9,6 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Upload, Link, Clock, User, ChevronDown, ChevronUp, ImageIcon, FileIcon, ZoomIn, Lock, Send, CheckCircle, XCircle, MessageSquare, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
+import { mapThaiDepartmentToKey } from "@/lib/departments";
 
 interface JobUpdateFormProps {
   jobId: string;
@@ -67,10 +69,9 @@ const isAcceptedFile = (file: File, accept: string) => {
 };
 
 export function JobUpdateForm({ jobId, quotationNo, clientName, productTypeDisplay, initialData, onSubmit }: JobUpdateFormProps) {
-  // Mock current user - ในระบบจริงจะดึงจาก auth
-  const currentUser = "สมชาย ใจดี";
-  // Mock role - จำลองสิทธิ์ (graphic / sales)
-  const [currentRole, setCurrentRole] = useState<'graphic' | 'sales'>('graphic');
+  const { user } = useAuth();
+  const currentUser = user?.full_name || "ไม่ระบุชื่อ";
+  const currentRole: 'graphic' | 'sales' = mapThaiDepartmentToKey(user?.department) === 'design' ? 'graphic' : 'sales';
 
   const [formData, setFormData] = useState({
     googleDriveLink: "",
@@ -672,29 +673,6 @@ export function JobUpdateForm({ jobId, quotationNo, clientName, productTypeDispl
 
   return (
     <div className="space-y-6 max-h-[70vh] overflow-y-auto pr-2">
-      {/* Role Toggle - Mock */}
-      <div className="flex items-center justify-end gap-2 p-2 bg-muted/30 rounded-lg">
-        <Label className="text-xs text-muted-foreground">จำลองสิทธิ์:</Label>
-        <Button
-          type="button"
-          size="sm"
-          variant={currentRole === 'graphic' ? 'default' : 'outline'}
-          onClick={() => setCurrentRole('graphic')}
-          className="h-7 text-xs"
-        >
-          กราฟิก
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant={currentRole === 'sales' ? 'default' : 'outline'}
-          onClick={() => setCurrentRole('sales')}
-          className="h-7 text-xs"
-        >
-          เซลล์
-        </Button>
-      </div>
-
       {/* ข้อมูลพื้นฐาน */}
       <div className="grid grid-cols-2 gap-4 p-4 bg-muted/30 rounded-lg">
         <div>

@@ -38,6 +38,8 @@ import {
 } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useState } from "react";
+import { useAuth } from "@/contexts/AuthContext";
+import { mapThaiDepartmentToKey, DEPARTMENTS } from "@/lib/departments";
 import {
   Sidebar,
   SidebarContent,
@@ -218,20 +220,10 @@ const departmentMap: Record<string, typeof salesItems> = {
   '/hr': hrItems,
 };
 
-// Map user department name (from API/localStorage) to a path prefix
-const userDepartmentToPath: Record<string, string> = {
-  'ฝ่ายขาย': '/sales',
-  'ฝ่ายกราฟิก': '/design',
-  'ฝ่ายจัดซื้อ': '/procurement',
-  'ฝ่ายผลิตและจัดส่ง': '/production',
-  'ฝ่ายบัญชี': '/accounting',
-  'ฝ่ายบุคคล': '/hr',
-};
-
 // Current user's department — remembers last visited department so that
 // navigating to main pages (status, communication, reports) still
 // displays the "ฟังก์ชันแผนก" section.
-const getCurrentDepartmentItems = () => {
+const getCurrentDepartmentItems = (userDepartment?: string | null) => {
   const path = window.location.pathname;
   if (path.startsWith('/manager')) return []; // Admin handles departments separately
   if (path.startsWith('/petty-cash')) return []; // Petty cash standalone - no department menu
@@ -253,12 +245,9 @@ const getCurrentDepartmentItems = () => {
   } catch (_) { }
 
   // 3) Fallback: use user's own department from login data
-  try {
-    const userData = JSON.parse(localStorage.getItem('user') || '{}');
-    const userDept = userData.department ?? '';
-    const deptPath = userDepartmentToPath[userDept];
-    if (deptPath && departmentMap[deptPath]) return departmentMap[deptPath];
-  } catch (_) { }
+  const deptKey = mapThaiDepartmentToKey(userDepartment);
+  const deptInfo = deptKey ? DEPARTMENTS.find((d) => d.id === deptKey) : null;
+  if (deptInfo && departmentMap[deptInfo.route]) return departmentMap[deptInfo.route];
 
   return [];
 };
@@ -363,8 +352,9 @@ const MenuItemComponent = ({ item, collapsed, level = 0 }: { item: any, collapse
 
 export function AppSidebar() {
   const { state } = useSidebar();
+  const { user } = useAuth();
   const collapsed = state === "collapsed";
-  const currentDepartmentItems = getCurrentDepartmentItems();
+  const currentDepartmentItems = getCurrentDepartmentItems(user?.department);
   const adminMode = isAdminMode();
 
   return (

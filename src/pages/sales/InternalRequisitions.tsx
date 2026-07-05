@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { salesStockService as materialStockService } from "@/services/materialStockService";
 import { th } from "date-fns/locale";
 import { toast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 
 const CURRENT_DEPT = 'sales';
 const API_BASE = "https://nacres.co.th/api-lucky/admin";
@@ -134,20 +135,16 @@ export default function InternalRequisitions() {
 
   const [employeesLoading, setEmployeesLoading] = useState(false);
 
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  const { user: currentUser } = useAuth();
 
   useEffect(() => {
-    const userData = JSON.parse(localStorage.getItem("user") || "{}");
-    if (userData && Object.keys(userData).length > 0) {
-      setCurrentUser(userData);
-      const name = userData.full_name || "";
-      if (name) {
-        setPurchaseRequester(name);
-        setUsageRequester(name);
-        setVehicleRequester(name);
-      }
+    const name = currentUser?.full_name || "";
+    if (name) {
+      setPurchaseRequester(name);
+      setUsageRequester(name);
+      setVehicleRequester(name);
     }
-  }, []);
+  }, [currentUser]);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   const [selectedVehicle, setSelectedVehicle] = useState<any>(null);
