@@ -1,0 +1,1175 @@
+<?php
+ini_set('display_errors', 0);
+error_reporting(E_ALL);
+
+header("Access-Control-Allow-Origin: *");
+header("Content-Type: application/json; charset=UTF-8");
+header("Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With");
+
+// Global handler: catch any uncaught exception/error → return JSON
+set_exception_handler(function ($e) {
+    http_response_code(500);
+    echo json_encode(["status" => "error", "message" => $e->getMessage(), "line" => $e->getLine(), "file" => basename($e->getFile())]);
+    exit();
+});
+set_error_handler(function ($errno, $errstr, $errfile, $errline) {
+    throw new \ErrorException($errstr, 0, $errno, $errfile, $errline);
+});
+register_shutdown_function(function () {
+    $err = error_get_last();
+    if ($err && in_array($err['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR])) {
+        http_response_code(500);
+        echo json_encode(["status" => "error", "message" => $err['message'], "line" => $err['line']]);
+    }
+});
+
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit();
+}
+
+require '../condb.php';
+/** @var mysqli $conn */
+$conn->select_db('nacresc1_1');
+$conn->set_charset("utf8mb4");
+
+$method = $_SERVER['REQUEST_METHOD'];
+
+function normalize_order_status_value($order_status, $legacy_status) {
+    $order_status = is_string($order_status) ? trim($order_status) : $order_status;
+    $legacy_status = is_string($legacy_status) ? trim($legacy_status) : $legacy_status;
+
+    if (!empty($legacy_status) && (empty($order_status) || $order_status === 'สร้างคำสั่งซื้อใหม่')) {
+        return $legacy_status;
+    }
+
+    return !empty($order_status) ? $order_status : 'สร้างคำสั่งซื้อใหม่';
+}
+
+function clean_display_value($value) {
+    $value = is_string($value) || is_numeric($value) ? trim(strval($value)) : '';
+    $key = strtolower($value);
+    return in_array($key, ['', '0', '-', 'null', 'undefined', 'n/a'], true) ? '' : $value;
+}
+
+function normalize_product_category_value($category, $first_item_type = '', $first_product_name = '', $has_readymade = false, $has_custom = false, $has_estimate = false, $product_type = '') {
+    $category = clean_display_value($category);
+    $key = strtolower($category);
+
+    switch ($key) {
+        case 'readymade':
+        case 'catalog':
+            return 'สินค้าสำเร็จรูป';
+        case 'custom':
+        case 'estimate':
+        case 'made-to-order':
+        case 'textile':
+        case 'items':
+        case 'lanyard':
+        case 'premium':
+            return 'สินค้าสั่งผลิต';
+    }
+
+    if ($category === 'สินค้าสำเร็จรูป' || $category === 'สินค้าสั่งผลิต') {
+        return $category;
+    }
+
+    $item_type = strtolower(clean_display_value($first_item_type));
+    if ($has_readymade || in_array($item_type, ['readymade', 'catalog'], true)) {
+        return 'สินค้าสำเร็จรูป';
+    }
+    if ($has_estimate || $has_custom || in_array($item_type, ['estimate', 'custom', 'made-to-order'], true)) {
+        return 'สินค้าสั่งผลิต';
+    }
+
+    $product_type = clean_display_value($product_type);
+    if ($product_type !== '') {
+        return $product_type;
+    }
+
+    $first_product_name = clean_display_value($first_product_name);
+    if ($first_product_name !== '') {
+        return $first_product_name;
+    }
+
+    return 'ไม่ระบุ';
+}
+
+function normalize_payment_status_value($payment_status) {
+    $payment_status = is_string($payment_status) ? trim($payment_status) : $payment_status;
+    $payment_status_key = is_string($payment_status) ? strtolower($payment_status) : $payment_status;
+
+    switch ($payment_status_key) {
+        case 'ชำระแล้ว':
+        case 'ชำระครบ':
+        case 'ชำระครบแล้ว':
+        case 'เต็มจำนวน':
+        case 'paid':
+        case 'paid_full':
+        case 'full_paid':
+            return 'ชำระเงินแล้ว';
+        case 'บางส่วน':
+        case 'มัดจำ':
+        case 'ชำระมัดจำ':
+        case 'partial':
+        case 'partially_paid':
+        case 'deposit':
+            return 'ชำระบางส่วน';
+        case 'รอชำระ':
+        case 'ค้างชำระ':
+        case 'pending':
+        case 'unpaid':
+            return 'รอชำระเงิน';
+        case 'credit':
+        case 'credit_term':
+            return 'เครดิต';
+        default:
+            return !empty($payment_status) ? $payment_status : 'รอชำระเงิน';
+    }
+}
+
+function calculate_payment_status_value($payment_status, $payments, $paid_amount, $total_price) {
+    $payment_status = normalize_payment_status_value($payment_status);
+    if (!is_array($payments)) {
+        return $payment_status;
+    }
+
+    $payments_total = 0;
+    $has_full_payment = false;
+    $has_credit = false;
+
+    foreach ($payments as $payment) {
+        $type = $payment['type'] ?? $payment['payment_type'] ?? '';
+        if ($type === 'full') {
+            $has_full_payment = true;
+        }
+        if ($type === 'credit_term' || $type === 'credit') {
+            $has_credit = true;
+        }
+        $payments_total += floatval($payment['amount'] ?? 0);
+    }
+
+    $paid_amount = max(floatval($paid_amount), $payments_total);
+    $total_price = floatval($total_price);
+
+    if ($has_credit) return 'เครดิต';
+    if ($has_full_payment) return 'ชำระเงินแล้ว';
+    if ($paid_amount > 0 && $total_price > 0 && $paid_amount >= $total_price) return 'ชำระเงินแล้ว';
+    if ($paid_amount > 0) return 'ชำระบางส่วน';
+    return $payment_status;
+}
+
+function has_order_identifier($id, $job_id) {
+    return !empty($id) || !empty($job_id);
+}
+
+function order_identifier_where($id, $job_id) {
+    return !empty($id) ? "order_id = ?" : "job_id = ?";
+}
+
+function bind_order_identifier($stmt, &$id, &$job_id) {
+    if (!empty($id)) {
+        $stmt->bind_param("i", $id);
+    } else {
+        $stmt->bind_param("s", $job_id);
+    }
+}
+
+// Parse ID from URL or query string
+$request_uri = $_SERVER['REQUEST_URI'];
+$path_parts = explode('/', trim(parse_url($request_uri, PHP_URL_PATH), '/'));
+$id = null;
+$job_id = null;
+foreach ($path_parts as $key => $part) {
+    if (($part === 'orders.php') && isset($path_parts[$key + 1]) && is_numeric($path_parts[$key + 1])) {
+        $id = intval($path_parts[$key + 1]);
+    }
+}
+if (!$id && isset($_GET['id'])) {
+    $raw_id = trim($_GET['id']);
+    if (is_numeric($raw_id)) {
+        $id = intval($raw_id);
+    } elseif ($raw_id !== '') {
+        $job_id = $raw_id;
+    }
+}
+if (!$id && !$job_id && isset($_GET['order_id'])) {
+    $raw_order_id = trim($_GET['order_id']);
+    if (is_numeric($raw_order_id)) {
+        $id = intval($raw_order_id);
+    } elseif ($raw_order_id !== '') {
+        $job_id = $raw_order_id;
+    }
+}
+if (!$id && !$job_id && isset($_GET['job_id'])) {
+    $job_id = trim($_GET['job_id']);
+}
+
+// ==================== GET ====================
+if ($method === 'GET') {
+
+    if (isset($_GET['action']) && $_GET['action'] === 'next_id') {
+        $prefix = 'JB-' . date('Ym');
+        $like = $prefix . '%';
+        $sql = "SELECT COUNT(*) AS cnt FROM orders WHERE job_id LIKE ?";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param("s", $like);
+        $stmt->execute();
+        $count = $stmt->get_result()->fetch_assoc()['cnt'];
+        $next_id = $prefix . str_pad($count + 1, 3, '0', STR_PAD_LEFT);
+        echo json_encode(["status" => "success", "job_id" => $next_id]);
+        exit();
+    }
+
+    if (has_order_identifier($id, $job_id)) {
+        // ดึงคำสั่งซื้อเดี่ยว พร้อม items และ payments
+        $sql = "SELECT * FROM orders WHERE " . order_identifier_where($id, $job_id);
+        $stmt = $conn->prepare($sql);
+        bind_order_identifier($stmt, $id, $job_id);
+        $stmt->execute();
+        $order = $stmt->get_result()->fetch_assoc();
+
+        if (!$order) {
+            http_response_code(404);
+            echo json_encode(["status" => "error", "message" => "Order not found"]);
+            exit();
+        }
+
+        // === Compatibility: merge legacy columns → ชื่อใหม่ ===
+        $order['order_status'] = normalize_order_status_value($order['order_status'] ?? null, $order['status'] ?? null);
+        $order['total_price'] = $order['total_price'] ?? ($order['total_amount'] ?? 0);
+        $order['require_tax_invoice'] = $order['require_tax_invoice'] ?? ($order['needs_tax_invoice'] ?? 0);
+        $order['paid_amount'] = $order['paid_amount'] ?? 0;
+        $order_id_for_children = intval($order['order_id']);
+
+        // order items
+        // รองรับทั้ง PK ชื่อ `id` และ `item_id` (เดิม)
+        $items_stmt = $conn->prepare(
+            "SELECT *,
+             COALESCE(unit_price, price, 0)                 AS unit_price,
+             COALESCE(total_price_item, price * quantity, 0) AS total_price
+             FROM order_items WHERE order_id = ? ORDER BY item_id ASC"
+        );
+        $items_stmt->bind_param("i", $order_id_for_children);
+        $items_stmt->execute();
+        $items_result = $items_stmt->get_result();
+        $items = [];
+        while ($row = $items_result->fetch_assoc()) {
+            if (!empty($row['details'])) {
+                $row['details'] = json_decode($row['details'], true);
+            }
+            // ใช้ item_id เป็น id ถ้า id ไม่มี
+            if (!isset($row['id']) && isset($row['item_id'])) {
+                $row['id'] = $row['item_id'];
+            }
+            $items[] = $row;
+        }
+
+        // order payments
+        $pay_stmt = $conn->prepare("SELECT * FROM order_payments WHERE order_id = ? ORDER BY id ASC");
+        $pay_stmt->bind_param("i", $order_id_for_children);
+        $pay_stmt->execute();
+        $payments = [];
+        $pay_result = $pay_stmt->get_result();
+        if ($pay_result) {
+            while ($row = $pay_result->fetch_assoc()) {
+                $payments[] = $row;
+            }
+        }
+
+        // parse departments JSON
+        if (!empty($order['departments'])) {
+            $order['departments'] = json_decode($order['departments'], true);
+        }
+        // parse production_workflow JSON
+        if (!empty($order['production_workflow'])) {
+            $order['production_workflow'] = json_decode($order['production_workflow'], true);
+        }
+        // parse design_files JSON
+        if (!empty($order['design_files'])) {
+            $order['design_files'] = json_decode($order['design_files'], true);
+        }
+
+        foreach ($items as &$item) {
+            if (!empty($item['details']) && is_string($item['details'])) {
+                $item['details'] = json_decode($item['details'], true);
+            }
+        }
+        unset($item);
+
+        $order['items'] = $items;
+        $order['payments'] = $payments;
+
+        echo json_encode(["status" => "success", "data" => $order]);
+        exit();
+    }
+
+    // ดึงรายการคำสั่งซื้อทั้งหมด พร้อม filter และ pagination
+    $page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
+    $limit = isset($_GET['limit']) ? min(100, intval($_GET['limit'])) : 20;
+    $offset = ($page - 1) * $limit;
+
+    $search = isset($_GET['search']) ? trim($_GET['search']) : '';
+    $order_status = isset($_GET['order_status']) ? trim($_GET['order_status']) : '';
+    $payment_status = isset($_GET['payment_status']) ? trim($_GET['payment_status']) : '';
+    $product_cat = isset($_GET['product_category']) ? trim($_GET['product_category']) : '';
+    $delivery_method = isset($_GET['delivery_method']) ? trim($_GET['delivery_method']) : '';
+    $payment_method = isset($_GET['payment_method']) ? trim($_GET['payment_method']) : '';
+    $date_from = isset($_GET['date_from']) ? trim($_GET['date_from']) : '';
+    $date_to = isset($_GET['date_to']) ? trim($_GET['date_to']) : '';
+    $fields = isset($_GET['fields']) ? trim($_GET['fields']) : '';
+
+    $where = [];
+    $params = [];
+    $types = '';
+
+    if ($search !== '') {
+        $like = '%' . $search . '%';
+        $where[] = "(orders.job_id LIKE ? OR orders.customer_name LIKE ? OR orders.customer_phone LIKE ? OR orders.customer_line LIKE ? OR orders.job_name LIKE ? OR customers.full_name LIKE ? OR customers.phone LIKE ? OR customers.line_id LIKE ? OR customers.email LIKE ?)";
+        $params = array_merge($params, [$like, $like, $like, $like, $like, $like, $like, $like, $like]);
+        $types .= 'sssssssss';
+    }
+    if ($order_status !== '') {
+        $where[] = "orders.order_status = ?";
+        $params[] = $order_status;
+        $types .= 's';
+    }
+    if ($payment_status !== '') {
+        $where[] = "orders.payment_status = ?";
+        $params[] = $payment_status;
+        $types .= 's';
+    }
+    if ($product_cat !== '') {
+        $where[] = "orders.product_category = ?";
+        $params[] = $product_cat;
+        $types .= 's';
+    }
+    if ($delivery_method !== '') {
+        $where[] = "orders.delivery_method = ?";
+        $params[] = $delivery_method;
+        $types .= 's';
+    }
+    if ($payment_method !== '') {
+        $where[] = "orders.payment_method = ?";
+        $params[] = $payment_method;
+        $types .= 's';
+    }
+    if ($date_from !== '') {
+        $where[] = "orders.order_date >= ?";
+        $params[] = $date_from;
+        $types .= 's';
+    }
+    if ($date_to !== '') {
+        $where[] = "orders.order_date <= ?";
+        $params[] = $date_to;
+        $types .= 's';
+    }
+
+    $where_sql = count($where) > 0 ? "WHERE " . implode(" AND ", $where) : "";
+    $payment_summary_sql = "
+        LEFT JOIN (
+            SELECT
+                order_id,
+                SUM(COALESCE(amount, 0)) AS payments_total,
+                MAX(CASE WHEN payment_type = 'full' THEN 1 ELSE 0 END) AS has_full_payment,
+                MAX(CASE WHEN payment_type IN ('credit_term', 'credit') THEN 1 ELSE 0 END) AS has_credit_payment
+            FROM order_payments
+            GROUP BY order_id
+        ) payment_summary ON payment_summary.order_id = orders.order_id
+    ";
+    $item_summary_sql = "
+        LEFT JOIN (
+            SELECT
+                order_id,
+                SUBSTRING_INDEX(GROUP_CONCAT(product_name ORDER BY item_id ASC SEPARATOR '||'), '||', 1) AS first_product_name,
+                SUBSTRING_INDEX(GROUP_CONCAT(item_type ORDER BY item_id ASC SEPARATOR '||'), '||', 1) AS first_item_type,
+                MAX(CASE WHEN item_type IN ('readymade', 'catalog') THEN 1 ELSE 0 END) AS has_readymade_item,
+                MAX(CASE WHEN item_type IN ('custom', 'made-to-order') THEN 1 ELSE 0 END) AS has_custom_item,
+                MAX(CASE WHEN item_type = 'estimate' THEN 1 ELSE 0 END) AS has_estimate_item
+            FROM order_items
+            GROUP BY order_id
+        ) item_summary ON item_summary.order_id = orders.order_id
+    ";
+    $from_sql = "FROM orders LEFT JOIN customers ON orders.customer_id = customers.id $payment_summary_sql $item_summary_sql";
+
+    // Count total
+    $count_sql = "SELECT COUNT(*) AS total $from_sql $where_sql";
+    if (!empty($params)) {
+        $count_stmt = $conn->prepare($count_sql);
+        $count_stmt->bind_param($types, ...$params);
+        $count_stmt->execute();
+        $total = $count_stmt->get_result()->fetch_assoc()['total'];
+    } else {
+        $total = $conn->query($count_sql)->fetch_assoc()['total'];
+    }
+
+    // Get paginated orders
+    $data_sql = "SELECT orders.*, 
+                        customers.full_name AS cust_full_name, 
+                        customers.phone AS cust_phone, 
+                        customers.line_id AS cust_line_id, 
+                        customers.email AS cust_email,
+                        customers.created_at AS cust_created_at,
+                        COALESCE(payment_summary.payments_total, 0) AS payments_total,
+                        COALESCE(payment_summary.has_full_payment, 0) AS has_full_payment,
+                        COALESCE(payment_summary.has_credit_payment, 0) AS has_credit_payment,
+                        item_summary.first_product_name,
+                        item_summary.first_item_type,
+                        COALESCE(item_summary.has_readymade_item, 0) AS has_readymade_item,
+                        COALESCE(item_summary.has_custom_item, 0) AS has_custom_item,
+                        COALESCE(item_summary.has_estimate_item, 0) AS has_estimate_item
+                 $from_sql $where_sql 
+                 ORDER BY orders.created_at DESC LIMIT ? OFFSET ?";
+    $data_params = array_merge($params, [$limit, $offset]);
+    $data_types = $types . 'ii';
+
+    $data_stmt = $conn->prepare($data_sql);
+    if (!empty($data_params)) {
+        $data_stmt->bind_param($data_types, ...$data_params);
+    }
+    $data_stmt->execute();
+    $result = $data_stmt->get_result();
+
+    $orders = [];
+    while ($row = $result->fetch_assoc()) {
+        $row['product_type'] = clean_display_value($row['product_type'] ?? '');
+        $first_product_name = clean_display_value($row['first_product_name'] ?? '');
+        if ($row['product_type'] === '' && $first_product_name !== '') {
+            $row['product_type'] = $first_product_name;
+        }
+        $row['product_category'] = normalize_product_category_value(
+            $row['product_category'] ?? '',
+            $row['first_item_type'] ?? '',
+            $first_product_name,
+            !empty($row['has_readymade_item']),
+            !empty($row['has_custom_item']),
+            !empty($row['has_estimate_item']),
+            $row['product_type']
+        );
+
+        if ($fields === 'job_product') {
+            $orders[] = [
+                'order_id' => $row['order_id'] ?? null,
+                'job_id' => $row['job_id'] ?? '',
+                'job_name' => $row['job_name'] ?? '',
+                'product_category' => $row['product_category'],
+                'product_type' => $row['product_type'],
+            ];
+            continue;
+        }
+
+        if (!empty($row['departments'])) {
+            $row['departments'] = json_decode($row['departments'], true);
+        }
+        if (!empty($row['production_workflow'])) {
+            $row['production_workflow'] = json_decode($row['production_workflow'], true);
+        }
+        // Fallback to customer data if missing in orders
+        if (empty($row['customer_name']))
+            $row['customer_name'] = $row['cust_full_name'] ?? '';
+        if (empty($row['customer_phone']))
+            $row['customer_phone'] = $row['cust_phone'] ?? '';
+        if (empty($row['customer_line']))
+            $row['customer_line'] = $row['cust_line_id'] ?? '';
+        if (empty($row['customer_email']))
+            $row['customer_email'] = $row['cust_email'] ?? '';
+        $row['customer_created_at'] = $row['cust_created_at'] ?? null;
+
+        // Compatibility: ใช้คอลัมน์ใหม่ก่อน fallback คอลัมน์เดิม
+        $row['order_status'] = normalize_order_status_value($row['order_status'] ?? null, $row['status'] ?? null);
+        $row['total_price'] = $row['total_price'] ?? ($row['total_amount'] ?? 0);
+        $row['require_tax_invoice'] = $row['require_tax_invoice'] ?? ($row['needs_tax_invoice'] ?? 0);
+        $payments_total = floatval($row['payments_total'] ?? 0);
+        $row['paid_amount'] = max(floatval($row['paid_amount'] ?? 0), $payments_total);
+        $summary_payments = [];
+        if (!empty($row['has_credit_payment'])) {
+            $summary_payments[] = ['type' => 'credit_term', 'amount' => $payments_total];
+        } elseif (!empty($row['has_full_payment'])) {
+            $summary_payments[] = ['type' => 'full', 'amount' => $payments_total];
+        } elseif ($payments_total > 0) {
+            $summary_payments[] = ['type' => 'deposit', 'amount' => $payments_total];
+        }
+        $row['payment_status'] = calculate_payment_status_value($row['payment_status'] ?? null, $summary_payments, $row['paid_amount'], $row['total_price']);
+        $orders[] = $row;
+    }
+
+    if ($fields === 'job_product') {
+        echo json_encode([
+            "status" => "success",
+            "data" => $orders,
+            "pagination" => [
+                "total" => intval($total),
+                "page" => $page,
+                "limit" => $limit,
+                "totalPages" => ceil($total / $limit),
+            ],
+        ]);
+        exit();
+    }
+
+    // Summary stats (all orders without limit for cards)
+    // ใช้ COALESCE รองรับทั้งคอลัมน์เดิมและใหม่
+    $stats_sql = "SELECT
+        COALESCE(orders.order_status, orders.status, 'สร้างคำสั่งซื้อใหม่') AS order_status,
+        COALESCE(orders.payment_status, 'รอชำระเงิน') AS payment_status,
+        COALESCE(orders.total_price, orders.total_amount, 0) AS total_price,
+        COALESCE(orders.paid_amount, 0) AS paid_amount,
+        COALESCE(payment_summary.payments_total, 0) AS payments_total,
+        COALESCE(payment_summary.has_full_payment, 0) AS has_full_payment,
+        COALESCE(payment_summary.has_credit_payment, 0) AS has_credit_payment
+    $from_sql $where_sql";
+    if (!empty($params)) {
+        $stats_stmt = $conn->prepare($stats_sql);
+        $stats_stmt->bind_param($types, ...$params);
+        $stats_stmt->execute();
+        $stats_result = $stats_stmt->get_result();
+    } else {
+        $stats_result = $conn->query($stats_sql);
+    }
+
+    $status_counts = ['request' => 0, 'draft' => 0, 'confirmed' => 0, 'jobCreated' => 0];
+    $payment_counts = ['partial' => 0, 'pending' => 0, 'credit' => 0];
+    $total_revenue = 0;
+    $total_paid = 0;
+
+    while ($row = $stats_result->fetch_assoc()) {
+        $payments_total = floatval($row['payments_total'] ?? 0);
+        $paid_amount = max(floatval($row['paid_amount'] ?? 0), $payments_total);
+        $summary_payments = [];
+        if (!empty($row['has_credit_payment'])) {
+            $summary_payments[] = ['type' => 'credit_term', 'amount' => $payments_total];
+        } elseif (!empty($row['has_full_payment'])) {
+            $summary_payments[] = ['type' => 'full', 'amount' => $payments_total];
+        } elseif ($payments_total > 0) {
+            $summary_payments[] = ['type' => 'deposit', 'amount' => $payments_total];
+        }
+        $effective_payment_status = calculate_payment_status_value($row['payment_status'] ?? null, $summary_payments, $paid_amount, $row['total_price']);
+
+        $total_revenue += floatval($row['total_price']);
+        $total_paid += $paid_amount;
+        switch ($row['order_status']) {
+            case 'ส่งคำขอสั่งซื้อ':
+                $status_counts['request']++;
+                break;
+            case 'สร้างคำสั่งซื้อใหม่':
+                $status_counts['draft']++;
+                break;
+            case 'ยืนยันคำสั่งซื้อ':
+                $status_counts['confirmed']++;
+                break;
+            case 'สร้างงานแล้ว':
+                $status_counts['jobCreated']++;
+                break;
+        }
+        switch ($effective_payment_status) {
+            case 'ชำระบางส่วน':
+                $payment_counts['partial']++;
+                break;
+            case 'รอชำระเงิน':
+                $payment_counts['pending']++;
+                break;
+            case 'เครดิต':
+                $payment_counts['credit']++;
+                break;
+        }
+    }
+
+    echo json_encode([
+        "status" => "success",
+        "data" => $orders,
+        "pagination" => [
+            "total" => intval($total),
+            "page" => $page,
+            "limit" => $limit,
+            "totalPages" => ceil($total / $limit),
+        ],
+        "summary" => [
+            "statusCounts" => $status_counts,
+            "paymentCounts" => $payment_counts,
+            "totalRevenue" => $total_revenue,
+            "totalPaid" => $total_paid,
+        ],
+    ]);
+    exit();
+}
+
+// Data Retrieval Helper (JSON + Fallback to $_POST)
+$input_raw = file_get_contents("php://input");
+$data = json_decode($input_raw, true);
+if ($data === null) {
+    $data = $_POST;
+}
+
+// Redirect POST to UPDATE if ID is present
+if ($method === 'POST' && has_order_identifier($id, $job_id)) {
+    $method = 'PATCH';
+}
+
+// ==================== POST ====================
+if ($method === 'POST') {
+    if (empty($data)) {
+        http_response_code(400);
+        echo json_encode(["status" => "error", "message" => "Request body is empty", "debug" => ["raw_input" => $input_raw, "method" => $_SERVER['REQUEST_METHOD']]]);
+        exit();
+    }
+
+    // Auto-generate job_id if not provided
+    if (empty($data['job_id'])) {
+        $year = date('Y');
+        $count_sql = "SELECT COUNT(*) AS cnt FROM orders WHERE YEAR(order_date) = ?";
+        $count_stmt = $conn->prepare($count_sql);
+        $count_stmt->bind_param("s", $year);
+        $count_stmt->execute();
+        $count = $count_stmt->get_result()->fetch_assoc()['cnt'];
+        $data['job_id'] = 'JOB-' . $year . '-' . str_pad($count + 1, 4, '0', STR_PAD_LEFT);
+    }
+
+    // Validate required fields
+    if (empty($data['customer_name'])) {
+        http_response_code(400);
+        echo json_encode(["status" => "error", "message" => "customer_name is required"]);
+        exit();
+    }
+
+    $departments_json = !empty($data['departments']) ? json_encode($data['departments']) : null;
+
+    $sql = "INSERT INTO orders (
+        job_id, quotation_number, quotation_url, order_date, responsible_person,
+        customer_id, customer_name, customer_phone, customer_line, customer_email, customer_address,
+        needs_tax_invoice, invoice_type, tax_payer_name, tax_id, tax_address,
+        urgency_level, job_name, event_location, usage_date, delivery_date,
+        product_category, product_type, budget, sales_channel,
+        subtotal, delivery_cost, vat_amount, total_amount, total_price,
+        payment_method, payment_status, paid_amount,
+        delivery_type, delivery_method, private_transport_name, delivery_recipient, delivery_phone, delivery_address, preferred_delivery_date,
+        origin_branch, destination_branch, preferred_time_slot,
+        order_status, job_created, departments, notes, graphics_notes, design_files
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        http_response_code(500);
+        echo json_encode(["status" => "error", "message" => "Prepare failed: " . $conn->error]);
+        exit();
+    }
+
+    // Assign all values to real variables (bind_param requires references)
+    $v_job_id = $data['job_id'];
+    $v_quotation_number = $data['quotation_number'] ?? null;
+    $v_quotation_url = $data['quotation_url'] ?? null;
+    $v_order_date = $data['order_date'] ?? date('Y-m-d');
+    $v_responsible_person = $data['responsible_person'] ?? '';
+    $v_customer_id = isset($data['customer_id']) ? intval($data['customer_id']) : 0;
+    $v_customer_name = $data['customer_name'] ?? '';
+    $v_customer_phone = $data['customer_phone'] ?? '';
+    $v_customer_line = $data['customer_line'] ?? '';
+    $v_customer_email = $data['customer_email'] ?? '';
+    $v_customer_address = $data['customer_address'] ?? null;
+    $v_require_tax_invoice = intval($data['require_tax_invoice'] ?? 0);
+    $v_invoice_type = $data['invoice_type'] ?? 'no-tax-invoice';
+    $v_tax_payer_name = $data['tax_payer_name'] ?? null;
+    $v_tax_id = $data['tax_id'] ?? null;
+    $v_tax_address = $data['tax_address'] ?? null;
+    $v_urgency_level = $data['urgency_level'] ?? 'ปกติ';
+    $v_job_name = $data['job_name'] ?? '';
+    $v_event_location = $data['event_location'] ?? null;
+    $v_usage_date = (!empty($data['usage_date'])) ? $data['usage_date'] : null;
+    $v_delivery_date = (!empty($data['delivery_date'])) ? $data['delivery_date'] : null;
+    $items_for_category = (!empty($data['items']) && is_array($data['items'])) ? $data['items'] : [];
+    $first_item = $items_for_category[0] ?? [];
+    $first_item_type = $first_item['item_type'] ?? ($first_item['itemType'] ?? '');
+    $first_product_name = $first_item['product_name'] ?? ($first_item['productType'] ?? ($first_item['label'] ?? ''));
+    $has_readymade_item = false;
+    $has_custom_item = false;
+    $has_estimate_item = false;
+    foreach ($items_for_category as $item_for_category) {
+        $item_type = strtolower(clean_display_value($item_for_category['item_type'] ?? ($item_for_category['itemType'] ?? '')));
+        if (in_array($item_type, ['readymade', 'catalog'], true)) {
+            $has_readymade_item = true;
+        }
+        if (in_array($item_type, ['custom', 'made-to-order'], true)) {
+            $has_custom_item = true;
+        }
+        if ($item_type === 'estimate') {
+            $has_estimate_item = true;
+        }
+    }
+    $v_product_type = clean_display_value($data['product_type'] ?? '');
+    if ($v_product_type === '') {
+        $v_product_type = clean_display_value($first_product_name);
+    }
+    $v_product_category = normalize_product_category_value(
+        $data['product_category'] ?? '',
+        $first_item_type,
+        $first_product_name,
+        $has_readymade_item,
+        $has_custom_item,
+        $has_estimate_item,
+        $v_product_type
+    );
+    $v_budget = floatval($data['budget'] ?? 0);
+    $v_sales_channel = $data['sales_channel'] ?? null;
+    $v_subtotal = floatval($data['subtotal'] ?? 0);
+    $v_delivery_cost = floatval($data['delivery_cost'] ?? 0);
+    $v_vat_amount = floatval($data['vat_amount'] ?? 0);
+    $v_total_amount = floatval($data['total_amount'] ?? ($data['total_price'] ?? 0));
+    $v_total_price = floatval($data['total_price'] ?? ($data['total_amount'] ?? 0));
+    $v_payment_method = $data['payment_method'] ?? '';
+    $v_paid_amount = floatval($data['paid_amount'] ?? 0);
+    $v_payment_status = calculate_payment_status_value($data['payment_status'] ?? null, $data['payments'] ?? [], $v_paid_amount, $v_total_price);
+    if ($v_paid_amount <= 0 && !empty($data['payments']) && is_array($data['payments'])) {
+        foreach ($data['payments'] as $payment) {
+            $v_paid_amount += floatval($payment['amount'] ?? 0);
+        }
+    }
+    $v_delivery_type = $data['delivery_type'] ?? 'parcel';
+    $v_delivery_method = $data['delivery_method'] ?? null;
+    $v_private_transport_name = $data['private_transport_name'] ?? null;
+    $v_delivery_recipient = $data['delivery_recipient'] ?? null;
+    $v_delivery_phone = $data['delivery_phone'] ?? null;
+    $v_delivery_address = $data['delivery_address'] ?? null;
+    $v_preferred_delivery_date = $data['preferred_delivery_date'] ?? null;
+    $v_origin_branch = $data['origin_branch'] ?? null;
+    $v_destination_branch = $data['destination_branch'] ?? null;
+    $v_preferred_time_slot = $data['preferred_time_slot'] ?? null;
+    $v_order_status = $data['order_status'] ?? 'สร้างคำสั่งซื้อใหม่';
+    $v_job_created = intval($data['job_created'] ?? 0);
+    $v_departments = !empty($data['departments']) ? json_encode($data['departments']) : null;
+    $v_notes = $data['notes'] ?? null;
+    $v_graphics_notes = $data['graphics_notes'] ?? null;
+    $v_design_files = !empty($data['design_files']) ? json_encode($data['design_files']) : null;
+
+    $stmt->bind_param(
+        "sssssissssisssssssssssdsddddddssdssssssssisssssss",
+        $v_job_id,
+        $v_quotation_number,
+        $v_quotation_url,
+        $v_order_date,
+        $v_responsible_person,
+        $v_customer_id,
+        $v_customer_name,
+        $v_customer_phone,
+        $v_customer_line,
+        $v_customer_email,
+        $v_customer_address,
+        $v_require_tax_invoice,
+        $v_invoice_type,
+        $v_tax_payer_name,
+        $v_tax_id,
+        $v_tax_address,
+        $v_urgency_level,
+        $v_job_name,
+        $v_event_location,
+        $v_usage_date,
+        $v_delivery_date,
+        $v_product_category,
+        $v_product_type,
+        $v_budget,
+        $v_sales_channel,
+        $v_subtotal,
+        $v_delivery_cost,
+        $v_vat_amount,
+        $v_total_amount,
+        $v_total_price,
+        $v_payment_method,
+        $v_payment_status,
+        $v_paid_amount,
+        $v_delivery_type,
+        $v_delivery_method,
+        $v_private_transport_name,
+        $v_delivery_recipient,
+        $v_delivery_phone,
+        $v_delivery_address,
+        $v_preferred_delivery_date,
+        $v_origin_branch,
+        $v_destination_branch,
+        $v_preferred_time_slot,
+        $v_order_status,
+        $v_job_created,
+        $v_departments,
+        $v_notes,
+        $v_graphics_notes,
+        $v_design_files
+    );
+
+    if (!$stmt->execute()) {
+        http_response_code(500);
+        echo json_encode(["status" => "error", "message" => $stmt->error]);
+        exit();
+    }
+
+    $order_id = $conn->insert_id;
+
+    // Insert order items
+    if (!empty($data['items']) && is_array($data['items'])) {
+        $item_sql = "INSERT INTO order_items (order_id, product_id, item_type, product_name, product_code, material, size, color, bow_type, bow_colors, quantity, price, unit_price, total_price_item, details)
+                      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+        $item_stmt = $conn->prepare($item_sql);
+
+        foreach ($data['items'] as $item) {
+            // PHP 8.1+: null not allowed for 'i' or 'd' type in bind_param
+            $i_product_id = isset($item['product_id']) && $item['product_id'] !== null ? intval($item['product_id']) : 0;
+            $i_item_type = $item['item_type'] ?? 'custom';
+            $i_product_name = $item['product_name'] ?? '';
+            $i_product_code = $item['product_code'] ?? null;
+            $i_material = $item['material'] ?? null;
+            $i_size = $item['size'] ?? null;
+            $i_color = $item['color'] ?? null;
+            $i_qty = intval($item['quantity'] ?? 0);
+            $i_unit_price = floatval($item['unit_price'] ?? 0);
+            $i_total_price = floatval($item['total_price'] ?? ($i_qty * $i_unit_price));
+
+            $i_bow_type = $item['details']['bowType'] ?? null;
+            $i_bow_colors = !empty($item['details']['bowColors']) ? json_encode($item['details']['bowColors']) : null;
+
+            $i_details_json = !empty($item['details']) ? json_encode($item['details']) : null;
+
+            $item_stmt->bind_param(
+                "iisssssssssddds",
+                $order_id,
+                $i_product_id,
+                $i_item_type,
+                $i_product_name,
+                $i_product_code,
+                $i_material,
+                $i_size,
+                $i_color,
+                $i_bow_type,
+                $i_bow_colors,
+                $i_qty,
+                $i_unit_price, // for `price`
+                $i_unit_price, // for `unit_price`
+                $i_total_price, // for `total_price_item`
+                $i_details_json
+            );
+            if (!$item_stmt->execute()) {
+                error_log("Item insert error: " . $item_stmt->error);
+            }
+        }
+    }
+
+    // Insert payment records
+    if (!empty($data['payments']) && is_array($data['payments'])) {
+        $pay_sql = "INSERT INTO order_payments (order_id, payment_type, payment_label, amount, transfer_date, slip_url, receiving_bank, additional_details)
+                     VALUES (?,?,?,?,?,?,?,?)";
+        $pay_stmt = $conn->prepare($pay_sql);
+
+        foreach ($data['payments'] as $payment) {
+            $p_type = $payment['type'] ?? 'deposit';
+            $p_label = $payment['typeLabel'] ?? null;
+            $p_amount = floatval($payment['amount'] ?? 0);
+            $p_transfer_date = $payment['transferDate'] ?? null;
+            $p_slip_url = $payment['slipUrl'] ?? null;
+            $p_receiving_bank = $payment['receivingBank'] ?? null;
+            $p_additional_details = $payment['additionalDetails'] ?? null;
+
+            $pay_stmt->bind_param(
+                "issdssss",
+                $order_id,
+                $p_type,
+                $p_label,
+                $p_amount,
+                $p_transfer_date,
+                $p_slip_url,
+                $p_receiving_bank,
+                $p_additional_details
+            );
+            $pay_stmt->execute();
+        }
+    }
+
+    // Auto-sync Graphic job
+    $depts = !empty($data['departments']) ? $data['departments'] : [];
+    if (!is_array($depts) && is_string($depts)) {
+        $depts = json_decode($depts, true) ?: [];
+    }
+    if (is_array($depts) && in_array('ฝ่ายกราฟฟิก', $depts)) {
+        $job_code_es = $conn->real_escape_string($data['job_id']);
+        $c_name_es = $conn->real_escape_string($data['customer_name'] ?? 'ไม่ระบุชื่อ');
+        $j_type_es = $conn->real_escape_string($data['job_name'] ?? 'ทั่วไป');
+        $o_by_es = $conn->real_escape_string($data['responsible_person'] ?? '');
+        $due_es = $conn->real_escape_string($data['delivery_date'] ?? date('Y-m-d'));
+        $o_date_es = $conn->real_escape_string($data['order_date'] ?? date('Y-m-d'));
+        
+        $conn->query("INSERT IGNORE INTO design_jobs (job_code, client_name, job_type, urgency, status, ordered_by, due_date, order_date) VALUES ('$job_code_es', '$c_name_es', '$j_type_es', 'ปกติ', 'รอรับงาน', '$o_by_es', '$due_es', '$o_date_es')");
+    }
+
+    http_response_code(201);
+    echo json_encode([
+        "status" => "success",
+        "message" => "Order created successfully",
+        "id" => $order_id,
+        "job_id" => $data['job_id'],
+    ]);
+    exit();
+}
+
+// ==================== PUT (Update) ====================
+if ($method === 'PUT') {
+    if (!has_order_identifier($id, $job_id)) {
+        http_response_code(400);
+        echo json_encode(["status" => "error", "message" => "Order ID is required"]);
+        exit();
+    }
+
+    if (empty($data)) {
+        http_response_code(400);
+        echo json_encode(["status" => "error", "message" => "Request body is empty"]);
+        exit();
+    }
+
+    if (array_key_exists('order_status', $data) && !array_key_exists('status', $data)) {
+        $data['status'] = $data['order_status'];
+    }
+    if (array_key_exists('status', $data) && !array_key_exists('order_status', $data)) {
+        $data['order_status'] = $data['status'];
+    }
+
+    // Build dynamic update
+    $fields = [];
+    $params = [];
+    $types = '';
+
+    $allowed_fields = [
+        'customer_id',
+        'subtotal',
+        'delivery_cost',
+        'vat_amount',
+        'total_amount', // For compatibility
+        'total_price',
+        'payment_status',
+        'paid_amount',
+        'status',
+        'order_status',
+        'job_created',
+        'departments',
+        'responsible_person',
+        'urgency_level',
+        'job_name',
+        'event_location',
+        'usage_date',
+        'delivery_date',
+        'product_category',
+        'product_type',
+        'budget',
+        'sales_channel',
+        'customer_name',
+        'customer_phone',
+        'customer_line',
+        'customer_email',
+        'customer_address',
+        'needs_tax_invoice',
+        'invoice_type',
+        'tax_payer_name',
+        'tax_id',
+        'tax_address',
+        'payment_method',
+        'delivery_type',
+        'delivery_method',
+        'private_transport_name',
+        'delivery_recipient',
+        'delivery_phone',
+        'delivery_address',
+        'preferred_delivery_date',
+        'origin_branch',
+        'destination_branch',
+        'preferred_time_slot',
+        'notes',
+        'graphics_notes',
+        'quotation_number',
+        'quotation_url',
+        'design_files',
+        'production_workflow',
+    ];
+
+    foreach ($allowed_fields as $field) {
+        if (array_key_exists($field, $data)) {
+            $value = $data[$field];
+            if (($field === 'departments' || $field === 'design_files') && is_array($value)) {
+                $value = json_encode($value, JSON_UNESCAPED_UNICODE);
+            }
+            if ($field === 'production_workflow' && is_array($value)) {
+                $value = json_encode($value, JSON_UNESCAPED_UNICODE);
+            }
+            $fields[] = "$field = ?";
+            $params[] = $value;
+            $types .= (in_array($field, ['paid_amount', 'total_amount', 'total_price', 'subtotal', 'vat_amount', 'delivery_cost', 'budget'])) ? 'd' : ((in_array($field, ['job_created', 'needs_tax_invoice', 'customer_id'])) ? 'i' : 's');
+        }
+    }
+
+    if (empty($fields)) {
+        http_response_code(400);
+        echo json_encode(["status" => "error", "message" => "No fields to update"]);
+        exit();
+    }
+
+    if (!empty($id)) {
+        $params[] = $id;
+        $types .= 'i';
+    } else {
+        $params[] = $job_id;
+        $types .= 's';
+    }
+
+    $sql = "UPDATE orders SET " . implode(", ", $fields) . " WHERE " . order_identifier_where($id, $job_id);
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param($types, ...$params);
+
+    if (!$stmt->execute()) {
+        http_response_code(500);
+        echo json_encode(["status" => "error", "message" => $stmt->error]);
+        exit();
+    }
+
+    // Auto-sync Graphic job if department includes it
+    if (in_array('departments = ?', $fields)) {
+        if (isset($data['departments'])) {
+            $depts = is_array($data['departments']) ? $data['departments'] : json_decode($data['departments'], true);
+            if (is_array($depts) && in_array('ฝ่ายกราฟฟิก', $depts)) {
+                $ordStmt = $conn->prepare("SELECT * FROM orders WHERE " . order_identifier_where($id, $job_id));
+                bind_order_identifier($ordStmt, $id, $job_id);
+                $ordStmt->execute();
+                $ordResult = $ordStmt->get_result();
+                if ($ordResult && $ordResult->num_rows > 0) {
+                    $ord = $ordResult->fetch_assoc();
+                    $job_code = $conn->real_escape_string($ord['job_id']);
+                    
+                    $c_name_es = $conn->real_escape_string($ord['customer_name'] ?: 'ไม่ระบุชื่อ');
+                    $j_type_es = $conn->real_escape_string($ord['job_name'] ?: 'ทั่วไป');
+                    $o_by_es = $conn->real_escape_string($ord['responsible_person']);
+                    $due_es = $conn->real_escape_string($ord['delivery_date'] ?: date('Y-m-d'));
+                    $o_date_es = $conn->real_escape_string($ord['order_date'] ?: date('Y-m-d'));
+                    
+                    $conn->query("INSERT IGNORE INTO design_jobs (job_code, client_name, job_type, urgency, status, ordered_by, due_date, order_date) VALUES ('$job_code', '$c_name_es', '$j_type_es', 'ปกติ', 'รอรับงาน', '$o_by_es', '$due_es', '$o_date_es')");
+                }
+            }
+        }
+    }
+
+    echo json_encode(["status" => "success", "message" => "Order updated successfully"]);
+    exit();
+}
+
+// ==================== PATCH (สร้างงาน / เปลี่ยน status) ====================
+if ($method === 'PATCH') {
+    if (!has_order_identifier($id, $job_id)) {
+        http_response_code(400);
+        echo json_encode(["status" => "error", "message" => "Order ID is required"]);
+        exit();
+    }
+
+    // รองรับ: เปลี่ยน order_status, job_created, departments
+    $fields = [];
+    $params = [];
+    $types = '';
+
+    $status_update = $data['order_status'] ?? ($data['status'] ?? null);
+    if ($status_update !== null) {
+        $fields[] = "order_status = ?";
+        $params[] = $status_update;
+        $types .= 's';
+        $fields[] = "status = ?";
+        $params[] = $status_update;
+        $types .= 's';
+    }
+    if (isset($data['payment_status'])) {
+        $fields[] = "payment_status = ?";
+        $params[] = $data['payment_status'];
+        $types .= 's';
+    }
+    if (isset($data['job_created'])) {
+        $fields[] = "job_created = ?";
+        $params[] = intval($data['job_created']);
+        $types .= 'i';
+    }
+    if (isset($data['departments'])) {
+        $fields[] = "departments = ?";
+        $params[] = is_array($data['departments']) ? json_encode($data['departments'], JSON_UNESCAPED_UNICODE) : $data['departments'];
+        $types .= 's';
+    }
+    if (isset($data['production_workflow'])) {
+        $fields[] = "production_workflow = ?";
+        $params[] = is_array($data['production_workflow']) ? json_encode($data['production_workflow'], JSON_UNESCAPED_UNICODE) : $data['production_workflow'];
+        $types .= 's';
+    }
+    if (isset($data['paid_amount'])) {
+        $fields[] = "paid_amount = ?";
+        $params[] = floatval($data['paid_amount']);
+        $types .= 'd';
+    }
+
+    if (empty($fields)) {
+        http_response_code(400);
+        echo json_encode(["status" => "error", "message" => "No fields to update"]);
+        exit();
+    }
+
+    if (!empty($id)) {
+        $params[] = $id;
+        $types .= 'i';
+    } else {
+        $params[] = $job_id;
+        $types .= 's';
+    }
+    $sql = "UPDATE orders SET " . implode(", ", $fields) . " WHERE " . order_identifier_where($id, $job_id);
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param($types, ...$params);
+
+    if ($stmt->execute()) {
+        // Auto-sync Graphic job if department includes it
+        if (isset($data['departments'])) {
+            $depts = is_array($data['departments']) ? $data['departments'] : json_decode($data['departments'], true);
+            if (is_array($depts) && in_array('ฝ่ายกราฟฟิก', $depts)) {
+                $ordStmt = $conn->prepare("SELECT * FROM orders WHERE " . order_identifier_where($id, $job_id));
+                bind_order_identifier($ordStmt, $id, $job_id);
+                $ordStmt->execute();
+                $ordResult = $ordStmt->get_result();
+                if ($ordResult && $ordResult->num_rows > 0) {
+                    $ord = $ordResult->fetch_assoc();
+                    $job_code = $conn->real_escape_string($ord['job_id']);
+                    
+                    $c_name_es = $conn->real_escape_string($ord['customer_name'] ?: 'ไม่ระบุชื่อ');
+                    $j_type_es = $conn->real_escape_string($ord['job_name'] ?: 'ทั่วไป');
+                    $o_by_es = $conn->real_escape_string($ord['responsible_person']);
+                    $due_es = $conn->real_escape_string($ord['delivery_date'] ?: date('Y-m-d'));
+                    $o_date_es = $conn->real_escape_string($ord['order_date'] ?: date('Y-m-d'));
+                    
+                    $conn->query("INSERT IGNORE INTO design_jobs (job_code, client_name, job_type, urgency, status, ordered_by, due_date, order_date) VALUES ('$job_code', '$c_name_es', '$j_type_es', 'ปกติ', 'รอรับงาน', '$o_by_es', '$due_es', '$o_date_es')");
+                }
+            }
+        }
+
+        echo json_encode(["status" => "success", "message" => "Order patched successfully"]);
+    } else {
+        http_response_code(500);
+        echo json_encode(["status" => "error", "message" => $stmt->error]);
+    }
+    exit();
+}
+
+// ==================== DELETE ====================
+if ($method === 'DELETE') {
+    if (!has_order_identifier($id, $job_id)) {
+        http_response_code(400);
+        echo json_encode(["status" => "error", "message" => "Order ID is required"]);
+        exit();
+    }
+
+    // cascade delete handles order_items and order_payments automatically
+    $stmt = $conn->prepare("DELETE FROM orders WHERE " . order_identifier_where($id, $job_id));
+    bind_order_identifier($stmt, $id, $job_id);
+
+    if ($stmt->execute()) {
+        echo json_encode(["status" => "success", "message" => "Order deleted successfully"]);
+    } else {
+        http_response_code(500);
+        echo json_encode(["status" => "error", "message" => $stmt->error]);
+    }
+    exit();
+}
+
+http_response_code(405);
+echo json_encode(["status" => "error", "message" => "Method not allowed"]);
+$conn->close();
+?>
