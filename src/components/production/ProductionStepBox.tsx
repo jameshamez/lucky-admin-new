@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/collapsible";
 import { productionStockService, WithdrawalComponent, WithdrawalBatch } from "@/services/productionStockService";
 import { materialStockService } from "@/services/materialStockService";
+import { useAuth } from "@/contexts/AuthContext";
 
 export interface LogEntry {
   action: string;
@@ -91,6 +92,8 @@ export function ProductionStepBox({
   currentUserDepartment = "production",
   onPrintDeliverySlip,
 }: ProductionStepBoxProps) {
+  const { user: currentAuthUser } = useAuth();
+  const currentUserName = currentAuthUser?.full_name || "ไม่ระบุชื่อ";
   const [data, setData] = useState<StepData>(
     initialData || {
       status: "in_progress",
@@ -198,7 +201,7 @@ export function ProductionStepBox({
     }
 
     const timestamp = getTimestamp();
-    const user = "สมชาย ใจดี";
+    const user = currentUserName;
     const shouldWaitForSales = requiresSalesApproval && selectedStatus !== "issue";
     const newStatus = selectedStatus === "issue" ? "issue" : (shouldWaitForSales ? "waiting_sales" : "complete");
     const actionLabel = newStatus === "issue"
@@ -234,7 +237,7 @@ export function ProductionStepBox({
     }
 
     const timestamp = getTimestamp();
-    const user = "ฝ่ายขาย";
+    const user = currentUserName;
     const updatedData: StepData = {
       ...data,
       status: approved ? "complete" : "issue",
@@ -264,7 +267,7 @@ export function ProductionStepBox({
       onPrintDeliverySlip();
     }
     const timestamp = getTimestamp();
-    const user = "สมชาย ใจดี";
+    const user = currentUserName;
     const updatedData: StepData = {
       ...data,
       status: "complete",

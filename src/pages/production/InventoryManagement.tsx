@@ -1,18 +1,19 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
 } from "@/components/ui/table";
-import { 
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -21,113 +22,33 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { 
-  Search, 
-  Plus, 
-  Minus, 
-  AlertTriangle, 
-  Package, 
-  TrendingDown, 
-  History, 
-  ArrowDownCircle, 
+import {
+  Search,
+  Plus,
+  Minus,
+  AlertTriangle,
+  Package,
+  TrendingDown,
+  History,
+  ArrowDownCircle,
   ArrowUpCircle,
   Boxes,
   Upload,
   FileSpreadsheet,
   CheckCircle2,
   X,
-  Download
+  Download,
+  Loader2
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
 import InventoryStockTab from "@/components/production/InventoryStockTab";
 import DefectiveItemsTab from "@/components/production/DefectiveItemsTab";
-
-const inventoryData = [
-  {
-    id: "INV-001",
-    name: "กระดาษ A4",
-    category: "วัสดุการพิมพ์",
-    currentStock: 25,
-    minimumStock: 50,
-    unit: "รีม",
-    lastUpdated: "2024-01-20",
-    status: "ขาดแคลน"
-  },
-  {
-    id: "INV-002", 
-    name: "หมึกสีดำ",
-    category: "วัสดุการพิมพ์",
-    currentStock: 15,
-    minimumStock: 20,
-    unit: "ขวด",
-    lastUpdated: "2024-01-19",
-    status: "ใกล้หมด"
-  },
-  {
-    id: "INV-003",
-    name: "ฟิล์มพลาสติก",
-    category: "วัสดุบรรจุภัณฑ์",
-    currentStock: 120,
-    minimumStock: 100,
-    unit: "เมตร",
-    lastUpdated: "2024-01-18",
-    status: "ปกติ"
-  },
-  {
-    id: "INV-004",
-    name: "กาวลาเบล",
-    category: "วัสดุติดตั้ง",
-    currentStock: 8,
-    minimumStock: 10,
-    unit: "หลอด",
-    lastUpdated: "2024-01-17",
-    status: "ใกล้หมด"
-  },
-  {
-    id: "INV-005",
-    name: "สายคล้อง",
-    category: "อุปกรณ์เสริม",
-    currentStock: 500,
-    minimumStock: 200,
-    unit: "เส้น",
-    lastUpdated: "2024-01-20",
-    status: "ปกติ"
-  }
-];
-
-const defectiveItems = [
-  {
-    id: "DEF-001",
-    product: "ป้ายโฆษณา",
-    quantity: 2,
-    defectType: "สีผิดเพี้ยน",
-    reportDate: "2024-01-20",
-    reportedBy: "ทีม QC",
-    orderRef: "ORD-001",
-    action: "ผลิตใหม่"
-  },
-  {
-    id: "DEF-002",
-    product: "แผ่นพับ",
-    quantity: 50,
-    defectType: "พิมพ์ไม่ชัด",
-    reportDate: "2024-01-19",
-    reportedBy: "ทีม A",
-    orderRef: "ORD-002",
-    action: "ส่งคืนซัพพลายเออร์"
-  }
-];
-
-const movementHistory = [
-  { id: "MOV-001", date: "2024-01-20", type: "รับเข้า", item: "กระดาษ A4", qty: 100, unit: "รีม", by: "สมชาย", note: "รับจากซัพพลายเออร์" },
-  { id: "MOV-002", date: "2024-01-20", type: "จ่ายออก", item: "หมึกสีดำ", qty: 5, unit: "ขวด", by: "วิชัย", note: "เบิกใช้งาน ORD-003" },
-  { id: "MOV-003", date: "2024-01-19", type: "รับเข้า", item: "สายคล้อง", qty: 200, unit: "เส้น", by: "สมชาย", note: "รับจากซัพพลายเออร์" },
-  { id: "MOV-004", date: "2024-01-19", type: "จ่ายออก", item: "ฟิล์มพลาสติก", qty: 30, unit: "เมตร", by: "มานะ", note: "เบิกใช้งาน ORD-002" },
-  { id: "MOV-005", date: "2024-01-18", type: "ปรับยอด", item: "กาวลาเบล", qty: -2, unit: "หลอด", by: "สุชาติ", note: "สินค้าหมดอายุ" },
-];
+import { officeSuppliesService, OfficeSupply, SupplyMovement, SupplyDefect } from "@/services/officeSuppliesService";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function InventoryManagement() {
+  const { user } = useAuth();
   const [isStockDialogOpen, setIsStockDialogOpen] = useState(false);
   const [stockAction, setStockAction] = useState("");
   const [activeTab, setActiveTab] = useState("stock");
@@ -137,10 +58,125 @@ export default function InventoryManagement() {
   const [importType, setImportType] = useState<"รับเข้า" | "จ่ายออก">("รับเข้า");
   const [rowErrors, setRowErrors] = useState<Record<number, string[]>>({});
   const [headerErrors, setHeaderErrors] = useState<string[]>([]);
+  const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // --- Real data ---
+  const [loading, setLoading] = useState(true);
+  const [supplies, setSupplies] = useState<OfficeSupply[]>([]);
+  const [movements, setMovements] = useState<SupplyMovement[]>([]);
+  const [defects, setDefects] = useState<SupplyDefect[]>([]);
+
+  const fetchAll = async () => {
+    setLoading(true);
+    try {
+      const [stockRes, movementsRes, defectsRes] = await Promise.all([
+        officeSuppliesService.getStock(),
+        officeSuppliesService.getMovements(),
+        officeSuppliesService.getDefects(),
+      ]);
+      if (stockRes.status === "success") setSupplies(stockRes.data);
+      if (movementsRes.status === "success") setMovements(movementsRes.data);
+      if (defectsRes.status === "success") setDefects(defectsRes.data);
+    } catch (error) {
+      toast.error("ไม่สามารถโหลดข้อมูลคลังสินค้าได้");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchAll(); }, []);
+
+  // --- Receive / Issue / Defect forms (shared by the quick-action dialog and the in-out tab) ---
+  const [receiveSupplyId, setReceiveSupplyId] = useState<string>("");
+  const [receiveQty, setReceiveQty] = useState("");
+  const [receiveNote, setReceiveNote] = useState("");
+
+  const [issueSupplyId, setIssueSupplyId] = useState<string>("");
+  const [issueQty, setIssueQty] = useState("");
+  const [issueOrderRef, setIssueOrderRef] = useState("");
+  const [issueNote, setIssueNote] = useState("");
+
+  const [defectProduct, setDefectProduct] = useState("");
+  const [defectQty, setDefectQty] = useState("");
+  const [defectType, setDefectType] = useState("");
+  const [defectAction, setDefectAction] = useState("");
+  const [defectNote, setDefectNote] = useState("");
+
+  const [submitting, setSubmitting] = useState(false);
+
+  const selectedReceiveSupply = supplies.find(s => String(s.supplyId) === receiveSupplyId);
+  const selectedIssueSupply = supplies.find(s => String(s.supplyId) === issueSupplyId);
+
+  const handleReceiveSubmit = async () => {
+    if (!receiveSupplyId) { toast.error("กรุณาเลือกรายการสินค้า"); return; }
+    const qty = Number(receiveQty);
+    if (!qty || qty <= 0) { toast.error("กรุณากรอกจำนวนที่ถูกต้อง"); return; }
+    setSubmitting(true);
+    try {
+      const res = await officeSuppliesService.recordMovement({
+        supplyId: Number(receiveSupplyId), type: "รับเข้า", qty, employeeName: user?.full_name, note: receiveNote || undefined,
+      });
+      if (res.status === "success") {
+        toast.success("บันทึกรับเข้าสำเร็จ");
+        setReceiveSupplyId(""); setReceiveQty(""); setReceiveNote("");
+        setIsStockDialogOpen(false);
+        fetchAll();
+      } else {
+        toast.error(res.message || "บันทึกไม่สำเร็จ");
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleIssueSubmit = async () => {
+    if (!issueSupplyId) { toast.error("กรุณาเลือกรายการสินค้า"); return; }
+    const qty = Number(issueQty);
+    if (!qty || qty <= 0) { toast.error("กรุณากรอกจำนวนที่ถูกต้อง"); return; }
+    setSubmitting(true);
+    try {
+      const res = await officeSuppliesService.recordMovement({
+        supplyId: Number(issueSupplyId), type: "จ่ายออก", qty, employeeName: user?.full_name, note: issueNote || undefined, orderRef: issueOrderRef || undefined,
+      });
+      if (res.status === "success") {
+        toast.success("บันทึกจ่ายออกสำเร็จ");
+        setIssueSupplyId(""); setIssueQty(""); setIssueOrderRef(""); setIssueNote("");
+        setIsStockDialogOpen(false);
+        fetchAll();
+      } else {
+        toast.error(res.message || "บันทึกไม่สำเร็จ");
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDefectSubmit = async () => {
+    if (!defectProduct.trim()) { toast.error("กรุณากรอกรายการสินค้า"); return; }
+    const qty = Number(defectQty);
+    if (!qty || qty <= 0) { toast.error("กรุณากรอกจำนวนที่ถูกต้อง"); return; }
+    setSubmitting(true);
+    try {
+      const res = await officeSuppliesService.recordDefect({
+        productName: defectProduct, quantity: qty, defectType: defectType || undefined,
+        reportedBy: user?.full_name, resolutionAction: defectAction || undefined, note: defectNote || undefined,
+      });
+      if (res.status === "success") {
+        toast.success("บันทึกสินค้ามีตำหนิสำเร็จ");
+        setDefectProduct(""); setDefectQty(""); setDefectType(""); setDefectAction(""); setDefectNote("");
+        setIsStockDialogOpen(false);
+        fetchAll();
+      } else {
+        toast.error(res.message || "บันทึกไม่สำเร็จ");
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const REQUIRED_COLUMNS = ["รหัสสินค้า", "ชื่อสินค้า", "จำนวน", "หน่วย"];
-  const validProductIds = inventoryData.map(item => item.id);
+  const validProductIds = supplies.map(item => item.id);
 
   const validateExcelData = (data: any[]) => {
     const errors: Record<number, string[]> = {};
@@ -160,14 +196,12 @@ export default function InventoryManagement() {
     data.forEach((row, idx) => {
       const rowErr: string[] = [];
 
-      // Check required fields
       REQUIRED_COLUMNS.forEach(col => {
         if (row[col] === undefined || row[col] === null || String(row[col]).trim() === "") {
           rowErr.push(`"${col}" ว่างเปล่า`);
         }
       });
 
-      // Validate quantity is a positive number
       if (row["จำนวน"] !== undefined) {
         const qty = Number(row["จำนวน"]);
         if (isNaN(qty)) {
@@ -177,7 +211,6 @@ export default function InventoryManagement() {
         }
       }
 
-      // Validate product ID exists in system
       if (row["รหัสสินค้า"] && !validProductIds.includes(String(row["รหัสสินค้า"]).trim())) {
         rowErr.push(`รหัส "${row["รหัสสินค้า"]}" ไม่พบในระบบ`);
       }
@@ -201,7 +234,7 @@ export default function InventoryManagement() {
       const sheetName = workbook.SheetNames[0];
       const sheet = workbook.Sheets[sheetName];
       const jsonData = XLSX.utils.sheet_to_json(sheet);
-      
+
       const { errors, hErrors } = validateExcelData(jsonData);
       setRowErrors(errors);
       setHeaderErrors(hErrors);
@@ -215,17 +248,33 @@ export default function InventoryManagement() {
   const errorCount = Object.keys(rowErrors).length;
   const hasErrors = errorCount > 0 || headerErrors.length > 0;
 
-  const handleConfirmImport = () => {
+  const handleConfirmImport = async () => {
     if (hasErrors) {
       toast.error(`พบข้อผิดพลาด ${errorCount} แถว กรุณาแก้ไขไฟล์แล้วนำเข้าใหม่`);
       return;
     }
-    toast.success(`นำเข้าสำเร็จ ${excelData.length} รายการ (${importType})`);
-    setShowExcelImport(false);
-    setExcelData([]);
-    setExcelFileName("");
-    setRowErrors({});
-    setHeaderErrors([]);
+    setImporting(true);
+    try {
+      const rows = excelData.map(row => ({
+        code: String(row["รหัสสินค้า"]).trim(),
+        qty: Number(row["จำนวน"]),
+        note: row["หมายเหตุ"] ? String(row["หมายเหตุ"]) : undefined,
+      }));
+      const res = await officeSuppliesService.bulkImport(importType, rows);
+      if (res.status === "success") {
+        toast.success(`นำเข้าสำเร็จ ${res.imported} รายการ (${importType})`);
+        setShowExcelImport(false);
+        setExcelData([]);
+        setExcelFileName("");
+        setRowErrors({});
+        setHeaderErrors([]);
+        fetchAll();
+      } else {
+        toast.error(res.message || "นำเข้าไม่สำเร็จ");
+      }
+    } finally {
+      setImporting(false);
+    }
   };
 
   const handleDownloadTemplate = () => {
@@ -239,20 +288,14 @@ export default function InventoryManagement() {
     XLSX.writeFile(wb, `template_${importType === "รับเข้า" ? "receive" : "issue"}.xlsx`);
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "ขาดแคลน": return "destructive";
-      case "ใกล้หมด": return "secondary";
-      case "ปกติ": return "default";
-      default: return "secondary";
-    }
-  };
-
-  const lowStockCount = inventoryData.filter(item => 
+  const lowStockCount = supplies.filter(item =>
     item.status === "ขาดแคลน" || item.status === "ใกล้หมด"
   ).length;
 
-  const totalDefective = defectiveItems.reduce((sum, item) => sum + item.quantity, 0);
+  const totalDefective = defects.reduce((sum, item) => sum + item.quantity, 0);
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const movementsToday = movements.filter(m => m.date?.startsWith(todayStr)).length;
 
   const getMovementBadge = (type: string) => {
     switch (type) {
@@ -262,6 +305,15 @@ export default function InventoryManagement() {
       default: return <Badge>{type}</Badge>;
     }
   };
+
+  if (loading) {
+    return (
+      <div className="flex h-[400px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="ml-2">กำลังโหลดข้อมูล...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -273,7 +325,7 @@ export default function InventoryManagement() {
         <div className="flex gap-2">
           <Dialog open={isStockDialogOpen} onOpenChange={setIsStockDialogOpen}>
             <DialogTrigger asChild>
-              <Button 
+              <Button
                 className="bg-green-600 hover:bg-green-700"
                 onClick={() => setStockAction("import")}
               >
@@ -284,49 +336,117 @@ export default function InventoryManagement() {
             <DialogContent className="sm:max-w-[400px]">
               <DialogHeader>
                 <DialogTitle>
-                  {stockAction === "import" ? "รับเข้าสินค้า" : 
+                  {stockAction === "import" ? "รับเข้าสินค้า" :
                    stockAction === "export" ? "จ่ายออกสินค้า" : "บันทึกสินค้ามีตำหนิ"}
                 </DialogTitle>
               </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="space-y-2">
-                  <Label htmlFor="item">รายการสินค้า</Label>
-                  <Input id="item" placeholder="กรอกชื่อสินค้า" />
+
+              {stockAction === "import" && (
+                <div className="grid gap-4 py-4">
+                  <div className="space-y-2">
+                    <Label>รายการสินค้า</Label>
+                    <Select value={receiveSupplyId} onValueChange={setReceiveSupplyId}>
+                      <SelectTrigger><SelectValue placeholder="เลือกสินค้า" /></SelectTrigger>
+                      <SelectContent>
+                        {supplies.map(s => (
+                          <SelectItem key={s.supplyId} value={String(s.supplyId)}>{s.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>จำนวน</Label>
+                    <Input type="number" placeholder="0" value={receiveQty} onChange={(e) => setReceiveQty(e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>หน่วย</Label>
+                    <Input value={selectedReceiveSupply?.unit || ""} disabled />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>หมายเหตุ</Label>
+                    <Textarea placeholder="รายละเอียดเพิ่มเติม" value={receiveNote} onChange={(e) => setReceiveNote(e.target.value)} />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="quantity">จำนวน</Label>
-                  <Input id="quantity" type="number" placeholder="0" />
+              )}
+
+              {stockAction === "export" && (
+                <div className="grid gap-4 py-4">
+                  <div className="space-y-2">
+                    <Label>รายการสินค้า</Label>
+                    <Select value={issueSupplyId} onValueChange={setIssueSupplyId}>
+                      <SelectTrigger><SelectValue placeholder="เลือกสินค้า" /></SelectTrigger>
+                      <SelectContent>
+                        {supplies.map(s => (
+                          <SelectItem key={s.supplyId} value={String(s.supplyId)}>{s.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>จำนวน</Label>
+                    <Input type="number" placeholder="0" value={issueQty} onChange={(e) => setIssueQty(e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>หน่วย</Label>
+                    <Input value={selectedIssueSupply?.unit || ""} disabled />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>อ้างอิง Order</Label>
+                    <Input placeholder="เช่น ORD-001" value={issueOrderRef} onChange={(e) => setIssueOrderRef(e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>หมายเหตุ</Label>
+                    <Textarea placeholder="รายละเอียดเพิ่มเติม" value={issueNote} onChange={(e) => setIssueNote(e.target.value)} />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="unit">หน่วย</Label>
-                  <Input id="unit" placeholder="เช่น ชิ้น, รีม, ขวด" />
-                </div>
-                {stockAction === "defective" && (
+              )}
+
+              {stockAction === "defective" && (
+                <div className="grid gap-4 py-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="item">รายการสินค้า</Label>
+                    <Input id="item" placeholder="กรอกชื่อสินค้า" value={defectProduct} onChange={(e) => setDefectProduct(e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="quantity">จำนวน</Label>
+                    <Input id="quantity" type="number" placeholder="0" value={defectQty} onChange={(e) => setDefectQty(e.target.value)} />
+                  </div>
                   <div className="space-y-2">
                     <Label htmlFor="defect-reason">สาเหตุตำหนิ</Label>
-                    <Textarea id="defect-reason" placeholder="อธิบายสาเหตุที่ทำให้เกิดตำหนิ" />
+                    <Textarea id="defect-reason" placeholder="อธิบายสาเหตุที่ทำให้เกิดตำหนิ" value={defectType} onChange={(e) => setDefectType(e.target.value)} />
                   </div>
-                )}
-                <div className="space-y-2">
-                  <Label htmlFor="notes">หมายเหตุ</Label>
-                  <Textarea id="notes" placeholder="รายละเอียดเพิ่มเติม" />
+                  <div className="space-y-2">
+                    <Label>การดำเนินการ</Label>
+                    <Input placeholder="เช่น ผลิตใหม่, ส่งคืนซัพพลายเออร์" value={defectAction} onChange={(e) => setDefectAction(e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="notes">หมายเหตุ</Label>
+                    <Textarea id="notes" placeholder="รายละเอียดเพิ่มเติม" value={defectNote} onChange={(e) => setDefectNote(e.target.value)} />
+                  </div>
                 </div>
-              </div>
+              )}
+
               <div className="flex justify-end gap-2">
                 <Button variant="outline" onClick={() => setIsStockDialogOpen(false)}>
                   ยกเลิก
                 </Button>
-                <Button 
+                <Button
                   className="bg-gradient-to-r from-primary to-primary-hover"
-                  onClick={() => setIsStockDialogOpen(false)}
+                  disabled={submitting}
+                  onClick={() => {
+                    if (stockAction === "import") handleReceiveSubmit();
+                    else if (stockAction === "export") handleIssueSubmit();
+                    else handleDefectSubmit();
+                  }}
                 >
+                  {submitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
                   บันทึก
                 </Button>
               </div>
             </DialogContent>
           </Dialog>
 
-          <Button 
+          <Button
             variant="outline"
             onClick={() => {
               setStockAction("export");
@@ -337,7 +457,7 @@ export default function InventoryManagement() {
             จ่ายออก
           </Button>
 
-          <Button 
+          <Button
             variant="destructive"
             onClick={() => {
               setStockAction("defective");
@@ -358,7 +478,7 @@ export default function InventoryManagement() {
             <Boxes className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{inventoryData.length}</div>
+            <div className="text-2xl font-bold">{supplies.length}</div>
             <p className="text-xs text-muted-foreground">รายการ</p>
           </CardContent>
         </Card>
@@ -391,7 +511,7 @@ export default function InventoryManagement() {
             <History className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">12</div>
+            <div className="text-2xl font-bold">{movementsToday}</div>
             <p className="text-xs text-muted-foreground">รายการ</p>
           </CardContent>
         </Card>
@@ -478,24 +598,31 @@ export default function InventoryManagement() {
               <CardContent className="space-y-4">
                 <div className="space-y-2">
                   <Label>รายการสินค้า</Label>
-                  <Input placeholder="เลือกหรือพิมพ์ชื่อสินค้า" />
+                  <Select value={receiveSupplyId} onValueChange={setReceiveSupplyId}>
+                    <SelectTrigger><SelectValue placeholder="เลือกสินค้า" /></SelectTrigger>
+                    <SelectContent>
+                      {supplies.map(s => (
+                        <SelectItem key={s.supplyId} value={String(s.supplyId)}>{s.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>จำนวน</Label>
-                    <Input type="number" placeholder="0" />
+                    <Input type="number" placeholder="0" value={receiveQty} onChange={(e) => setReceiveQty(e.target.value)} />
                   </div>
                   <div className="space-y-2">
                     <Label>หน่วย</Label>
-                    <Input placeholder="ชิ้น" disabled />
+                    <Input value={selectedReceiveSupply?.unit || ""} disabled />
                   </div>
                 </div>
                 <div className="space-y-2">
                   <Label>หมายเหตุ</Label>
-                  <Textarea placeholder="เช่น รับจากซัพพลายเออร์, เลขที่ PO" />
+                  <Textarea placeholder="เช่น รับจากซัพพลายเออร์, เลขที่ PO" value={receiveNote} onChange={(e) => setReceiveNote(e.target.value)} />
                 </div>
-                <Button className="w-full bg-green-600 hover:bg-green-700">
-                  <Plus className="w-4 h-4 mr-2" />
+                <Button className="w-full bg-green-600 hover:bg-green-700" disabled={submitting} onClick={handleReceiveSubmit}>
+                  {submitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
                   บันทึกรับเข้า
                 </Button>
               </CardContent>
@@ -511,28 +638,35 @@ export default function InventoryManagement() {
               <CardContent className="space-y-4">
                 <div className="space-y-2">
                   <Label>รายการสินค้า</Label>
-                  <Input placeholder="เลือกหรือพิมพ์ชื่อสินค้า" />
+                  <Select value={issueSupplyId} onValueChange={setIssueSupplyId}>
+                    <SelectTrigger><SelectValue placeholder="เลือกสินค้า" /></SelectTrigger>
+                    <SelectContent>
+                      {supplies.map(s => (
+                        <SelectItem key={s.supplyId} value={String(s.supplyId)}>{s.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>จำนวน</Label>
-                    <Input type="number" placeholder="0" />
+                    <Input type="number" placeholder="0" value={issueQty} onChange={(e) => setIssueQty(e.target.value)} />
                   </div>
                   <div className="space-y-2">
                     <Label>หน่วย</Label>
-                    <Input placeholder="ชิ้น" disabled />
+                    <Input value={selectedIssueSupply?.unit || ""} disabled />
                   </div>
                 </div>
                 <div className="space-y-2">
                   <Label>อ้างอิง Order</Label>
-                  <Input placeholder="เช่น ORD-001" />
+                  <Input placeholder="เช่น ORD-001" value={issueOrderRef} onChange={(e) => setIssueOrderRef(e.target.value)} />
                 </div>
                 <div className="space-y-2">
                   <Label>หมายเหตุ</Label>
-                  <Textarea placeholder="รายละเอียดเพิ่มเติม" />
+                  <Textarea placeholder="รายละเอียดเพิ่มเติม" value={issueNote} onChange={(e) => setIssueNote(e.target.value)} />
                 </div>
-                <Button className="w-full" variant="destructive">
-                  <Minus className="w-4 h-4 mr-2" />
+                <Button className="w-full" variant="destructive" disabled={submitting} onClick={handleIssueSubmit}>
+                  {submitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Minus className="w-4 h-4 mr-2" />}
                   บันทึกจ่ายออก
                 </Button>
               </CardContent>
@@ -652,10 +786,10 @@ export default function InventoryManagement() {
               <Button
                 className={importType === "รับเข้า" && !hasErrors ? "bg-green-600 hover:bg-green-700" : ""}
                 variant={importType === "จ่ายออก" ? "destructive" : "default"}
-                disabled={hasErrors}
+                disabled={hasErrors || importing}
                 onClick={handleConfirmImport}
               >
-                <CheckCircle2 className="w-4 h-4 mr-1" />
+                {importing ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-1" />}
                 {hasErrors ? `แก้ไข ${errorCount} แถวก่อนนำเข้า` : `ยืนยันนำเข้า ${excelData.length} รายการ`}
               </Button>
             </div>
@@ -693,7 +827,7 @@ export default function InventoryManagement() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {movementHistory.map((mov) => (
+                  {movements.map((mov) => (
                     <TableRow key={mov.id}>
                       <TableCell className="font-medium">{mov.id}</TableCell>
                       <TableCell>{mov.date}</TableCell>
@@ -707,6 +841,11 @@ export default function InventoryManagement() {
                       <TableCell className="text-muted-foreground text-sm">{mov.note}</TableCell>
                     </TableRow>
                   ))}
+                  {movements.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center text-muted-foreground py-8">ยังไม่มีประวัติการเคลื่อนไหว</TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
             </CardContent>
