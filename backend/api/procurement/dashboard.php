@@ -59,15 +59,18 @@ if ($method === 'GET') {
     // 3. Monthly Data (last 6 months)
     $monthly = [];
     for ($i = 5; $i >= 0; $i--) {
-        $month = date('n', strtotime("-$i months"));
-        $monthName = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."][$month - 1];
+        $date = date('Y-m', strtotime("-$i months"));
+        $monthName = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."][intval(date('m', strtotime("-$i months"))) - 1];
 
-        // Mocking some numbers based on real counts to make it look active
+        $sql1 = "SELECT COUNT(*) as cnt FROM orders WHERE created_at LIKE '$date%' AND order_status IN ('ยืนยันคำสั่งซื้อ', 'สร้างงานแล้ว')";
+        $sql2 = "SELECT COUNT(*) as cnt FROM orders WHERE created_at LIKE '$date%' AND order_status = 'สร้างงานแล้ว'";
+        $sql3 = "SELECT COUNT(*) as cnt FROM orders WHERE created_at LIKE '$date%' AND order_status = 'จัดส่งครบแล้ว'";
+
         $monthly[] = [
             "month" => $monthName,
-            "calculated" => rand(10, 50),
-            "produced" => rand(5, 40),
-            "delivered" => rand(2, 30)
+            "calculated" => intval($conn->query($sql1)->fetch_assoc()['cnt'] ?? 0),
+            "produced" => intval($conn->query($sql2)->fetch_assoc()['cnt'] ?? 0),
+            "delivered" => intval($conn->query($sql3)->fetch_assoc()['cnt'] ?? 0)
         ];
     }
 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,33 +24,7 @@ const statusConfig = {
   completed: { label: "เสร็จสิ้น", color: "#2ECC71", bgColor: "bg-green-500" },
 };
 
-// Mock data removed in favor of state
-
-// Mock data for line chart (30 days)
-const lineChartData = Array.from({ length: 30 }, (_, i) => {
-  const date = new Date();
-  date.setDate(date.getDate() - (29 - i));
-  return {
-    date: format(date, "dd/MM", { locale: th }),
-    completed: Math.floor(Math.random() * 5) + 1,
-    pending: Math.floor(Math.random() * 8) + 2,
-  };
-});
-
-// Mock data for bar chart (6 months)
-const barChartData = Array.from({ length: 6 }, (_, i) => {
-  const date = new Date();
-  date.setMonth(date.getMonth() - (5 - i));
-  return {
-    month: format(date, "MMM", { locale: th }),
-    "เหรียญรางวัล": Math.floor(Math.random() * 15) + 5,
-    "ถ้วยรางวัล": Math.floor(Math.random() * 12) + 3,
-    "คริสตัล": Math.floor(Math.random() * 8) + 2,
-    "อะคริลิก": Math.floor(Math.random() * 10) + 4,
-    "ผ้า": Math.floor(Math.random() * 6) + 1,
-    "สายคล้องคอ": Math.floor(Math.random() * 20) + 10,
-  };
-});
+const jobTypeCategories = ["เหรียญรางวัล", "ถ้วยรางวัล", "คริสตัล", "อะคริลิก", "ผ้า", "สายคล้องคอ"];
 
 import { useEffect } from "react";
 
@@ -98,6 +72,36 @@ export default function DesignDashboard() {
     };
     fetchJobs();
   }, []);
+
+  // Line chart: jobs started per day (last 30 days), split by completed vs still pending
+  const lineChartData = useMemo(() => {
+    return Array.from({ length: 30 }, (_, i) => {
+      const date = new Date();
+      date.setDate(date.getDate() - (29 - i));
+      const dayKey = format(date, "yyyy-MM-dd");
+      const dayJobs = jobs.filter(j => j.start_date === dayKey);
+      return {
+        date: format(date, "dd/MM", { locale: th }),
+        completed: dayJobs.filter(j => j.status === "completed").length,
+        pending: dayJobs.filter(j => j.status !== "completed").length,
+      };
+    });
+  }, [jobs]);
+
+  // Bar chart: job type counts per month (last 6 months)
+  const barChartData = useMemo(() => {
+    return Array.from({ length: 6 }, (_, i) => {
+      const date = new Date();
+      date.setMonth(date.getMonth() - (5 - i));
+      const monthKey = format(date, "yyyy-MM");
+      const monthJobs = jobs.filter(j => j.start_date?.startsWith(monthKey));
+      const row: Record<string, string | number> = { month: format(date, "MMM", { locale: th }) };
+      jobTypeCategories.forEach(cat => {
+        row[cat] = monthJobs.filter(j => (j.job_type || "").includes(cat)).length;
+      });
+      return row;
+    });
+  }, [jobs]);
 
   // Calculate statistics
   const totalJobs = jobs.length;

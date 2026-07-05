@@ -40,59 +40,16 @@ import {
 import { procurementService } from "@/services/procurementService";
 import { toast } from "sonner";
 
-const mockData = [
-  { month: "ม.ค.", calculated: 45, ordered: 38, delivered: 32 },
-  { month: "ก.พ.", calculated: 52, ordered: 45, delivered: 40 },
-  { month: "มี.ค.", calculated: 61, ordered: 55, delivered: 48 },
-  { month: "เม.ย.", calculated: 58, ordered: 52, delivered: 45 },
-  { month: "พ.ค.", calculated: 70, ordered: 63, delivered: 58 },
-  { month: "มิ.ย.", calculated: 68, ordered: 61, delivered: 55 },
-];
+type FactoryReportRow = {
+  factory: string;
+  medal: { quoted: number; ordered: number; po: number };
+  trophy: { quoted: number; ordered: number; po: number };
+  award: { quoted: number; ordered: number; po: number };
+  shirt: { quoted: number; ordered: number; po: number };
+  other: { quoted: number; ordered: number; po: number };
+};
 
-// ข้อมูล Mock โรงงาน
-const factoryData = [
-  {
-    factory: "โรงงาน A (จีน)",
-    medal: { quoted: 45, ordered: 38, po: 35 },
-    trophy: { quoted: 20, ordered: 15, po: 12 },
-    award: { quoted: 15, ordered: 12, po: 10 },
-    shirt: { quoted: 8, ordered: 5, po: 5 },
-    other: { quoted: 5, ordered: 3, po: 3 },
-  },
-  {
-    factory: "โรงงาน B (จีน)",
-    medal: { quoted: 32, ordered: 28, po: 25 },
-    trophy: { quoted: 18, ordered: 14, po: 12 },
-    award: { quoted: 10, ordered: 8, po: 8 },
-    shirt: { quoted: 5, ordered: 4, po: 4 },
-    other: { quoted: 3, ordered: 2, po: 2 },
-  },
-  {
-    factory: "โรงงาน C (ไทย)",
-    medal: { quoted: 25, ordered: 22, po: 20 },
-    trophy: { quoted: 12, ordered: 10, po: 9 },
-    award: { quoted: 8, ordered: 7, po: 6 },
-    shirt: { quoted: 15, ordered: 12, po: 11 },
-    other: { quoted: 4, ordered: 3, po: 3 },
-  },
-  {
-    factory: "โรงงาน D (ไทย)",
-    medal: { quoted: 18, ordered: 15, po: 14 },
-    trophy: { quoted: 8, ordered: 6, po: 5 },
-    award: { quoted: 6, ordered: 5, po: 4 },
-    shirt: { quoted: 20, ordered: 18, po: 16 },
-    other: { quoted: 2, ordered: 1, po: 1 },
-  },
-];
-
-// ข้อมูลเปรียบเทียบตีราคา vs สั่งผลิต
-const comparisonData = [
-  { name: "เหรียญ", quoted: 120, ordered: 103, rate: 86 },
-  { name: "ถ้วย", quoted: 58, ordered: 45, rate: 78 },
-  { name: "โล่", quoted: 39, ordered: 32, rate: 82 },
-  { name: "เสื้อ", quoted: 48, ordered: 39, rate: 81 },
-  { name: "อื่นๆ", quoted: 14, ordered: 9, rate: 64 },
-];
+type ComparisonRow = { name: string; quoted: number; ordered: number; rate: number };
 
 const COLORS = ["#3b82f6", "#22c55e", "#f97316", "#8b5cf6", "#ec4899"];
 
@@ -125,7 +82,7 @@ export default function ProcurementReports() {
   }, [timeRange, productType]); // Re-fetch on filter change if API supports it
 
   // คำนวณ Total ของแต่ละโรงงาน
-  const getFactoryTotals = (factory: typeof factoryData[0]) => {
+  const getFactoryTotals = (factory: FactoryReportRow) => {
     return {
       quoted: factory.medal.quoted + factory.trophy.quoted + factory.award.quoted + factory.shirt.quoted + factory.other.quoted,
       ordered: factory.medal.ordered + factory.trophy.ordered + factory.award.ordered + factory.shirt.ordered + factory.other.ordered,
@@ -134,7 +91,7 @@ export default function ProcurementReports() {
   };
 
   // คำนวณ Grand Total
-  const currentFactoryData = reportData?.factorySummary || factoryData;
+  const currentFactoryData: FactoryReportRow[] = reportData?.factorySummary || [];
   const grandTotal = currentFactoryData.reduce(
     (acc: any, factory: any) => {
       const totals = getFactoryTotals(factory);
@@ -148,7 +105,7 @@ export default function ProcurementReports() {
   );
 
   // ข้อมูลสำหรับ Pie Chart
-  const currentComparisonData = reportData?.comparisonData || comparisonData;
+  const currentComparisonData: ComparisonRow[] = reportData?.comparisonData || [];
   const pieData = currentComparisonData.map((item: any) => ({
     name: item.name,
     value: item.ordered,
@@ -320,6 +277,11 @@ export default function ProcurementReports() {
           </CardTitle>
         </CardHeader>
         <CardContent>
+          {grandTotal.quoted === 0 && grandTotal.ordered === 0 && grandTotal.po === 0 ? (
+            <p className="text-center text-muted-foreground py-8">
+              ยังไม่มีข้อมูลแยกตามโรงงาน (ระบบยังไม่ได้บันทึกว่าใบเสนอราคา/คำสั่งซื้อแต่ละรายการผูกกับโรงงานไหน)
+            </p>
+          ) : (
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
@@ -417,6 +379,7 @@ export default function ProcurementReports() {
               </TableBody>
             </Table>
           </div>
+          )}
           <div className="mt-4 p-3 bg-blue-50/50 rounded-lg border border-blue-100 text-sm text-blue-800">
             <p className="font-semibold flex items-center gap-2 mb-1">
               <span className="w-1.5 h-1.5 rounded-full bg-blue-500 inline-block"></span>
@@ -538,7 +501,7 @@ export default function ProcurementReports() {
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={350}>
-            <BarChart data={reportData?.monthlyTrend || mockData}>
+            <BarChart data={reportData?.monthlyTrend || []}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="month" />
               <YAxis />
@@ -562,7 +525,7 @@ export default function ProcurementReports() {
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={350}>
-            <LineChart data={reportData?.monthlyTrend || mockData}>
+            <LineChart data={reportData?.monthlyTrend || []}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="month" />
               <YAxis />

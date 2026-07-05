@@ -91,6 +91,30 @@ export const hrService = {
         });
         return await res.json();
     },
+    updateMTOCommission: async (id: string, data: any) => {
+        const res = await fetch(`${API_BASE_URL}/hr/commission_mto.php`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'update', ids: [id], ...data })
+        });
+        return await res.json();
+    },
+    updateReadyMadeCommission: async (id: string, data: any) => {
+        const res = await fetch(`${API_BASE_URL}/hr/commission_ready_made.php`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'update', ids: [id], ...data })
+        });
+        return await res.json();
+    },
+    deleteMTOCommission: async (id: string) => {
+        const res = await fetch(`${API_BASE_URL}/hr/commission_mto.php?id=${id}`, { method: 'DELETE' });
+        return await res.json();
+    },
+    deleteReadyMadeCommission: async (id: string) => {
+        const res = await fetch(`${API_BASE_URL}/hr/commission_ready_made.php?id=${id}`, { method: 'DELETE' });
+        return await res.json();
+    },
     // Settings & KPI Methods
     getSettings: async (type: 'ready_made' | 'mto' | 'incentives' | 'kpi_records' | 'kpi_integrations', month?: string) => {
         let url = `${API_BASE_URL}/hr/settings.php?type=${type}`;
@@ -117,6 +141,7 @@ export const hrService = {
         if (month) url += `month=${month}&`;
         if (year) url += `year=${year}`;
         const res = await fetch(url);
+        return await res.json();
     },
     getHRReports: async (month?: string, year?: string) => {
         let url = `${API_BASE_URL}/hr/reports.php?type=all`;

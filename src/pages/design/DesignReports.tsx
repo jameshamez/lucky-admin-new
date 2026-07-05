@@ -223,7 +223,7 @@ export default function DesignReports() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">ทุกลูกค้า</SelectItem>
-                  {Array.from(new Set(mockJobs.map(j => j.customer_name))).map(customer => (
+                  {Array.from(new Set(jobs.map(j => j.customer_name))).map(customer => (
                     <SelectItem key={customer} value={customer}>{customer}</SelectItem>
                   ))}
                 </SelectContent>

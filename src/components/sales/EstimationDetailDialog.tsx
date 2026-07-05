@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -54,13 +54,41 @@ interface EstimationDetailDialogProps {
     medalThickness?: string;
     lanyardSize?: string;
     colorQuantities?: { color: string; quantity: number }[];
+    customerId?: number | null;
   } | null;
 }
 
+type DesignFile = {
+  id: number;
+  name: string;
+  version: string;
+  file_url: string;
+  uploaded_by: string;
+  created_at: string;
+};
+
 export function EstimationDetailDialog({ open, onOpenChange, estimation }: EstimationDetailDialogProps) {
   const [isFullscreenOpen, setIsFullscreenOpen] = useState(false);
+  const [designFiles, setDesignFiles] = useState<DesignFile[]>([]);
+
+  useEffect(() => {
+    if (!open || !estimation?.customerId) {
+      setDesignFiles([]);
+      return;
+    }
+    fetch(`https://nacres.co.th/api-lucky/admin/customer_design_files.php?customer_id=${estimation.customerId}`)
+      .then(r => r.json())
+      .then(json => {
+        if (json.status === "success" && Array.isArray(json.data)) {
+          setDesignFiles(json.data);
+        }
+      })
+      .catch(err => console.warn("Failed to fetch design files", err));
+  }, [open, estimation?.customerId]);
 
   if (!estimation) return null;
+
+  const latestDesignFile = designFiles[0];
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -79,14 +107,6 @@ export function EstimationDetailDialog({ open, onOpenChange, estimation }: Estim
 
   // Calculate unit price
   const unitPrice = estimation.quantity > 0 ? estimation.price / estimation.quantity : 0;
-
-  // Mock design file data
-  const designFile = {
-    fileName: "artwork_final_v3.ai",
-    uploadDate: "2024-01-18",
-    uploadTime: "14:32:15",
-    uploadedBy: "สมชาย กราฟิก"
-  };
 
   return (
     <>
@@ -179,34 +199,41 @@ export function EstimationDetailDialog({ open, onOpenChange, estimation }: Estim
                   {/* Design Files Section */}
                   <div>
                     <p className="text-xs text-muted-foreground mb-2">ไฟล์งานออกแบบ</p>
-                    <div className="bg-muted/50 rounded-lg p-4 border">
-                      <div className="flex items-center justify-between flex-wrap gap-3">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 bg-primary/10 rounded-lg">
-                            <FileText className="h-5 w-5 text-primary" />
-                          </div>
-                          <div>
-                            <p className="font-medium text-sm">{designFile.fileName}</p>
-                            <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
-                              <span>{new Date(designFile.uploadDate).toLocaleDateString('th-TH')} {designFile.uploadTime}</span>
-                              <span>•</span>
-                              <span className="flex items-center gap-1">
-                                <User className="h-3 w-3" />
-                                {designFile.uploadedBy}
-                              </span>
+                    {latestDesignFile ? (
+                      <div className="bg-muted/50 rounded-lg p-4 border">
+                        <div className="flex items-center justify-between flex-wrap gap-3">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 bg-primary/10 rounded-lg">
+                              <FileText className="h-5 w-5 text-primary" />
+                            </div>
+                            <div>
+                              <p className="font-medium text-sm">{latestDesignFile.name} ({latestDesignFile.version})</p>
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+                                <span>{new Date(latestDesignFile.created_at).toLocaleDateString('th-TH')}</span>
+                                <span>•</span>
+                                <span className="flex items-center gap-1">
+                                  <User className="h-3 w-3" />
+                                  {latestDesignFile.uploaded_by}
+                                </span>
+                              </div>
                             </div>
                           </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1.5"
+                            onClick={() => window.open(latestDesignFile.file_url, "_blank")}
+                          >
+                            <History className="h-4 w-4" />
+                            ดูไฟล์ ({designFiles.length})
+                          </Button>
                         </div>
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          className="gap-1.5"
-                        >
-                          <History className="h-4 w-4" />
-                          ประวัติการอัพโหลด
-                        </Button>
                       </div>
-                    </div>
+                    ) : (
+                      <div className="bg-muted/50 rounded-lg p-4 border text-sm text-muted-foreground text-center">
+                        ยังไม่มีไฟล์งานออกแบบสำหรับลูกค้ารายนี้
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>

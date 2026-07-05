@@ -258,114 +258,6 @@ export default function CreateOrder() {
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
 
-  // Mock data for existing orders (fallback while loading / if API is empty)
-  const mockOrders = [
-    {
-      id: 1, jobId: "JOB-2024-001", orderDate: "2024-01-15", lineName: "customer_line1",
-      customerName: "สมชาย ใจดี", product: "ถ้วยรางวัล", productCategory: "สินค้าสำเร็จรูป",
-      salesChannel: "ลูกค้าสั่งเอง", deliveryDate: "2024-01-25", responsiblePerson: "นายสมศักดิ์ รักงาน",
-      customerPhone: "081-234-5678", customerEmail: "somchai@email.com",
-      customerAddress: "123/45 ถ.สุขุมวิท แขวงคลองเตย เขตคลองเตย กรุงเทพฯ 10110",
-      productType: "Trophy", material: "Crystal", size: "10 นิ้ว", quantity: 50, unitPrice: 200,
-      additionalDetails: "สลักชื่อรางวัล 'ยอดเยี่ยม'",
-      savedProducts: [
-        { productType: "ถ้วยรางวัล", material: "คริสตัล", size: "10 นิ้ว", quantity: 30, unitPrice: 200 },
-        { productType: "ถ้วยรางวัล", material: "คริสตัล", size: "8 นิ้ว", quantity: 20, unitPrice: 150 }
-      ],
-      taxCompanyName: "บริษัท สมชาย จำกัด", taxId: "0123456789012",
-      deliveryMethod: "ส่งพัสดุ", deliveryCost: 150, paymentMethod: "โอนเงิน",
-      paymentStatus: "ชำระเงินแล้ว", orderStatus: "ยืนยันคำสั่งซื้อ", jobCreated: false,
-      totalPrice: 10700, subtotal: 10000, vatAmount: 700, totalWithVat: 10700, taxInvoice: true,
-      paidAmount: 10700
-    },
-    {
-      id: 2, jobId: "JOB-2024-002", orderDate: "2024-01-16", lineName: "shop_manager",
-      customerName: "สุดา เก่งมาก", product: "เหรียญรางวัล", productCategory: "สินค้าสั่งผลิต",
-      salesChannel: "ฟรีแลนซ์", deliveryDate: "2024-01-30", responsiblePerson: "นางสาวพิมพ์ใจ ดีเยี่ยม",
-      customerPhone: "089-876-5432", customerEmail: "suda@company.co.th",
-      customerAddress: "789 ถ.พระราม 9 แขวงห้วยขวาง เขตห้วยขวาง กรุงเทพฯ 10310",
-      productType: "Medal", material: "Zinc", size: "5 ซม.", quantity: 100, unitPrice: 150,
-      additionalDetails: "เหรียญสีทอง พิมพ์โลโก้บริษัท",
-      savedProducts: [
-        { productType: "เหรียญรางวัล", material: "สังกะสี", size: "5 ซม.", quantity: 100, unitPrice: 150 }
-      ],
-      taxCompanyName: "สุดา เก่งมาก", taxId: null,
-      deliveryMethod: "รับเอง", deliveryCost: 0, paymentMethod: "เงินสด",
-      paymentStatus: "รอชำระเงิน", orderStatus: "สร้างคำสั่งซื้อใหม่", jobCreated: false,
-      totalPrice: 16050, subtotal: 15000, vatAmount: 1050, totalWithVat: 16050, taxInvoice: false,
-      paidAmount: 0
-    },
-    {
-      id: 3, jobId: "JOB-2024-003", orderDate: "2024-01-17", lineName: "event_planner",
-      customerName: "อนันต์ ชาญฉลาด", product: "โล่รางวัล", productCategory: "สินค้าสั่งผลิต",
-      salesChannel: "ร้านค้าตัวแทน", deliveryDate: "2024-02-05", responsiblePerson: "นายวิชัย มั่นคง",
-      customerPhone: "062-345-6789", customerEmail: "anun@eventplanner.com",
-      customerAddress: "456/78 ถ.รัชดาภิเษก แขวงดินแดง เขตดินแดง กรุงเทพฯ 10400",
-      productType: "Shield", material: "Wood", size: "12 นิ้ว", quantity: 25, unitPrice: 1000,
-      additionalDetails: "โล่ไม้สักทอง สลักข้อความตามแบบที่ส่ง",
-      savedProducts: [
-        { productType: "โล่รางวัล", material: "ไม้สัก", size: "12 นิ้ว", quantity: 15, unitPrice: 1000 },
-        { productType: "โล่รางวัล", material: "ไม้สัก", size: "10 นิ้ว", quantity: 10, unitPrice: 800 }
-      ],
-      taxCompanyName: "ห้างหุ้นส่วนอนันต์", taxId: "9876543210987",
-      deliveryMethod: "ส่งพัสดุ", deliveryCost: 300, paymentMethod: "โอนเงิน",
-      paymentStatus: "เครดิต", orderStatus: "ยืนยันคำสั่งซื้อ", jobCreated: false,
-      totalPrice: 26750, subtotal: 25000, vatAmount: 1750, totalWithVat: 26750, taxInvoice: true,
-      paidAmount: 0
-    },
-    {
-      id: 4, jobId: "JOB-2024-004", orderDate: "2024-01-18", lineName: "gov_dept",
-      customerName: "กรมการปกครอง", product: "เหรียญที่ระลึก", productCategory: "สินค้าสั่งผลิต",
-      salesChannel: "ฝ่ายขาย", deliveryDate: "2024-02-15", responsiblePerson: "นายสมศักดิ์ รักงาน",
-      customerPhone: "02-123-4567", customerEmail: "procurement@dopa.go.th",
-      customerAddress: "ถ.นครสวรรค์ เขตดุสิต กรุงเทพฯ",
-      productType: "Medal", material: "Bronze", size: "6 ซม.", quantity: 500, unitPrice: 120,
-      additionalDetails: "เหรียญที่ระลึกงานครบรอบ",
-      savedProducts: [
-        { productType: "เหรียญที่ระลึก", material: "ทองแดง", size: "6 ซม.", quantity: 500, unitPrice: 120 }
-      ],
-      taxCompanyName: "กรมการปกครอง", taxId: "0994000123456",
-      deliveryMethod: "ส่งพัสดุ", deliveryCost: 500, paymentMethod: "วางบิล",
-      paymentStatus: "ชำระบางส่วน", orderStatus: "ส่งคำขอสั่งซื้อ", jobCreated: false,
-      totalPrice: 64200, subtotal: 60000, vatAmount: 4200, totalWithVat: 64200, taxInvoice: true,
-      paidAmount: 30000
-    },
-    {
-      id: 5, jobId: "JOB-2024-005", orderDate: "2024-01-19", lineName: "school_admin",
-      customerName: "โรงเรียนสาธิต มศว", product: "ถ้วยรางวัลกีฬาสี", productCategory: "สินค้าสำเร็จรูป",
-      salesChannel: "ลูกค้าสั่งเอง", deliveryDate: "2024-02-10", responsiblePerson: "นางสาวพิมพ์ใจ ดีเยี่ยม",
-      customerPhone: "02-987-6543", customerEmail: "sport@satit.swu.ac.th",
-      customerAddress: "114 สุขุมวิท 23 แขวงคลองเตยเหนือ เขตวัฒนา กรุงเทพฯ 10110",
-      productType: "Trophy", material: "Plastic Gold", size: "8 นิ้ว", quantity: 40, unitPrice: 180,
-      additionalDetails: "ถ้วยรางวัลกีฬาสี 4 สี พร้อมสลักชื่อกีฬา",
-      savedProducts: [
-        { productType: "ถ้วยรางวัล", material: "พลาสติกสีทอง", size: "8 นิ้ว", quantity: 40, unitPrice: 180 }
-      ],
-      taxCompanyName: "โรงเรียนสาธิต มศว", taxId: "0994000654321",
-      deliveryMethod: "ส่งพัสดุ", deliveryCost: 200, paymentMethod: "โอนเงิน",
-      paymentStatus: "ชำระเงินแล้ว", orderStatus: "สร้างงานแล้ว", jobCreated: true,
-      totalPrice: 7904, subtotal: 7200, vatAmount: 504, totalWithVat: 7704, taxInvoice: true,
-      paidAmount: 7904
-    },
-    {
-      id: 6, jobId: "JOB-2024-006", orderDate: "2024-01-20", lineName: "corp_hr",
-      customerName: "บริษัท ปูนซิเมนต์ไทย จำกัด", product: "โล่เกียรติคุณ", productCategory: "สินค้าสั่งผลิต",
-      salesChannel: "ฝ่ายขาย", deliveryDate: "2024-02-20", responsiblePerson: "นายวิชัย มั่นคง",
-      customerPhone: "02-586-1234", customerEmail: "hr@scg.com",
-      customerAddress: "1 ถ.ปูนซิเมนต์ไทย บางซื่อ กรุงเทพฯ 10800",
-      productType: "Shield", material: "Crystal", size: "14 นิ้ว", quantity: 10, unitPrice: 2500,
-      additionalDetails: "โล่คริสตัลพร้อมฐานไม้ สลักชื่อพนักงานดีเด่น",
-      savedProducts: [
-        { productType: "โล่เกียรติคุณ", material: "คริสตัล", size: "14 นิ้ว", quantity: 10, unitPrice: 2500 }
-      ],
-      taxCompanyName: "บริษัท ปูนซิเมนต์ไทย จำกัด (มหาชน)", taxId: "0107536000781",
-      deliveryMethod: "จัดส่งโดยพนักงาน", deliveryCost: 0, paymentMethod: "วางบิล",
-      paymentStatus: "ชำระเงินแล้ว", orderStatus: "สร้างงานแล้ว", jobCreated: true,
-      totalPrice: 26750, subtotal: 25000, vatAmount: 1750, totalWithVat: 26750, taxInvoice: true,
-      paidAmount: 26750
-    }
-  ];
-
   // --- Badge helpers ---
   const getOrderStatusBadge = (status: string) => {
     switch (status) {
@@ -671,7 +563,7 @@ export default function CreateOrder() {
     // If API has returned summary data, use it
     if (summary.totalRevenue > 0 || orders.length > 0) {
       // Use live data from API
-      const displayOrders = orders.length > 0 ? orders : mockOrders;
+      const displayOrders = orders;
       const statusCounts = {
         request: displayOrders.filter(o => o.orderStatus === "ส่งคำขอสั่งซื้อ").length,
         // For counting: Drafts should not have any payment status yet. If they do, they are practically confirmed.
@@ -722,8 +614,7 @@ export default function CreateOrder() {
     setCardFilter(null);
   };
 
-  // Use real API orders when available, fallback to mock
-  const displayOrders = orders.length > 0 ? orders : mockOrders;
+  const displayOrders = orders;
 
   const filteredOrders = useMemo(() => {
     return displayOrders.filter(order => {

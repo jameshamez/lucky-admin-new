@@ -37,13 +37,17 @@ if ($type === 'summary') {
     $row = $res->fetch_assoc();
     $data['monthlySales'] = (float) ($row['total'] ?? 0);
 
-    // 2. Stock Value (Using office_inventory as proxy for now if no production inventory table is visible)
-    // Actually, let's check for office supplies first
+    // 2. Stock Value (product/raw-material inventory value)
+    $res = $conn->query("SELECT SUM(current_stock * unit_price) as total FROM `production_inventory`");
+    $row = $res->fetch_assoc();
+    $data['stockValue'] = (float) ($row['total'] ?? 0);
+
+    // 3. Office Supplies Value
     $res = $conn->query("SELECT SUM(quantity * price_per_unit) as total FROM `accounting_office_supplies` ");
     $row = $res->fetch_assoc();
     $data['officeValue'] = (float) ($row['total'] ?? 0);
 
-    // 3. Petty Cash Spent
+    // 4. Petty Cash Spent
     $res = $conn->query("SELECT SUM(amount) as total FROM `accounting_petty_cash` WHERE status = 'PAID' AND MONTH(request_date) = MONTH(CURRENT_DATE())");
     $row = $res->fetch_assoc();
     $data['pettyCashSpent'] = (float) ($row['total'] ?? 0);

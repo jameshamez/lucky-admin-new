@@ -108,205 +108,78 @@ const PricingHistory = () => {
   const [endDate, setEndDate] = useState<Date | undefined>();
   const [selectedItem, setSelectedItem] = useState<HistoryItem | null>(null);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
+  const [historyData, setHistoryData] = useState<HistoryItem[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Mock history data - All medal production projects with extended details
-  const [historyData] = useState<HistoryItem[]>([
-    {
-      id: 1,
-      jobCode: "JOB-2023-045",
-      jobName: "เหรียญงานวิ่ง Chiang Mai Marathon 2023",
-      customerName: "สมาคมกีฬาจังหวัดเชียงใหม่",
-      factory: "china_bc",
-      factoryLabel: "China B&C",
-      productType: "เหรียญสั่งผลิต",
-      createdDate: "2023-10-15",
-      completedDate: "2023-11-20",
-      quantity: 8000,
-      totalCost: 320000,
-      totalSellingPrice: 480000,
-      profit: 160000,
-      status: "สำเร็จ",
-      salesPerson: "พนักงานขาย A",
-      material: "ซิงค์อัลลอย",
-      size: "5 ซม.",
-      thickness: "4 มิล",
-      colors: ["shinny gold (สีทองเงา)", "shinny silver (สีเงินเงา)", "shinny copper (สีทองแดงเงา)"],
-      frontDetails: "พิมพ์โลโก้, ลงสีสเปรย์, ลงน้ำยาป้องกันสนิม, ขัดเงา",
-      backDetails: "แกะสลักข้อความ, ปั๊มลาย",
-      lanyardSize: "90x2.5 ซม.",
-      lanyardPatterns: 3,
-      customerBudget: 60,
-      artworkImages: ["artwork_cm_marathon.jpg"],
-      designFiles: ["design_cm_marathon.ai"],
-      notes: "ต้องการส่งมอบก่อนวันงาน 7 วัน",
-      orderer: "จัดซื้อ สมชาย",
-      poNumber: "PO-2023-045",
-      shipDate: "2023-11-10",
-      splitQuantity: "2 ล็อต",
-      totalSales: 480000,
-      vat: 7,
-      shippingChannel: "SEA",
-      shippingCostRMB: 8500,
-      exchangeRate: 5.5,
-      shippingCostTHB: 46750,
-      qcStatus: {
-        artwork: { status: "approved", photo: "/qc/artwork.jpg", date: "2023-10-20" },
-        cnc: { status: "approved", photo: "/qc/cnc.jpg", date: "2023-10-25" },
-        lanyard: { status: "approved", photo: "/qc/lanyard.jpg", date: "2023-10-28" },
-        finalQc: { status: "approved", photo: "/qc/final.jpg", date: "2023-11-01" }
-      },
-      shippingStatus: {
-        factoryExport: { status: "completed", photo: "/ship/export.jpg", date: "2023-11-05" },
-        inTransit: { status: "completed", photo: "/ship/transit.jpg", date: "2023-11-08" },
-        customs: { status: "completed", photo: "/ship/customs.jpg", date: "2023-11-15" },
-        arrival: { status: "completed", photo: "/ship/arrival.jpg", date: "2023-11-18" }
-      },
-      logisticsStatus: {
-        warehouseToStore: { status: "completed", photo: "/log/warehouse.jpg", date: "2023-11-19" },
-        storeQc: { status: "completed", photo: "/log/storeqc.jpg", date: "2023-11-19" },
-        deliverySuccess: { status: "completed", photo: "/log/delivery.jpg", date: "2023-11-20", carrier: "Kerry Express", trackingNumber: "KRTH123456789" }
-      }
-    },
-    {
-      id: 2,
-      jobCode: "JOB-2023-052",
-      jobName: "เหรียญที่ระลึกงานประชุมผู้ถือหุ้น ปตท.",
-      customerName: "บริษัท ปตท. จำกัด (มหาชน)",
-      factory: "china_zj",
-      factoryLabel: "China ZJ",
-      productType: "เหรียญสั่งผลิต",
-      createdDate: "2023-11-01",
-      completedDate: "2023-11-25",
-      quantity: 2000,
-      totalCost: 90000,
-      totalSellingPrice: 140000,
-      profit: 50000,
-      status: "สำเร็จ",
-      salesPerson: "พนักงานขาย C",
-      material: "ซิงค์อัลลอย",
-      size: "6 ซม.",
-      thickness: "5 มิล",
-      colors: ["shinny gold (สีทองเงา)"],
-      frontDetails: "พิมพ์โลโก้, แกะสลักข้อความ, ขัดเงา",
-      backDetails: "พิมพ์โลโก้, แกะสลักข้อความ",
-      lanyardSize: "90x3 ซม.",
-      lanyardPatterns: 1,
-      customerBudget: 75,
-      artworkImages: ["artwork_ptt.jpg"],
-      designFiles: ["design_ptt.ai"],
-      notes: "ต้องมีกล่องใส่เหรียญด้วย",
-      orderer: "จัดซื้อ สมหญิง",
-      poNumber: "PO-2023-052",
-      shipDate: "2023-11-15",
-      totalSales: 140000,
-      vat: 7,
-      shippingChannel: "AIR",
-      shippingCostRMB: 3200,
-      exchangeRate: 5.5,
-      shippingCostTHB: 17600,
-      qcStatus: {
-        artwork: { status: "approved", photo: "/qc/artwork2.jpg", date: "2023-11-05" },
-        cnc: { status: "approved", photo: "/qc/cnc2.jpg", date: "2023-11-08" },
-        lanyard: { status: "approved", photo: "/qc/lanyard2.jpg", date: "2023-11-10" },
-        finalQc: { status: "approved", photo: "/qc/final2.jpg", date: "2023-11-12" }
-      },
-      shippingStatus: {
-        factoryExport: { status: "completed", date: "2023-11-15" },
-        inTransit: { status: "completed", date: "2023-11-17" },
-        customs: { status: "completed", date: "2023-11-20" },
-        arrival: { status: "completed", date: "2023-11-22" }
-      },
-      logisticsStatus: {
-        warehouseToStore: { status: "completed", date: "2023-11-23" },
-        storeQc: { status: "completed", date: "2023-11-24" },
-        deliverySuccess: { status: "completed", date: "2023-11-25", carrier: "Flash Express", trackingNumber: "TH99887766" }
-      }
-    },
-    {
-      id: 3,
-      jobCode: "JOB-2023-058",
-      jobName: "เหรียญรางวัลการแข่งขันกีฬาแห่งชาติ ครั้งที่ 48",
-      customerName: "การกีฬาแห่งประเทศไทย",
-      factory: "china_linda",
-      factoryLabel: "China LINDA",
-      productType: "เหรียญสั่งผลิต",
-      createdDate: "2023-09-10",
-      completedDate: "2023-10-28",
-      quantity: 5000,
-      totalCost: 225000,
-      totalSellingPrice: 350000,
-      profit: 125000,
-      status: "สำเร็จ",
-      salesPerson: "พนักงานขาย B",
-      material: "ซิงค์อัลลอย",
-      size: "7 ซม.",
-      thickness: "4 มิล",
-      colors: ["shinny gold (สีทองเงา)", "shinny silver (สีเงินเงา)"],
-      frontDetails: "พิมพ์โลโก้, ลงน้ำยาป้องกันสนิม, พิมพ์ซิลค์สกรีน, ขัดเงา, แกะลึก",
-      backDetails: "แกะสลักข้อความ, ปั๊มลาย",
-      lanyardSize: "90x2.5 ซม.",
-      lanyardPatterns: 2,
-      customerBudget: 70,
-      artworkImages: ["artwork_sat.jpg"],
-      designFiles: ["design_sat.ai"],
-      notes: "",
-      orderer: "จัดซื้อ สมชาย",
-      poNumber: "PO-2023-058",
-      shipDate: "2023-10-15",
-      totalSales: 350000,
-      vat: 7,
-      shippingChannel: "SEA",
-      shippingCostRMB: 6000,
-      exchangeRate: 5.5,
-      shippingCostTHB: 33000,
-      qcStatus: {
-        artwork: { status: "approved", date: "2023-09-20" },
-        cnc: { status: "approved", date: "2023-09-25" },
-        lanyard: { status: "approved", date: "2023-09-28" },
-        finalQc: { status: "approved", date: "2023-10-01" }
-      },
-      shippingStatus: {
-        factoryExport: { status: "completed", date: "2023-10-05" },
-        inTransit: { status: "completed", date: "2023-10-10" },
-        customs: { status: "completed", date: "2023-10-20" },
-        arrival: { status: "completed", date: "2023-10-25" }
-      },
-      logisticsStatus: {
-        warehouseToStore: { status: "completed", date: "2023-10-26" },
-        storeQc: { status: "completed", date: "2023-10-27" },
-        deliverySuccess: { status: "completed", date: "2023-10-28", carrier: "J&T Express", trackingNumber: "JNT123456" }
-      }
-    },
-    {
-      id: 6,
-      jobCode: "JOB-2023-075",
-      jobName: "เหรียญรางวัลงานวิ่งการกุศล Run for Dogs",
-      customerName: "มูลนิธิช่วยเหลือสัตว์",
-      factory: "china_xiaoli",
-      factoryLabel: "China Xiaoli",
-      productType: "เหรียญสั่งผลิต",
-      createdDate: "2023-11-15",
-      completedDate: "2023-12-05",
-      quantity: 3000,
-      totalCost: 105000,
-      totalSellingPrice: 150000,
-      profit: 45000,
-      status: "ยกเลิก",
-      salesPerson: "พนักงานขาย B",
-      material: "ซิงค์อัลลอย",
-      size: "5 ซม.",
-      thickness: "3 มิล",
-      colors: ["shinny gold (สีทองเงา)", "shinny silver (สีเงินเงา)"],
-      frontDetails: "พิมพ์โลโก้, ลงสีสเปรย์",
-      backDetails: "-",
-      lanyardSize: "90x2.5 ซม.",
-      lanyardPatterns: 1,
-      customerBudget: 50,
-      artworkImages: [],
-      designFiles: [],
-      notes: "ลูกค้ายกเลิกเนื่องจากงบไม่พอ"
-    }
-  ]);
+  useEffect(() => {
+    setLoading(true);
+    fetch("https://nacres.co.th/api-lucky/admin/price_estimations.php")
+      .then((res) => res.json())
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .then((json: any) => {
+        if (json.status !== "success" || !Array.isArray(json.data)) return;
+
+        const mapped: HistoryItem[] = json.data
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .map((item: any) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            let detailObj: any = {};
+            try {
+              detailObj = typeof item.details === "string" ? JSON.parse(item.details) : (item.details || {});
+            } catch {
+              detailObj = {};
+            }
+
+            const rawStatus = String(item.status || "").trim();
+            let status: HistoryStatus | null = null;
+            if (rawStatus === "ยืนยันเรียบร้อย" || rawStatus === "รายการสั่งผลิต" || rawStatus === "4" || rawStatus === "5") {
+              status = "สำเร็จ";
+            } else if (rawStatus === "ยกเลิก" || rawStatus === "6") {
+              status = "ยกเลิก";
+            }
+            if (!status) return null;
+
+            const factoryValue = detailObj?.winnerFactoryValue || item.factory || "";
+            const colors: string[] = Array.isArray(detailObj?.colors)
+              ? detailObj.colors
+              : (detailObj?.colors ? [detailObj.colors] : []);
+
+            return {
+              id: Number(item.id),
+              jobCode: item.estimate_id || `JOB-${item.id}`,
+              jobName: item.job_name || detailObj?.jobName || "-",
+              customerName: item.customer_name || "-",
+              factory: factoryValue,
+              factoryLabel: factories.find((f) => f.value === factoryValue)?.label || factoryValue || "-",
+              productType: item.product_type || detailObj?.productType || "-",
+              createdDate: item.estimation_date || "-",
+              completedDate: item.updated_at || item.estimation_date || "-",
+              quantity: Number(item.quantity) || 0,
+              totalCost: Number(detailObj?.totalCost) || 0,
+              totalSellingPrice: Number(item.price) || 0,
+              profit: Number(detailObj?.profit) || 0,
+              status,
+              salesPerson: item.sales_owner_id || "-",
+              material: detailObj?.material || "-",
+              size: detailObj?.size || "-",
+              thickness: detailObj?.thickness || "-",
+              colors,
+              frontDetails: Array.isArray(detailObj?.frontDetails) ? detailObj.frontDetails.join(", ") : (detailObj?.frontDetails || "-"),
+              backDetails: Array.isArray(detailObj?.backDetails) ? detailObj.backDetails.join(", ") : (detailObj?.backDetails || "-"),
+              lanyardSize: Array.isArray(detailObj?.lanyardSize) ? detailObj.lanyardSize.join(", ") : (detailObj?.lanyardSize || "-"),
+              lanyardPatterns: parseInt(detailObj?.lanyardPatterns) || 0,
+              customerBudget: Number(item.budget) || 0,
+              artworkImages: Array.isArray(detailObj?.artworkImages) ? detailObj.artworkImages : [],
+              designFiles: Array.isArray(detailObj?.designFiles) ? detailObj.designFiles : [],
+              notes: item.notes || "-",
+            } as HistoryItem;
+          })
+          .filter((item: HistoryItem | null): item is HistoryItem => item !== null);
+
+        setHistoryData(mapped);
+      })
+      .finally(() => setLoading(false));
+  }, []);
 
   // Filter logic
   const filteredData = historyData.filter(item => {
@@ -527,7 +400,11 @@ const PricingHistory = () => {
           <CardTitle>รายการทั้งหมด ({filteredData.length})</CardTitle>
         </CardHeader>
         <CardContent>
-          {filteredData.length === 0 ? (
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+              <p className="text-sm">กำลังโหลดข้อมูล...</p>
+            </div>
+          ) : filteredData.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
               <Inbox className="h-16 w-16 mb-4 text-muted-foreground/50" />
               <h3 className="text-lg font-medium mb-2">ไม่พบรายการ</h3>

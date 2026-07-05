@@ -54,16 +54,21 @@ if ($method === 'GET') {
     // For now, we fetch suppliers and link them to orders if possible. 
     // Since the link might be in 'details' or not yet explicit, we provide a placeholder structure 
     // but with real supplier names.
+    // NOTE: there is no table linking a quotation/order line item to a specific
+    // factory + product category, so per-factory quoted/ordered/po breakdown
+    // cannot be computed for real yet. Return real factory names with zeroed
+    // counts instead of the random placeholder numbers this used to show.
     $factorySummary = [];
     $suppliers_res = $conn->query("SELECT * FROM procurement_suppliers");
+    $zero = ["quoted" => 0, "ordered" => 0, "po" => 0];
     while ($s = $suppliers_res->fetch_assoc()) {
         $factorySummary[] = [
             "factory" => $s['name'],
-            "medal" => ["quoted" => rand(5, 20), "ordered" => rand(2, 10), "po" => rand(1, 8)],
-            "trophy" => ["quoted" => rand(2, 10), "ordered" => rand(1, 5), "po" => rand(1, 4)],
-            "award" => ["quoted" => rand(1, 8), "ordered" => rand(1, 4), "po" => rand(1, 3)],
-            "shirt" => ["quoted" => rand(0, 5), "ordered" => rand(0, 3), "po" => rand(0, 2)],
-            "other" => ["quoted" => rand(0, 3), "ordered" => rand(0, 2), "po" => rand(0, 1)]
+            "medal" => $zero,
+            "trophy" => $zero,
+            "award" => $zero,
+            "shirt" => $zero,
+            "other" => $zero
         ];
     }
 
@@ -91,9 +96,9 @@ if ($method === 'GET') {
 
         $comparisonData[] = [
             "name" => $c_name,
-            "quoted" => $quoted > 0 ? $quoted : rand(10, 50), // Fallback to avoid empty charts in demo
-            "ordered" => $ordered > 0 ? $ordered : rand(5, 30),
-            "rate" => $rate > 0 ? $rate : rand(60, 90)
+            "quoted" => $quoted,
+            "ordered" => $ordered,
+            "rate" => $rate
         ];
     }
 

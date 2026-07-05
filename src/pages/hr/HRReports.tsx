@@ -4,8 +4,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { BarChart3, Award, Users, DollarSign, Settings2, TrendingUp } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { defaultEmployees, type Employee, type EmployeeRole, type EmployeeStatus } from "@/lib/employeeData";
-import { mockTransactions, monthLabels, type CommissionTransaction } from "@/components/hr-reports/reportMockData";
+import { type Employee, type EmployeeRole, type EmployeeStatus } from "@/lib/employeeData";
+import { monthLabels, type CommissionTransaction } from "@/components/hr-reports/reportMockData";
 import GrandOverviewTab from "@/components/hr-reports/GrandOverviewTab";
 import KPIPerformanceTab from "@/components/hr-reports/KPIPerformanceTab";
 import HRTurnoverTab from "@/components/hr-reports/HRTurnoverTab";
@@ -169,7 +169,7 @@ export default function HRReports() {
           <TabsContent value="transactions">
             <TransactionManagementTab
               transactions={transactions}
-              onTransactionsChange={setTransactions}
+              onRefetch={loadData}
               employees={employees}
               selectedMonth={selectedMonth}
             />

@@ -49,9 +49,9 @@ export default function ReportsMain() {
       color: "text-purple-600",
     },
     {
-      title: "มูลค่าแอปเปิ้ล (Mock)",
-      value: "฿5,800,000",
-      change: "+5%",
+      title: "มูลค่าสต๊อกสินค้า",
+      value: data ? `฿${data.stockValue.toLocaleString()}` : "฿0",
+      change: data?.stockChange || "+0%",
       icon: Package,
       color: "text-blue-600",
     },

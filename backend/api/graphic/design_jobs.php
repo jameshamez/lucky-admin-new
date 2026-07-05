@@ -77,6 +77,19 @@ CREATE TABLE IF NOT EXISTS design_jobs (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ");
 
+// Add customer_id (FK to customers, nullable) if it doesn't exist yet, then backfill
+// existing rows from the originating order (design_jobs.job_code = orders.job_id)
+$colCheck = $conn->query("SHOW COLUMNS FROM design_jobs LIKE 'customer_id'");
+if ($colCheck && $colCheck->num_rows == 0) {
+    $conn->query("ALTER TABLE design_jobs ADD COLUMN customer_id INT DEFAULT NULL AFTER client_name");
+}
+$conn->query("
+    UPDATE design_jobs dj
+    JOIN orders o ON o.job_id = dj.job_code
+    SET dj.customer_id = o.customer_id
+    WHERE dj.customer_id IS NULL AND o.customer_id IS NOT NULL
+");
+
 $conn->query("
 CREATE TABLE IF NOT EXISTS design_job_logs (
     id          INT AUTO_INCREMENT PRIMARY KEY,
@@ -279,7 +292,7 @@ function formatDesignJobRow(array $row): array
 if ($method === 'GET') {
     if ($id) {
         // Single job
-        $stmt = $conn->prepare("SELECT dj.id, dj.job_code, dj.client_name, dj.job_type, dj.description, dj.urgency, dj.priority, dj.designer, dj.ordered_by, dj.quotation_no, dj.status, dj.progress, dj.google_drive_link, dj.layout_image, dj.artwork_image, dj.artwork_status, dj.production_artwork, dj.ai_file, dj.due_date, dj.order_date, dj.assigned_at, dj.started_at, dj.finish_date, dj.revision_rounds, dj.qc_pass, dj.feedback, dj.internal_notes, dj.specs, dj.medal_size, dj.medal_thickness, dj.medal_colors, dj.medal_front_details, dj.medal_back_details, dj.lanyard_size, dj.lanyard_patterns, dj.quantity, dj.created_at, dj.updated_at,
+        $stmt = $conn->prepare("SELECT dj.id, dj.job_code, dj.client_name, dj.customer_id, dj.job_type, dj.description, dj.urgency, dj.priority, dj.designer, dj.ordered_by, dj.quotation_no, dj.status, dj.progress, dj.google_drive_link, dj.layout_image, dj.artwork_image, dj.artwork_status, dj.production_artwork, dj.ai_file, dj.due_date, dj.order_date, dj.assigned_at, dj.started_at, dj.finish_date, dj.revision_rounds, dj.qc_pass, dj.feedback, dj.internal_notes, dj.specs, dj.medal_size, dj.medal_thickness, dj.medal_colors, dj.medal_front_details, dj.medal_back_details, dj.lanyard_size, dj.lanyard_patterns, dj.quantity, dj.created_at, dj.updated_at,
             pes.product_type AS sales_product_type, pes.product_category AS sales_product_category, pes.details AS sales_details_json,
             o.product_category AS order_product_category, o.product_type AS order_product_type
             FROM design_jobs dj
@@ -302,15 +315,16 @@ if ($method === 'GET') {
     // --- Auto-sync Missing Sales Orders ---
     // Safely pull any orders that have the "ฝ่ายกราฟฟิก" department but aren't in design_jobs yet
     $sync_sql = "
-        INSERT IGNORE INTO design_jobs (job_code, client_name, job_type, urgency, status, ordered_by, due_date, order_date)
-        SELECT 
-            job_id, 
-            COALESCE(NULLIF(customer_name, ''), 'ไม่ระบุชื่อ'), 
-            COALESCE(NULLIF(job_name, ''), 'ทั่วไป'), 
-            'ปกติ', 
-            'รอรับงาน', 
-            responsible_person, 
-            COALESCE(NULLIF(delivery_date, ''), CURDATE()), 
+        INSERT IGNORE INTO design_jobs (job_code, client_name, customer_id, job_type, urgency, status, ordered_by, due_date, order_date)
+        SELECT
+            job_id,
+            COALESCE(NULLIF(customer_name, ''), 'ไม่ระบุชื่อ'),
+            customer_id,
+            COALESCE(NULLIF(job_name, ''), 'ทั่วไป'),
+            'ปกติ',
+            'รอรับงาน',
+            responsible_person,
+            COALESCE(NULLIF(delivery_date, ''), CURDATE()),
             COALESCE(NULLIF(order_date, ''), CURDATE())
         FROM orders
         WHERE departments LIKE '%ฝ่ายกราฟฟิก%'
@@ -398,7 +412,7 @@ if ($method === 'GET') {
     }
 
     // Data
-    $sql = "SELECT dj.id, dj.job_code, dj.client_name, dj.job_type, dj.description, dj.urgency, dj.priority, dj.designer, dj.ordered_by, dj.quotation_no, dj.status, dj.progress, dj.google_drive_link, dj.layout_image, dj.artwork_image, dj.artwork_status, dj.production_artwork, dj.ai_file, dj.due_date, dj.order_date, dj.assigned_at, dj.started_at, dj.finish_date, dj.revision_rounds, dj.qc_pass, dj.feedback, dj.internal_notes, dj.specs, dj.medal_size, dj.medal_thickness, dj.medal_colors, dj.medal_front_details, dj.medal_back_details, dj.lanyard_size, dj.lanyard_patterns, dj.quantity, dj.created_at, dj.updated_at,
+    $sql = "SELECT dj.id, dj.job_code, dj.client_name, dj.customer_id, dj.job_type, dj.description, dj.urgency, dj.priority, dj.designer, dj.ordered_by, dj.quotation_no, dj.status, dj.progress, dj.google_drive_link, dj.layout_image, dj.artwork_image, dj.artwork_status, dj.production_artwork, dj.ai_file, dj.due_date, dj.order_date, dj.assigned_at, dj.started_at, dj.finish_date, dj.revision_rounds, dj.qc_pass, dj.feedback, dj.internal_notes, dj.specs, dj.medal_size, dj.medal_thickness, dj.medal_colors, dj.medal_front_details, dj.medal_back_details, dj.lanyard_size, dj.lanyard_patterns, dj.quantity, dj.created_at, dj.updated_at,
             pes.product_type AS sales_product_type, pes.product_category AS sales_product_category, pes.details AS sales_details_json,
             o.product_category AS order_product_category, o.product_type AS order_product_type
         FROM design_jobs dj

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -26,86 +26,68 @@ import {
   Truck,
   ChevronRight
 } from "lucide-react";
+import { productionService } from "@/services/productionService";
+import { toast } from "sonner";
 
-// Mock data for production jobs
-const productionJobs = [
-  {
-    id: "JOB-001",
-    jobType: "งานตะกร้าของขวัญ",
-    product: "ตะกร้าผลไม้พรีเมียม",
-    quantity: 10,
-    status: "กำลังจัดหา",
-    procurementDate: "",
-    procurementEmployee: "",
-    assemblyDate: "",
-    assemblyEmployee: "",
-    signageDate: "",
-    signageEmployee: "",
-    ribbonDate: "",
-    ribbonEmployee: "",
-    ribbonImage: "",
-    packingDate: "",
-    packingEmployee: "",
-    boxCount: 0,
-    shippingCostOrigin: 0,
-    shippingCostDestination: 0,
-    actualShippingCost: 0,
-    packingImage: "",
-    paymentSlipImage: ""
-  },
-  {
-    id: "JOB-002",
-    jobType: "งานกระเช้าของขวัญ",
-    product: "กระเช้าปีใหม่",
-    quantity: 5,
-    status: "กำลังประกอบ",
-    procurementDate: "2024-01-15",
-    procurementEmployee: "สมชาย ใจดี",
-    assemblyDate: "",
-    assemblyEmployee: "",
-    signageDate: "",
-    signageEmployee: "",
-    ribbonDate: "",
-    ribbonEmployee: "",
-    ribbonImage: "",
-    packingDate: "",
-    packingEmployee: "",
-    boxCount: 0,
-    shippingCostOrigin: 0,
-    shippingCostDestination: 0,
-    actualShippingCost: 0,
-    packingImage: "",
-    paymentSlipImage: ""
-  },
-  {
-    id: "JOB-003",
-    jobType: "งานของชำร่วย",
-    product: "ของชำร่วยงานแต่ง",
-    quantity: 100,
-    status: "ผูกโบว์",
-    procurementDate: "2024-01-10",
-    procurementEmployee: "สมหญิง รักงาน",
-    assemblyDate: "2024-01-12",
-    assemblyEmployee: "วิชัย ขยัน",
-    signageDate: "2024-01-14",
-    signageEmployee: "นภา สวยงาม",
-    ribbonDate: "",
-    ribbonEmployee: "",
-    ribbonImage: "",
-    packingDate: "",
-    packingEmployee: "",
-    boxCount: 0,
-    shippingCostOrigin: 0,
-    shippingCostDestination: 0,
-    actualShippingCost: 0,
-    packingImage: "",
-    paymentSlipImage: ""
-  }
-];
+interface EmployeeTaskStepData {
+  procurementDate?: string;
+  procurementEmployee?: string;
+  assemblyDate?: string;
+  assemblyEmployee?: string;
+  signageDate?: string;
+  signageEmployee?: string;
+  ribbonDate?: string;
+  ribbonEmployee?: string;
+  ribbonImage?: string;
+  packingDate?: string;
+  packingEmployee?: string;
+  boxCount?: number;
+  shippingCostOrigin?: number;
+  shippingCostDestination?: number;
+  actualShippingCost?: number;
+  packingImage?: string;
+  paymentSlipImage?: string;
+}
+
+interface ProductionJob {
+  id: string;
+  dbId: number | string;
+  jobType: string;
+  product: string;
+  quantity: number;
+  productionWorkflow: Record<string, unknown> | null;
+  taskDetails: EmployeeTaskStepData;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mapProductionJob = (o: any): ProductionJob => ({
+  id: o.job_id || "-",
+  dbId: o.order_id,
+  jobType: o.product_category || o.product_type || "-",
+  product: o.job_name || "-",
+  quantity: Number(o.total_quantity) || 0,
+  productionWorkflow: o.production_workflow || null,
+  taskDetails: (o.production_workflow?.employeeTaskDetails || {}) as EmployeeTaskStepData,
+});
+
+const uploadTaskFile = async (file: File): Promise<string | null> => {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("category", "general");
+  const res = await fetch("https://nacres.co.th/api-lucky/admin/order_upload.php", {
+    method: "POST",
+    body: formData,
+  });
+  const json = await res.json();
+  return json.status === "success" ? json.data?.fileUrl || null : null;
+};
 
 export default function EmployeeTaskDetails() {
+  const [productionJobs, setProductionJobs] = useState<ProductionJob[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
-  const [selectedJob, setSelectedJob] = useState<any>(null);
+  const [selectedJob, setSelectedJob] = useState<ProductionJob | null>(null);
   const [formData, setFormData] = useState({
     procurementDate: "",
     procurementEmployee: "",
@@ -126,24 +108,39 @@ export default function EmployeeTaskDetails() {
     paymentSlipImage: null as File | null
   });
 
-  const handleUpdateClick = (job: any) => {
+  useEffect(() => {
+    setLoading(true);
+    productionService
+      .getOrders({ order_status: "สร้างงานแล้ว" })
+      .then((res) => {
+        const dataArr = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+        if (res.status === "success" && Array.isArray(dataArr)) {
+          setProductionJobs(dataArr.map(mapProductionJob));
+        }
+      })
+      .catch(() => toast.error("ไม่สามารถโหลดข้อมูลงานได้"))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleUpdateClick = (job: ProductionJob) => {
     setSelectedJob(job);
+    const t = job.taskDetails;
     setFormData({
-      procurementDate: job.procurementDate || "",
-      procurementEmployee: job.procurementEmployee || "",
-      assemblyDate: job.assemblyDate || "",
-      assemblyEmployee: job.assemblyEmployee || "",
-      signageDate: job.signageDate || "",
-      signageEmployee: job.signageEmployee || "",
-      ribbonDate: job.ribbonDate || "",
-      ribbonEmployee: job.ribbonEmployee || "",
+      procurementDate: t.procurementDate || "",
+      procurementEmployee: t.procurementEmployee || "",
+      assemblyDate: t.assemblyDate || "",
+      assemblyEmployee: t.assemblyEmployee || "",
+      signageDate: t.signageDate || "",
+      signageEmployee: t.signageEmployee || "",
+      ribbonDate: t.ribbonDate || "",
+      ribbonEmployee: t.ribbonEmployee || "",
       ribbonImage: null,
-      packingDate: job.packingDate || "",
-      packingEmployee: job.packingEmployee || "",
-      boxCount: job.boxCount || 0,
-      shippingCostOrigin: job.shippingCostOrigin || 0,
-      shippingCostDestination: job.shippingCostDestination || 0,
-      actualShippingCost: job.actualShippingCost || 0,
+      packingDate: t.packingDate || "",
+      packingEmployee: t.packingEmployee || "",
+      boxCount: t.boxCount || 0,
+      shippingCostOrigin: t.shippingCostOrigin || 0,
+      shippingCostDestination: t.shippingCostDestination || 0,
+      actualShippingCost: t.actualShippingCost || 0,
       packingImage: null,
       paymentSlipImage: null
     });
@@ -157,9 +154,49 @@ export default function EmployeeTaskDetails() {
     }
   };
 
-  const handleSave = () => {
-    console.log("Saving update for job:", selectedJob?.id, formData);
-    setIsUpdateDialogOpen(false);
+  const handleSave = async () => {
+    if (!selectedJob) return;
+    setIsSaving(true);
+    try {
+      const [ribbonImageUrl, packingImageUrl, paymentSlipImageUrl] = await Promise.all([
+        formData.ribbonImage ? uploadTaskFile(formData.ribbonImage) : Promise.resolve(selectedJob.taskDetails.ribbonImage || undefined),
+        formData.packingImage ? uploadTaskFile(formData.packingImage) : Promise.resolve(selectedJob.taskDetails.packingImage || undefined),
+        formData.paymentSlipImage ? uploadTaskFile(formData.paymentSlipImage) : Promise.resolve(selectedJob.taskDetails.paymentSlipImage || undefined),
+      ]);
+
+      const updatedTaskDetails: EmployeeTaskStepData = {
+        procurementDate: formData.procurementDate,
+        procurementEmployee: formData.procurementEmployee,
+        assemblyDate: formData.assemblyDate,
+        assemblyEmployee: formData.assemblyEmployee,
+        signageDate: formData.signageDate,
+        signageEmployee: formData.signageEmployee,
+        ribbonDate: formData.ribbonDate,
+        ribbonEmployee: formData.ribbonEmployee,
+        ribbonImage: ribbonImageUrl || undefined,
+        packingDate: formData.packingDate,
+        packingEmployee: formData.packingEmployee,
+        boxCount: formData.boxCount,
+        shippingCostOrigin: formData.shippingCostOrigin,
+        shippingCostDestination: formData.shippingCostDestination,
+        actualShippingCost: formData.actualShippingCost,
+        packingImage: packingImageUrl || undefined,
+        paymentSlipImage: paymentSlipImageUrl || undefined,
+      };
+
+      const updatedWorkflow = { ...(selectedJob.productionWorkflow || {}), employeeTaskDetails: updatedTaskDetails };
+      await productionService.updateProductionWorkflow(selectedJob.dbId, updatedWorkflow);
+
+      setProductionJobs(prev => prev.map(job =>
+        job.dbId === selectedJob.dbId ? { ...job, productionWorkflow: updatedWorkflow, taskDetails: updatedTaskDetails } : job
+      ));
+      toast.success("บันทึกข้อมูลงานสำเร็จ");
+      setIsUpdateDialogOpen(false);
+    } catch {
+      toast.error("บันทึกข้อมูลไม่สำเร็จ กรุณาลองใหม่");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -186,7 +223,20 @@ export default function EmployeeTaskDetails() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {productionJobs.map((job) => (
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                    กำลังโหลดข้อมูล...
+                  </TableCell>
+                </TableRow>
+              ) : productionJobs.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                    ไม่มีงานที่กำลังดำเนินการ
+                  </TableCell>
+                </TableRow>
+              ) : (
+              productionJobs.map((job) => (
                 <TableRow key={job.id}>
                   <TableCell className="font-medium">{job.jobType}</TableCell>
                   <TableCell>{job.product}</TableCell>
@@ -203,7 +253,8 @@ export default function EmployeeTaskDetails() {
                     </Button>
                   </TableCell>
                 </TableRow>
-              ))}
+              ))
+              )}
             </TableBody>
           </Table>
         </CardContent>
@@ -436,11 +487,11 @@ export default function EmployeeTaskDetails() {
           </div>
 
           <div className="flex justify-end gap-3">
-            <Button variant="outline" onClick={() => setIsUpdateDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setIsUpdateDialogOpen(false)} disabled={isSaving}>
               ยกเลิก
             </Button>
-            <Button onClick={handleSave}>
-              บันทึก
+            <Button onClick={handleSave} disabled={isSaving}>
+              {isSaving ? "กำลังบันทึก..." : "บันทึก"}
             </Button>
           </div>
         </DialogContent>

@@ -27,7 +27,7 @@ import {
   calculateMadeToOrderCommission,
   type MadeToOrderConfig,
 } from "@/lib/commissionConfig";
-import { defaultEmployees, getSaleEmployees, type Employee, type EmployeeRole, type EmployeeStatus } from "@/lib/employeeData";
+import { getSaleEmployees, type Employee, type EmployeeRole, type EmployeeStatus } from "@/lib/employeeData";
 import { hrService } from "@/services/hrService";
 import { Loader2 } from "lucide-react";
 

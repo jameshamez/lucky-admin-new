@@ -27,6 +27,7 @@ import * as XLSX from "xlsx";
 import DefectiveItemsTab from "@/components/production/DefectiveItemsTab";
 import ExcelImportDialog, { type ImportRow } from "@/components/procurement/ExcelImportDialog";
 import { toast } from "sonner";
+import { productionService } from "@/services/productionService";
 
 // --- Types ---
 interface PriceEntry {
@@ -532,6 +533,20 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
       .catch(() => setApiError("เชื่อมต่อ API ไม่ได้"))
       .finally(() => setApiLoading(false));
   }, []);
+
+  const [inventoryReportStats, setInventoryReportStats] = useState({ defective: 0, todayMovements: 0 });
+  useEffect(() => {
+    productionService.getReportsData().then((res: any) => {
+      if (res?.status !== "success" || !res.data) return;
+      const defective = (res.data.defectAnalysis || []).reduce((sum: number, d: any) => sum + (d.count || 0), 0);
+      const now = new Date();
+      const todayKey = `${String(now.getDate()).padStart(2, "0")}/${String(now.getMonth() + 1).padStart(2, "0")}`;
+      const todayEntry = (res.data.inventoryMovements || []).find((m: any) => m.date === todayKey);
+      const todayMovements = todayEntry ? (todayEntry.stockIn || 0) + (todayEntry.stockOut || 0) : 0;
+      setInventoryReportStats({ defective, todayMovements });
+    }).catch(() => { /* keep defaults */ });
+  }, []);
+
   const [searchTerm, setSearchTerm] = useState("");
   const [viewMode, setViewMode] = useState<"card" | "table">("card");
   const [selectedCategory, setSelectedCategory] = useState("all");
@@ -1359,10 +1374,8 @@ export default function ProductInventory({ isSalesMode = false, isProcurementMod
     const inStock = products.filter(p => p.currentStock >= 10).length;
     const lowStock = products.filter(p => p.currentStock > 0 && p.currentStock < 10).length;
     const outOfStock = products.filter(p => p.currentStock === 0).length;
-    const defective = 0; // mock defective count
-    const todayMovements = 0; // mock today's movements
-    return { total, inStock, lowStock, outOfStock, defective, todayMovements };
-  }, [products]);
+    return { total, inStock, lowStock, outOfStock, ...inventoryReportStats };
+  }, [products, inventoryReportStats]);
 
   const filteredItems = useMemo(() => {
     return products.filter((item) => {

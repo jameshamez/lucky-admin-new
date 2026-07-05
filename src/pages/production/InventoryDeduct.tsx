@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -25,63 +25,51 @@ import {
   CheckCircle2
 } from "lucide-react";
 import { toast } from "sonner";
+import { productionService } from "@/services/productionService";
 
-// Mock data for completed orders
-const completedOrders = [
-  {
-    id: "ORD-001",
-    orderNumber: "SO-2024-001",
-    customerName: "บริษัท ABC จำกัด",
-    product: "ตะกร้าผลไม้พรีเมียม",
-    quantity: 10,
-    completedDate: "2024-01-20",
-    stockDeducted: false
-  },
-  {
-    id: "ORD-002",
-    orderNumber: "SO-2024-002",
-    customerName: "บริษัท XYZ จำกัด",
-    product: "กระเช้าปีใหม่",
-    quantity: 5,
-    completedDate: "2024-01-21",
-    stockDeducted: false
-  },
-  {
-    id: "ORD-003",
-    orderNumber: "SO-2024-003",
-    customerName: "คุณสมชาย ใจดี",
-    product: "ของชำร่วยงานแต่ง",
-    quantity: 100,
-    completedDate: "2024-01-22",
-    stockDeducted: true
-  },
-  {
-    id: "ORD-004",
-    orderNumber: "SO-2024-004",
-    customerName: "บริษัท DEF จำกัด",
-    product: "ตะกร้าของขวัญปีใหม่",
-    quantity: 15,
-    completedDate: "2024-01-23",
-    stockDeducted: false
-  },
-  {
-    id: "ORD-005",
-    orderNumber: "SO-2024-005",
-    customerName: "คุณสมหญิง รักงาน",
-    product: "กระเช้าผลไม้สด",
-    quantity: 8,
-    completedDate: "2024-01-24",
-    stockDeducted: false
-  }
-];
+interface CompletedOrder {
+  id: number | string;
+  orderNumber: string;
+  customerName: string;
+  product: string;
+  quantity: number;
+  completedDate: string;
+  stockDeducted: boolean;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mapCompletedOrder = (o: any): CompletedOrder => ({
+  id: o.order_id,
+  orderNumber: o.job_id || "-",
+  customerName: o.customer_name || "-",
+  product: o.job_name || "-",
+  quantity: Number(o.total_quantity) || 0,
+  completedDate: (o.delivery_date || o.order_date || "").split(" ")[0] || "-",
+  stockDeducted: false,
+});
 
 export default function InventoryDeduct() {
-  const [orders, setOrders] = useState(completedOrders);
+  const [orders, setOrders] = useState<CompletedOrder[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
-  const [selectedOrder, setSelectedOrder] = useState<any>(null);
+  const [selectedOrder, setSelectedOrder] = useState<CompletedOrder | null>(null);
   const [productSearch, setProductSearch] = useState("");
   const [deductQuantity, setDeductQuantity] = useState("");
+
+  useEffect(() => {
+    setLoading(true);
+    productionService
+      .getOrders({ order_status: "สร้างงานแล้ว" })
+      .then((res) => {
+        const dataArr = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+        if (res.status === "success" && Array.isArray(dataArr)) {
+          setOrders(dataArr.map(mapCompletedOrder));
+        }
+      })
+      .catch(() => toast.error("ไม่สามารถโหลดข้อมูลออเดอร์ได้"))
+      .finally(() => setLoading(false));
+  }, []);
 
   const filteredOrders = orders.filter(order => 
     order.orderNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -89,7 +77,7 @@ export default function InventoryDeduct() {
     order.product.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleDeductClick = (order: any) => {
+  const handleDeductClick = (order: CompletedOrder) => {
     setSelectedOrder(order);
     setProductSearch("");
     setDeductQuantity(order.quantity.toString());
@@ -159,7 +147,13 @@ export default function InventoryDeduct() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredOrders.length === 0 ? (
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                    กำลังโหลดข้อมูล...
+                  </TableCell>
+                </TableRow>
+              ) : filteredOrders.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                     ไม่พบข้อมูลออเดอร์

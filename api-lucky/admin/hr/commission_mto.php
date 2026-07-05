@@ -111,8 +111,8 @@ if ($method === 'GET') {
         $period = $conn->real_escape_string($input['commissionPeriod']);
         $processedAt = date('Y-m-d H:i:s');
 
-        // If we want to recalculate on backend, we'd need config here. 
-        // But the frontend already calculates it. Let's trust frontend calculations if provided, 
+        // If we want to recalculate on backend, we'd need config here.
+        // But the frontend already calculates it. Let's trust frontend calculations if provided,
         // or just update status and trust what's already in the row.
 
         $successCount = 0;
@@ -124,25 +124,52 @@ if ($method === 'GET') {
                 $tier = $conn->real_escape_string($u['tierCondition']);
                 $amt = floatval($u['commissionAmount']);
                 $desc = $conn->real_escape_string($u['calcDescription']);
-                $sql = "UPDATE hr_commission_mto SET 
-                        tier_condition='$tier', 
-                        commission_amount=$amt, 
-                        calc_description='$desc', 
-                        commission_status='COMPLETED', 
-                        processed_at='$processedAt', 
-                        commission_period='$period' 
+                $sql = "UPDATE hr_commission_mto SET
+                        tier_condition='$tier',
+                        commission_amount=$amt,
+                        calc_description='$desc',
+                        commission_status='COMPLETED',
+                        processed_at='$processedAt',
+                        commission_period='$period'
                         WHERE id=$id";
             } else {
-                $sql = "UPDATE hr_commission_mto SET 
-                        commission_status='COMPLETED', 
-                        processed_at='$processedAt', 
-                        commission_period='$period' 
+                $sql = "UPDATE hr_commission_mto SET
+                        commission_status='COMPLETED',
+                        processed_at='$processedAt',
+                        commission_period='$period'
                         WHERE id=$id";
             }
             if ($conn->query($sql))
                 $successCount++;
         }
         echo json_encode(["status" => "success", "updated" => $successCount]);
+    } elseif ($action === 'update') {
+        // Update editable fields of a single record (used by the transaction management UI)
+        $id = intval($ids[0]);
+        $deliveryDate = $conn->real_escape_string($input['deliveryDate']);
+        $poNumber = $conn->real_escape_string($input['poNumber']);
+        $jobName = $conn->real_escape_string($input['jobName']);
+        $productCategory = $conn->real_escape_string($input['productCategory']);
+        $saleName = $conn->real_escape_string($input['saleName']);
+        $quantity = intval($input['quantity']);
+        $totalSalesAmount = floatval($input['totalSalesAmount']);
+        $commissionAmount = floatval($input['commissionAmount'] ?? 0);
+
+        $sql = "UPDATE hr_commission_mto SET
+                delivery_date='$deliveryDate',
+                po_number='$poNumber',
+                job_name='$jobName',
+                product_category='$productCategory',
+                sale_name='$saleName',
+                quantity=$quantity,
+                total_sales_amount=$totalSalesAmount,
+                commission_amount=$commissionAmount
+                WHERE id=$id";
+        if ($conn->query($sql)) {
+            echo json_encode(["status" => "success"]);
+        } else {
+            echo json_encode(["status" => "error", "message" => $conn->error]);
+        }
     }
 } elseif ($method === 'DELETE') {
     $id = intval($_GET['id']);

@@ -22,63 +22,62 @@ interface QuotationHistoryItem {
   jobCode: string;
 }
 
+const API_BASE = "https://nacres.co.th/api-lucky/admin";
+
 const QuotationHistory = () => {
   const [history, setHistory] = useState<QuotationHistoryItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [selectedQuotation, setSelectedQuotation] = useState<QuotationHistoryItem | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
 
   useEffect(() => {
-    // Load from localStorage
-    const savedHistory = localStorage.getItem("quotationHistory");
-    if (savedHistory) {
-      setHistory(JSON.parse(savedHistory));
-    } else {
-      // Mock data for demo
-      setHistory([
-        {
-          id: "1",
-          factory: "china_bc",
-          productColor: "ทอง",
-          productSize: "5x3 cm",
-          thickness: "2.5",
-          quantity: "1000",
-          totalCost: 45.50,
-          totalSellingPrice: 65.00,
-          totalProfit: 19500.00,
-          moldCost: "5000",
-          submittedAt: new Date().toISOString(),
-          jobCode: "250121-01-C",
-        },
-        {
-          id: "2",
-          factory: "china_linda",
-          productColor: "เงิน",
-          productSize: "4x4 cm",
-          thickness: "3.0",
-          quantity: "500",
-          totalCost: 52.00,
-          totalSellingPrice: 75.00,
-          totalProfit: 11500.00,
-          moldCost: "4500",
-          submittedAt: new Date().toISOString(),
-          jobCode: "250121-02-L",
-        },
-        {
-          id: "3",
-          factory: "premium_bangkok",
-          productColor: "ทองแดง",
-          productSize: "6x2 cm",
-          thickness: "2.0",
-          quantity: "2000",
-          totalCost: 38.00,
-          totalSellingPrice: 55.00,
-          totalProfit: 34000.00,
-          moldCost: "6000",
-          submittedAt: new Date().toISOString(),
-          jobCode: "250121-03-P",
-        },
-      ]);
-    }
+    setLoading(true);
+    fetch(`${API_BASE}/price_estimations.php`)
+      .then((res) => res.json())
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .then((json: any) => {
+        if (json.status !== "success" || !Array.isArray(json.data)) return;
+
+        const mapped: QuotationHistoryItem[] = json.data
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .map((item: any) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            let detailObj: any = {};
+            try {
+              detailObj = typeof item.details === "string" ? JSON.parse(item.details) : (item.details || {});
+            } catch {
+              detailObj = {};
+            }
+            const winnerFactory = detailObj?.winnerFactoryValue || item.factory || "";
+            const status = String(item.status || "").trim();
+            const isCompleted = status === "ยืนยันเรียบร้อย" || status === "รายการสั่งผลิต" || status === "4" || status === "5";
+            if (!isCompleted || !winnerFactory) return null;
+
+            const colors: string[] = Array.isArray(detailObj?.colors)
+              ? detailObj.colors
+              : (detailObj?.colors ? [detailObj.colors] : []);
+
+            return {
+              id: String(item.id),
+              factory: winnerFactory,
+              productColor: colors.join(", ") || undefined,
+              productSize: detailObj?.size || undefined,
+              thickness: detailObj?.thickness || undefined,
+              quantity: String(item.quantity || 0),
+              // totalCost / totalSellingPrice ที่บันทึกไว้เป็นยอดรวมแล้ว (ไม่ใช่ต่อหน่วย)
+              totalCost: Number(detailObj?.totalCost) || 0,
+              totalSellingPrice: Number(item.price) || 0,
+              totalProfit: Number(detailObj?.profit) || 0,
+              moldCost: undefined,
+              submittedAt: item.estimation_date || new Date().toISOString(),
+              jobCode: item.estimate_id || `JOB-${item.id}`,
+            };
+          })
+          .filter((item: QuotationHistoryItem | null): item is QuotationHistoryItem => item !== null);
+
+        setHistory(mapped);
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   const factoryLabels: { [key: string]: string } = {
@@ -138,7 +137,13 @@ const QuotationHistory = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {history.length === 0 ? (
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={13} className="text-center text-muted-foreground py-8">
+                      กำลังโหลดข้อมูล...
+                    </TableCell>
+                  </TableRow>
+                ) : history.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={13} className="text-center text-muted-foreground py-8">
                       ยังไม่มีประวัติการขอราคา
@@ -161,10 +166,10 @@ const QuotationHistory = () => {
                       <TableCell>-</TableCell>
                       <TableCell>{parseFloat(item.quantity).toLocaleString()}</TableCell>
                       <TableCell className="font-semibold">
-                        {(item.totalCost * parseFloat(item.quantity)).toFixed(2)}
+                        {item.totalCost.toFixed(2)}
                       </TableCell>
                       <TableCell className="font-semibold">
-                        {(item.totalSellingPrice * parseFloat(item.quantity)).toFixed(2)}
+                        {item.totalSellingPrice.toFixed(2)}
                       </TableCell>
                       <TableCell>
                         <Badge variant={item.totalProfit >= 0 ? "default" : "destructive"}>
@@ -245,16 +250,20 @@ const QuotationHistory = () => {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <p className="text-sm text-muted-foreground">ทุนต่อหน่วย (THB)</p>
-                    <p className="font-medium">{selectedQuotation.totalCost.toFixed(2)}</p>
+                    <p className="font-medium">
+                      {(selectedQuotation.totalCost / (parseFloat(selectedQuotation.quantity) || 1)).toFixed(2)}
+                    </p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">ราคาขายต่อหน่วย (THB)</p>
-                    <p className="font-medium">{selectedQuotation.totalSellingPrice.toFixed(2)}</p>
+                    <p className="font-medium">
+                      {(selectedQuotation.totalSellingPrice / (parseFloat(selectedQuotation.quantity) || 1)).toFixed(2)}
+                    </p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">ทุนรวม (THB)</p>
                     <p className="font-medium text-lg">
-                      {(selectedQuotation.totalCost * parseFloat(selectedQuotation.quantity)).toLocaleString(undefined, {
+                      {selectedQuotation.totalCost.toLocaleString(undefined, {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2
                       })}
@@ -263,7 +272,7 @@ const QuotationHistory = () => {
                   <div>
                     <p className="text-sm text-muted-foreground">ราคาขายรวม (THB)</p>
                     <p className="font-medium text-lg">
-                      {(selectedQuotation.totalSellingPrice * parseFloat(selectedQuotation.quantity)).toLocaleString(undefined, {
+                      {selectedQuotation.totalSellingPrice.toLocaleString(undefined, {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2
                       })}
@@ -289,7 +298,9 @@ const QuotationHistory = () => {
                   <div>
                     <p className="text-sm text-muted-foreground">เปอร์เซ็นต์กำไร</p>
                     <p className={`font-bold text-2xl ${selectedQuotation.totalProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {((selectedQuotation.totalProfit / (selectedQuotation.totalSellingPrice * parseFloat(selectedQuotation.quantity))) * 100).toFixed(2)}%
+                      {selectedQuotation.totalSellingPrice > 0
+                        ? ((selectedQuotation.totalProfit / selectedQuotation.totalSellingPrice) * 100).toFixed(2)
+                        : "0.00"}%
                     </p>
                   </div>
                   <div>

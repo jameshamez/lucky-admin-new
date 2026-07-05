@@ -143,6 +143,33 @@ if ($method === 'GET') {
                 $successCount++;
         }
         echo json_encode(["status" => "success", "updated" => $successCount]);
+    } elseif ($action === 'update') {
+        // Update editable fields of a single record (used by the transaction management UI)
+        $id = intval($ids[0]);
+        $deliveryDate = $conn->real_escape_string($input['deliveryDate']);
+        $poNumber = $conn->real_escape_string($input['poNumber']);
+        $jobName = $conn->real_escape_string($input['jobName']);
+        $productCategory = $conn->real_escape_string($input['productCategory']);
+        $saleName = $conn->real_escape_string($input['saleName']);
+        $quantity = intval($input['quantity']);
+        $totalSalesAmount = floatval($input['totalSalesAmount']);
+        $commissionAmount = floatval($input['commissionAmount'] ?? 0);
+
+        $sql = "UPDATE hr_commission_mto SET
+                delivery_date='$deliveryDate',
+                po_number='$poNumber',
+                job_name='$jobName',
+                product_category='$productCategory',
+                sale_name='$saleName',
+                quantity=$quantity,
+                total_sales_amount=$totalSalesAmount,
+                commission_amount=$commissionAmount
+                WHERE id=$id";
+        if ($conn->query($sql)) {
+            echo json_encode(["status" => "success"]);
+        } else {
+            echo json_encode(["status" => "error", "message" => $conn->error]);
+        }
     }
 } elseif ($method === 'DELETE') {
     $id = intval($_GET['id']);

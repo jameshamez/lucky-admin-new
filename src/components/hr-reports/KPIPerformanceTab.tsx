@@ -5,7 +5,7 @@ import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Award, ChevronDown, ChevronRight, Target } from "lucide-react";
-import { type CommissionTransaction, type SalesTarget, formatCurrency, mockSalesTargets } from "./reportMockData";
+import { type CommissionTransaction, type SalesTarget, formatCurrency } from "./reportMockData";
 import { calculateAdminIncentive, defaultIncentiveTiers } from "@/lib/commissionConfig";
 import { type Employee } from "@/lib/employeeData";
 

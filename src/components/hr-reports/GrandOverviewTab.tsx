@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { DollarSign, TrendingUp, TrendingDown, Users, Wallet } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import { type CommissionTransaction, formatCurrency, getMonthLabel, monthLabels } from "./reportMockData";
+import { type CommissionTransaction, formatCurrency, monthLabels } from "./reportMockData";
 import { calculateAdminIncentive, defaultIncentiveTiers } from "@/lib/commissionConfig";
 import { getAdminEmployees, getSaleEmployees, type Employee } from "@/lib/employeeData";
 

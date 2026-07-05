@@ -58,138 +58,6 @@ interface PreviousEstimation {
   backDetails: string[];
 }
 
-const mockPreviousEstimations: PreviousEstimation[] = [
-  {
-    id: "est-001",
-    date: "2024-01-10",
-    jobName: "งานวิ่งมาราธอน 2024",
-    productCategory: "สินค้าสั่งผลิต",
-    productType: "medal",
-    productTypeLabel: "เหรียญสั่งผลิต",
-    quantity: 500,
-    budget: 25000,
-    customerId: "cust-001",
-    customerName: "นันทกานต์",
-    material: "zinc-alloy",
-    selectedColors: ["shinny-gold", "shinny-silver"],
-    lanyardSize: "2x90",
-    lanyardPatterns: "3",
-    medalSize: "6cm",
-    medalThickness: "5mm",
-    awardDesignDetails: "",
-    plaqueOption: "no-plaque",
-    plaqueText: "",
-    genericDesignDetails: "",
-    designDescription: "",
-    hasDesign: "has-design",
-    frontDetails: ["พิมพ์โลโก้", "แกะสลักข้อความ"],
-    backDetails: ["ลงน้ำยาป้องกันสนิม"]
-  },
-  {
-    id: "est-002",
-    date: "2024-02-15",
-    jobName: "งานกีฬาสี",
-    productCategory: "สินค้าสั่งผลิต",
-    productType: "medal",
-    productTypeLabel: "เหรียญสั่งผลิต",
-    quantity: 300,
-    budget: 15000,
-    customerId: "cust-001",
-    customerName: "นันทกานต์",
-    material: "acrylic",
-    selectedColors: ["antique-gold"],
-    lanyardSize: "1.5x90",
-    lanyardPatterns: "1",
-    medalSize: "5.5cm",
-    medalThickness: "4mm",
-    awardDesignDetails: "",
-    plaqueOption: "no-plaque",
-    plaqueText: "",
-    genericDesignDetails: "",
-    designDescription: "",
-    hasDesign: "has-design",
-    frontDetails: ["ลงสีสเปรย์", "ขัดเงา"],
-    backDetails: ["แกะลึก"]
-  },
-  {
-    id: "est-003",
-    date: "2024-03-20",
-    jobName: "งานประกาศเกียรติคุณ",
-    productCategory: "สินค้าสั่งผลิต",
-    productType: "medal",
-    productTypeLabel: "เหรียญสั่งผลิต",
-    quantity: 100,
-    budget: null,
-    customerId: "cust-001",
-    customerName: "นันทกานต์",
-    material: "crystal",
-    selectedColors: ["shinny-silver"],
-    lanyardSize: "no-lanyard",
-    lanyardPatterns: "0",
-    medalSize: "7cm",
-    medalThickness: "6mm",
-    awardDesignDetails: "",
-    plaqueOption: "no-plaque",
-    plaqueText: "",
-    genericDesignDetails: "",
-    designDescription: "",
-    hasDesign: "has-design",
-    frontDetails: ["พิมพ์ซิลค์สกรีน"],
-    backDetails: []
-  },
-  {
-    id: "est-004",
-    date: "2024-01-25",
-    jobName: "โล่ผู้บริหารดีเด่น",
-    productCategory: "สินค้าสั่งผลิต",
-    productType: "award",
-    productTypeLabel: "โล่สั่งผลิต",
-    quantity: 50,
-    budget: 35000,
-    customerId: "cust-001",
-    customerName: "นันทกานต์",
-    material: "crystal",
-    selectedColors: [],
-    lanyardSize: "",
-    lanyardPatterns: "",
-    medalSize: "",
-    medalThickness: "",
-    awardDesignDetails: "โล่คริสตัลทรงสี่เหลี่ยม ขนาด 8 นิ้ว พิมพ์ UV สีเต็มใบ",
-    plaqueOption: "has-plaque",
-    plaqueText: "ผู้บริหารดีเด่น ประจำปี 2567",
-    genericDesignDetails: "",
-    designDescription: "",
-    hasDesign: "has-design",
-    frontDetails: [],
-    backDetails: []
-  },
-  {
-    id: "est-005",
-    date: "2024-04-10",
-    jobName: "สายคล้องบัตรพนักงาน",
-    productCategory: "หมวดสายคล้อง",
-    productType: "lanyard",
-    productTypeLabel: "สายคล้อง",
-    quantity: 1000,
-    budget: 8000,
-    customerId: "cust-002",
-    customerName: "บริษัท ABC จำกัด",
-    material: "polyscreen",
-    selectedColors: [],
-    lanyardSize: "2x90",
-    lanyardPatterns: "2",
-    medalSize: "",
-    medalThickness: "",
-    awardDesignDetails: "",
-    plaqueOption: "",
-    plaqueText: "",
-    genericDesignDetails: "สายคล้องโพลีสกรีน พิมพ์โลโก้บริษัท 2 สี ติดตัวล็อคพลาสติก",
-    designDescription: "",
-    hasDesign: "has-design",
-    frontDetails: [],
-    backDetails: []
-  }
-];
 
 const factoryOptions = [
   { value: "china_bc", label: "China B&C" },
@@ -1043,27 +911,66 @@ export default function AddPriceEstimation({
     return options;
   };
 
-  // Filter previous estimations based on customer and product
-  const filterPreviousEstimations = () => {
+  // Fetch previous estimations for this customer + product type from the real API
+  const fetchPreviousEstimations = async (): Promise<PreviousEstimation[]> => {
     if (!customerName || !selectedProductType) {
       return [];
     }
 
-    // Filter mock data by customer name and product type
-    return mockPreviousEstimations.filter(est =>
-      est.customerName.toLowerCase().includes(customerName.toLowerCase()) &&
-      est.productType === selectedProductType
-    );
+    try {
+      const res = await fetch('https://nacres.co.th/api-lucky/admin/price_estimations.php');
+      const json = await res.json();
+      if (json.status !== "success" || !Array.isArray(json.data)) return [];
+
+      return json.data
+        .filter((item: any) =>
+          String(item.customer_name || "").toLowerCase().includes(customerName.toLowerCase()) &&
+          item.product_type === selectedProductType
+        )
+        .map((item: any): PreviousEstimation => {
+          let details: any = {};
+          try { details = typeof item.details === 'string' ? JSON.parse(item.details) : (item.details || {}); } catch (e) { /* ignore */ }
+          return {
+            id: String(item.id),
+            date: item.estimation_date || "",
+            jobName: item.job_name || "",
+            productCategory: item.product_category || "",
+            productType: item.product_type || "",
+            productTypeLabel: details.productCategoryText || item.product_type || "",
+            quantity: parseInt(item.quantity) || 0,
+            budget: item.budget ? parseFloat(item.budget) : null,
+            customerId: String(item.customer_id || ""),
+            customerName: item.customer_name || "",
+            material: details.material || "",
+            selectedColors: Array.isArray(details.colors) ? details.colors : [],
+            lanyardSize: details.lanyardSize || "",
+            lanyardPatterns: details.lanyardPatterns || "",
+            medalSize: details.size || "",
+            medalThickness: details.thickness || "",
+            awardDesignDetails: details.awardDesignDetails || "",
+            plaqueOption: details.plaqueOption || "",
+            plaqueText: details.plaqueText || "",
+            genericDesignDetails: details.genericDesignDetails || "",
+            designDescription: details.designDescription || "",
+            hasDesign: details.material || details.colors?.length ? "has-design" : "no-design",
+            frontDetails: Array.isArray(details.frontDetails) ? details.frontDetails : [],
+            backDetails: Array.isArray(details.backDetails) ? details.backDetails : [],
+          };
+        });
+    } catch (e) {
+      console.warn("Failed to fetch previous estimations", e);
+      return [];
+    }
   };
 
   // Handle "โมเดลเดิม" checkbox change
-  const handleUsePreviousModelChange = (checked: boolean) => {
+  const handleUsePreviousModelChange = async (checked: boolean) => {
     setUsePreviousModel(checked);
     setSelectedPreviousEstimation(null);
     setShowPreviousOrderModal(false);
 
     if (checked) {
-      const filtered = filterPreviousEstimations();
+      const filtered = await fetchPreviousEstimations();
       setPreviousEstimations(filtered);
     } else {
       setPreviousEstimations([]);

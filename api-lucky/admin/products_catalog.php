@@ -17,7 +17,7 @@ error_reporting(E_ALL);
 
 header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json; charset=UTF-8");
-header("Access-Control-Allow-Methods: GET, OPTIONS");
+header("Access-Control-Allow-Methods: GET, PATCH, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With");
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -25,7 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit();
 }
 
-if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+if (!in_array($_SERVER['REQUEST_METHOD'], ['GET', 'PATCH'], true)) {
     http_response_code(405);
     echo json_encode(["status" => "error", "message" => "Method not allowed"]);
     exit();
@@ -33,8 +33,46 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 
 require '../condb.php';
 /** @var mysqli $conn */
-$conn->select_db('nacresc1_1');
+$conn->select_db('finfinph_lcukycompany');
 $conn->set_charset("utf8mb4");
+
+// อัปเดตข้อมูลต้นทุน (ฝ่ายบัญชี): cost_price, shipping_cost, vat_price
+if ($_SERVER['REQUEST_METHOD'] === 'PATCH') {
+    $id = isset($_GET['id']) ? intval($_GET['id']) : 0;
+    if ($id <= 0) {
+        http_response_code(400);
+        echo json_encode(["status" => "error", "message" => "id is required"]);
+        exit();
+    }
+
+    $data = json_decode(file_get_contents('php://input'), true) ?: [];
+    $allowed = ['cost_price', 'shipping_cost', 'vat_price'];
+    $fields = [];
+    $params = [];
+    $types = '';
+    foreach ($allowed as $field) {
+        if (array_key_exists($field, $data)) {
+            $fields[] = "$field = ?";
+            $params[] = $data[$field];
+            $types .= 'd';
+        }
+    }
+
+    if (empty($fields)) {
+        http_response_code(400);
+        echo json_encode(["status" => "error", "message" => "No valid fields to update"]);
+        exit();
+    }
+
+    $params[] = $id;
+    $types .= 'i';
+    $stmt = $conn->prepare("UPDATE products SET " . implode(", ", $fields) . " WHERE id = ?");
+    $stmt->bind_param($types, ...$params);
+    $stmt->execute();
+
+    echo json_encode(["status" => "success", "message" => "Updated product cost"]);
+    exit();
+}
 
 // ตรวจสอบว่าตาราง products มีอยู่หรือไม่
 $table_check = $conn->query("SHOW TABLES LIKE 'products'");

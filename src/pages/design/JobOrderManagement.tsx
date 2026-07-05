@@ -62,6 +62,7 @@ interface JobOrder {
   id?: number;
   job_id: string;
   client_name: string;
+  customer_id?: number | null;
   job_type: string;
   product_category?: string;
   sales_product_category?: string;
@@ -244,292 +245,6 @@ const fetchOrderProductLookup = async () => {
   return ordersByJobId;
 };
 
-// Mock Data
-const mockJobs: JobOrder[] = [
-  // รอรับงาน (แท็บ A)
-  {
-    job_id: "JOB-2024-001",
-    client_name: "บริษัท ABC จำกัด",
-    job_type: "ป้ายจารึก",
-    urgency: "เร่งด่วน 3-5 ชั่วโมง",
-    due_date: "2024-12-01",
-    order_date: "2024-11-28",
-    status: "รอรับงาน",
-    ordered_by: "พนักงานขาย สมชาย",
-    quotation_no: "QT-2024-001",
-    description: "ป้ายจารึกทองเหลือง ขนาด 30x20 ซม. สลักชื่อบริษัทและโลโก้",
-    reference_images: ["https://placehold.co/400x300/png?text=Sign+Reference"],
-    reference_files: ["logo_file.ai", "text_content.pdf"],
-  },
-  {
-    job_id: "JOB-2024-002",
-    client_name: "ร้าน XYZ",
-    job_type: "เหรียญสั่งผลิต",
-    urgency: "ด่วน 1 วัน",
-    due_date: "2024-12-05",
-    order_date: "2024-11-27",
-    status: "รอรับงาน",
-    ordered_by: "พนักงานขาย สมหญิง",
-    quotation_no: "QT-2024-002",
-    description: "เหรียญสั่งผลิต",
-    reference_images: ["https://placehold.co/400x300/png?text=Medal+Design"],
-    reference_files: ["event_info.docx"],
-    // Medal specific data
-    medal_size: "5",
-    medal_thickness: "5",
-    medal_colors: ["shinny gold (สีทองเงา)", "shinny silver (สีเงินเงา)"],
-    medal_front_details: ["พิมพ์โลโก้", "แกะสลักข้อความ"],
-    medal_back_details: ["ลงน้ำยาป้องกันสนิม"],
-    lanyard_size: "2 × 90 ซม",
-    lanyard_patterns: "3 ลาย",
-    quantity: 100,
-  },
-
-  // รับแล้ว (ยังไม่เริ่ม) (แท็บ B)
-  {
-    job_id: "JOB-2024-005",
-    client_name: "บริษัท ABC จำกัด",
-    job_type: "เหรียญสั่งผลิต",
-    urgency: "ด่วน 1 วัน",
-    due_date: "2024-12-10",
-    order_date: "2024-11-29",
-    status: "รับงานแล้ว",
-    assignee: "ดีไซเนอร์ สมชาย",
-    assigned_at: "2024-11-30T08:00:00",
-    ordered_by: "พนักงานขาย สมชาย",
-    quotation_no: "QT-2024-020",
-    description: "เหรียญสั่งผลิต",
-    reference_images: ["https://placehold.co/400x300/png?text=Custom+Medal"],
-    reference_files: ["medal_design.ai"],
-    medal_size: "6",
-    medal_thickness: "4",
-    medal_colors: [
-      "shinny gold (สีทองเงา)",
-      "shinny silver (สีเงินเงา)",
-      "shinny copper (สีทองแดงเงา)",
-    ],
-    medal_front_details: ["พิมพ์โลโก้", "แกะสลักข้อความ"],
-    medal_back_details: ["ลงน้ำยาป้องกันสนิม", "พิมพ์หมายเลขรุ่น"],
-    lanyard_size: "2 × 90 ซม",
-    lanyard_patterns: "2 ลาย",
-    quantity: 200,
-  },
-
-  // กำลังทำ/ติดตาม (แท็บ C)
-  {
-    job_id: "JOB-2024-008",
-    client_name: "โรงเรียน STU",
-    job_type: "ป้ายจารึก",
-    urgency: "ปกติ",
-    due_date: "2024-12-12",
-    order_date: "2024-11-22",
-    status: "กำลังดำเนินการ",
-    assignee: "ดีไซเนอร์ สมชาย",
-    assigned_at: "2024-11-23T08:00:00",
-    started_at: "2024-11-23T09:30:00",
-    ordered_by: "พนักงานขาย วิชัย",
-    quotation_no: "QT-2024-008",
-    description: "ป้ายประกาศเกียรติคุณ อะคริลิก ขนาด 40x60 ซม.",
-    reference_images: ["https://placehold.co/400x300/png?text=Honor+Board"],
-    reference_files: ["student_names.xlsx"],
-  },
-  {
-    job_id: "JOB-2024-009",
-    client_name: "บริษัท VWX",
-    job_type: "เหรียญสั่งผลิต",
-    urgency: "เร่งด่วน 3-5 ชั่วโมง",
-    due_date: "2024-12-02",
-    order_date: "2024-11-25",
-    status: "กำลังดำเนินการ",
-    assignee: "ดีไซเนอร์ สมหญิง",
-    assigned_at: "2024-11-25T08:00:00",
-    started_at: "2024-11-25T08:30:00",
-    ordered_by: "พนักงานขาย สมชาย",
-    quotation_no: "QT-2024-009",
-    description: "เหรียญที่ระลึก วาระครบรอบ 10 ปี ปั้มสองหน้า",
-    reference_images: [
-      "https://placehold.co/400x300/png?text=Anniversary+Medal",
-    ],
-    reference_files: ["company_history.pdf", "logo_files.zip"],
-  },
-  {
-    job_id: "JOB-2024-010",
-    client_name: "ร้าน YZA",
-    job_type: "โล่/ถ้วย/คริสตัล",
-    urgency: "ด่วน 1 วัน",
-    due_date: "2024-12-04",
-    order_date: "2024-11-26",
-    status: "รอตรวจสอบ",
-    assignee: "ดีไซเนอร์ วิชัย",
-    assigned_at: "2024-11-26T08:00:00",
-    started_at: "2024-11-26T09:00:00",
-    ordered_by: "พนักงานขาย มานะ",
-    quotation_no: "QT-2024-010",
-    description: "ถ้วยรางวัล 3 ขนาด (ทอง เงิน ทองแดง) จารึกชื่อการแข่งขัน",
-    reference_images: ["https://placehold.co/400x300/png?text=Trophy+Set"],
-    reference_files: ["event_details.docx"],
-  },
-  {
-    job_id: "JOB-2024-011",
-    client_name: "บริษัท BCD",
-    job_type: "เสื้อ",
-    urgency: "ด่วน 2 วัน",
-    due_date: "2024-12-07",
-    order_date: "2024-11-27",
-    status: "แก้ไข",
-    assignee: "ดีไซเนอร์ สมชาย",
-    assigned_at: "2024-11-27T08:00:00",
-    started_at: "2024-11-27T10:00:00",
-    revision_rounds: 1,
-    ordered_by: "พนักงานขาย สุดา",
-    quotation_no: "QT-2024-011",
-    description: "เสื้อยืดคอกลม สกรีนภาพและข้อความด้านหน้า",
-    reference_images: ["https://placehold.co/400x300/png?text=T-Shirt+Design"],
-    reference_files: ["artwork.psd"],
-    feedback: "ขอปรับสีให้เข้มขึ้นและเปลี่ยนฟอนต์",
-  },
-
-  // งานเสร็จสิ้น (แท็บ D)
-  {
-    job_id: "JOB-2024-012",
-    client_name: "โรงพยาบาล EFG",
-    job_type: "บิบ",
-    urgency: "ปกติ",
-    due_date: "2024-11-20",
-    order_date: "2024-11-10",
-    status: "เสร็จสิ้น",
-    assignee: "ดีไซเนอร์ สมหญิง",
-    assigned_at: "2024-11-10T08:00:00",
-    started_at: "2024-11-10T09:00:00",
-    finish_date: "2024-11-19",
-    revision_rounds: 0,
-    qc_pass: true,
-    ordered_by: "พนักงานขาย จินดา",
-    quotation_no: "QT-2024-012",
-    description: "บิบชื่อพนักงาน พร้อมหมายเลขและแผนก",
-    reference_images: ["https://placehold.co/400x300/png?text=Staff+Badge"],
-    reference_files: ["staff_database.xlsx"],
-    feedback: "งานสวย ตรงตามที่ต้องการ",
-  },
-  {
-    job_id: "JOB-2024-013",
-    client_name: "บริษัท HIJ",
-    job_type: "สายคล้อง",
-    urgency: "ด่วน 1 วัน",
-    due_date: "2024-11-22",
-    order_date: "2024-11-12",
-    status: "เสร็จสิ้น",
-    assignee: "ดีไซเนอร์ วิชัย",
-    assigned_at: "2024-11-12T08:00:00",
-    started_at: "2024-11-12T10:00:00",
-    finish_date: "2024-11-21",
-    revision_rounds: 1,
-    qc_pass: true,
-    ordered_by: "พนักงานขาย ประภา",
-    quotation_no: "QT-2024-013",
-    description: "สายคล้องสำหรับงานสัมมนา พิมพ์โลโก้และชื่องาน",
-    reference_images: ["https://placehold.co/400x300/png?text=Event+Lanyard"],
-    reference_files: ["event_branding.pdf"],
-    feedback: "ผลงานดีมาก แก้ไขเล็กน้อยตามที่ร้องขอ",
-  },
-  {
-    job_id: "JOB-2024-014",
-    client_name: "ร้าน KLM",
-    job_type: "ป้ายจารึก",
-    urgency: "ด่วน 2 วัน",
-    due_date: "2024-11-25",
-    order_date: "2024-11-15",
-    status: "เสร็จสิ้น",
-    assignee: "ดีไซเนอร์ สมชาย",
-    assigned_at: "2024-11-15T08:00:00",
-    started_at: "2024-11-15T09:00:00",
-    finish_date: "2024-11-24",
-    revision_rounds: 2,
-    qc_pass: true,
-    ordered_by: "พนักงานขาย สมชาย",
-    quotation_no: "QT-2024-014",
-    description: "ป้ายทองเหลือง จารึกชื่อร้านและข้อมูลติดต่อ",
-    reference_images: ["https://placehold.co/400x300/png?text=Shop+Sign"],
-    reference_files: ["shop_details.txt"],
-    feedback: "แก้ไข 2 รอบ ผลสุดท้ายดีเยี่ยม",
-  },
-  {
-    job_id: "JOB-2024-015",
-    client_name: "มหาวิทยาลัย NOP",
-    job_type: "เหรียญสำเร็จรูป",
-    urgency: "เร่งด่วน 3-5 ชั่วโมง",
-    due_date: "2024-11-18",
-    order_date: "2024-11-08",
-    status: "เสร็จสิ้น",
-    assignee: "ดีไซเนอร์ สมหญิง",
-    assigned_at: "2024-11-08T08:00:00",
-    started_at: "2024-11-08T08:30:00",
-    finish_date: "2024-11-17",
-    revision_rounds: 0,
-    qc_pass: true,
-    ordered_by: "พนักงานขาย มานะ",
-    quotation_no: "QT-2024-015",
-    description: "เหรียญรางวัลนักศึกษาดีเด่น 3 ประเภท พร้อมใส่กล่อง",
-    reference_images: ["https://placehold.co/400x300/png?text=Award+Medals"],
-    reference_files: ["university_logo.ai"],
-    feedback: "งานเร็ว คุณภาพดี ไม่มีข้อติ",
-  },
-  {
-    job_id: "JOB-2024-016",
-    client_name: "บริษัท QRS",
-    job_type: "โล่/ถ้วย/คริสตัล",
-    urgency: "ปกติ",
-    due_date: "2024-11-28",
-    order_date: "2024-11-18",
-    status: "เสร็จสิ้น",
-    assignee: "ดีไซเนอร์ วิชัย",
-    assigned_at: "2024-11-18T08:00:00",
-    started_at: "2024-11-18T10:00:00",
-    finish_date: "2024-11-27",
-    revision_rounds: 1,
-    qc_pass: true,
-    ordered_by: "พนักงานขาย สุดา",
-    quotation_no: "QT-2024-016",
-    description: "โล่คริสตัลสีน้ำเงิน เลเซอร์จารึกโลโก้และข้อความ",
-    reference_images: ["https://placehold.co/400x300/png?text=Crystal+Trophy"],
-    reference_files: ["award_text.docx"],
-    feedback: "ความละเอียดสูง งานสวยมาก",
-  },
-  {
-    job_id: "JOB-2024-017",
-    client_name: "บริษัท TUV จำกัด",
-    job_type: "เหรียญสั่งผลิต",
-    urgency: "ด่วน 1 วัน",
-    due_date: "2024-11-30",
-    order_date: "2024-11-20",
-    status: "เสร็จสิ้น",
-    assignee: "ดีไซเนอร์ สมชาย",
-    assigned_at: "2024-11-20T08:00:00",
-    started_at: "2024-11-20T09:00:00",
-    finish_date: "2024-11-29",
-    revision_rounds: 0,
-    qc_pass: true,
-    ordered_by: "พนักงานขาย มานะ",
-    quotation_no: "QT-2024-017",
-    description: "เหรียญสั่งผลิต",
-    reference_images: ["https://placehold.co/400x300/png?text=Custom+Medal"],
-    reference_files: ["medal_design.ai", "logo.pdf"],
-    feedback: "งานออกแบบสวย ตรงตามต้องการ",
-    medal_size: "7",
-    medal_thickness: "5",
-    medal_colors: [
-      "shinny gold (สีทองเงา)",
-      "shinny silver (สีเงินเงา)",
-      "shinny copper (สีทองแดงเงา)",
-    ],
-    medal_front_details: ["พิมพ์โลโก้", "แกะสลักข้อความ", "ลงสี"],
-    medal_back_details: ["ลงน้ำยาป้องกันสนิม"],
-    lanyard_size: "2 × 90 ซม",
-    lanyard_patterns: "3 ลาย",
-    quantity: 150,
-  },
-];
-
 export default function JobOrderManagement() {
   const [jobs, setJobs] = useState<JobOrder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -632,6 +347,24 @@ export default function JobOrderManagement() {
   const [isFilesDrawerOpen, setIsFilesDrawerOpen] = useState(false);
   const [selectedJobForFiles, setSelectedJobForFiles] =
     useState<JobOrder | null>(null);
+  const [portfolioFiles, setPortfolioFiles] = useState<
+    { id: number; name: string; version: string; file_url: string; created_at: string }[]
+  >([]);
+
+  useEffect(() => {
+    if (!isFilesDrawerOpen || !selectedJobForFiles?.customer_id) {
+      setPortfolioFiles([]);
+      return;
+    }
+    fetch(`https://nacres.co.th/api-lucky/admin/customer_design_files.php?customer_id=${selectedJobForFiles.customer_id}`)
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.status === "success" && Array.isArray(json.data)) {
+          setPortfolioFiles(json.data);
+        }
+      })
+      .catch((err) => console.warn("Failed to fetch design files", err));
+  }, [isFilesDrawerOpen, selectedJobForFiles?.customer_id]);
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
   const [selectedJobForUpdate, setSelectedJobForUpdate] =
     useState<JobOrder | null>(null);
@@ -1856,43 +1589,38 @@ export default function JobOrderManagement() {
                       </div>
                     )}
 
-                  {/* ไฟล์ผลงาน (mock data) */}
+                  {/* ไฟล์ผลงาน */}
                   <div>
                     <h3 className="text-lg font-semibold mb-3">ไฟล์ผลงาน</h3>
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between p-3 bg-muted rounded-md hover:bg-muted/80 cursor-pointer transition-colors">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-blue-500/10 rounded flex items-center justify-center">
-                            <FileText className="w-5 h-5 text-blue-500" />
+                    {portfolioFiles.length > 0 ? (
+                      <div className="space-y-2">
+                        {portfolioFiles.map((file) => (
+                          <div
+                            key={file.id}
+                            className="flex items-center justify-between p-3 bg-muted rounded-md hover:bg-muted/80 cursor-pointer transition-colors"
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 bg-blue-500/10 rounded flex items-center justify-center">
+                                <FileText className="w-5 h-5 text-blue-500" />
+                              </div>
+                              <div>
+                                <p className="font-medium">{file.name} ({file.version})</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {new Date(file.created_at).toLocaleDateString("th-TH")}
+                                </p>
+                              </div>
+                            </div>
+                            <Button size="sm" variant="ghost" onClick={() => window.open(file.file_url, "_blank")}>
+                              ดาวน์โหลด
+                            </Button>
                           </div>
-                          <div>
-                            <p className="font-medium">design_final_v1.ai</p>
-                            <p className="text-xs text-muted-foreground">
-                              ผลงานฉบับสุดท้าย - {selectedJobForFiles.assignee}
-                            </p>
-                          </div>
-                        </div>
-                        <Button size="sm" variant="ghost">
-                          ดาวน์โหลด
-                        </Button>
+                        ))}
                       </div>
-                      <div className="flex items-center justify-between p-3 bg-muted rounded-md hover:bg-muted/80 cursor-pointer transition-colors">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-blue-500/10 rounded flex items-center justify-center">
-                            <FileText className="w-5 h-5 text-blue-500" />
-                          </div>
-                          <div>
-                            <p className="font-medium">design_final.pdf</p>
-                            <p className="text-xs text-muted-foreground">
-                              ไฟล์ PDF สำหรับส่งลูกค้า
-                            </p>
-                          </div>
-                        </div>
-                        <Button size="sm" variant="ghost">
-                          ดาวน์โหลด
-                        </Button>
-                      </div>
-                    </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground text-center py-4 bg-muted/50 rounded-md">
+                        ยังไม่มีไฟล์ผลงานสำหรับลูกค้ารายนี้
+                      </p>
+                    )}
                   </div>
                 </div>
               </>

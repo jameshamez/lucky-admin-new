@@ -93,130 +93,45 @@ const subcategoryMap: Record<string, string[]> = {
   ชิ้นส่วนถ้วยรางวัล: ["ฐานถ้วย", "ตัวถ้วย", "ฝาครอบ"],
 };
 
-// --- Mock Data ---
-const initialProducts: ProductItem[] = [
-  {
-    id: "1", code: "TC-001", name: "ถ้วยรางวัลสีทอง", image: "/placeholder.svg",
-    additionalImages: [], productType: "ถ้วยรางวัลสำเร็จ",
-    category: "ถ้วยรางวัลสำเร็จ", subcategory: "ถ้วยรางวัลโลหะอิตาลี",
-    color: ["ทอง"], size: ["A", "B", "C", "N/A"], tags: "ถ้วยรางวัล",
-    description: "ถ้วยรางวัลโลหะอิตาลีสีทอง คุณภาพสูง",
-    currentStock: 500, minimumStock: 100, unit: "ชิ้น", model: "911_S_W_D",
-    productionTime: [{ value: 7, unit: "วัน" }],
-    options: ["ทำป้ายจารึก", "ทำโบว์", "กล่องกำมะหยี่"],
-    prices: [{ model: "911_S_W_D", retailPrice: 1500, moldCost: 200, specialPrice: 1200 }],
-    lastUpdated: "2025-02-10", status: "in_stock",
-    bom: [
-      { id: "CP-001", name: "ตัวถ้วยโลหะอิตาลี", qty: 1, unit: "ชิ้น" },
-      { id: "CP-002", name: "ฐานหินอ่อน", qty: 1, unit: "ชิ้น" },
-    ],
-    movementHistory: [
-      { id: "M1", date: "2025-02-10 14:30", type: "รับเข้า", qty: 100, by: "สมชาย", note: "รับจากซัพพลายเออร์" },
-      { id: "M2", date: "2025-02-08 10:00", type: "จ่ายออก", qty: 20, by: "วิชัย", note: "เบิกใช้ ORD-015" },
-    ],
-    accountingCost: { costPrice: 800, shippingCost: 50, vatPrice: 59.5 },
-  },
-  {
-    id: "2", code: "TC-002", name: "ถ้วยรางวัลสีเงิน", image: "/placeholder.svg",
-    additionalImages: [], productType: "ถ้วยรางวัลสำเร็จ",
-    category: "ถ้วยรางวัลสำเร็จ", subcategory: "ถ้วยรางวัลโลหะอิตาลี",
-    color: ["เงิน"], size: ["A", "B", "C", "D"], tags: "ถ้วยรางวัล",
-    description: "ถ้วยรางวัลโลหะอิตาลีสีเงิน",
-    currentStock: 30, minimumStock: 50, unit: "ชิ้น", model: "912_S_W_D",
-    productionTime: [{ value: 7, unit: "วัน" }],
-    options: ["ทำป้ายจารึก", "ทำโบว์"],
-    prices: [{ model: "912_S_W_D", retailPrice: 1500, moldCost: 200, specialPrice: 1200 }],
-    lastUpdated: "2025-02-05", status: "low_stock",
-    movementHistory: [
-      { id: "M3", date: "2025-02-05 11:00", type: "จ่ายออก", qty: 15, by: "วิชัย", note: "เบิกใช้ ORD-010" },
-    ],
-    accountingCost: { costPrice: 750, shippingCost: 50, vatPrice: 56 },
-  },
-  {
-    id: "3", code: "MD-001", name: "เหรียญพลาสติกรู้แพ้รู้ชนะ", image: "/placeholder.svg",
-    additionalImages: [], productType: "เหรียญรางวัล",
-    category: "เหรียญรางวัล", subcategory: "เหรียญพลาสติก",
-    color: ["ทอง", "เงิน", "ทองแดง"], size: ["มาตรฐาน"], tags: "เหรียญ",
-    description: "เหรียญพลาสติกสำหรับงานกีฬา",
-    currentStock: 1200, minimumStock: 200, unit: "ชิ้น", model: "Standard",
-    productionTime: [{ value: 3, unit: "วัน" }],
-    options: ["สกรีน 1 สี", "สติ๊กเกอร์"],
-    prices: [{ model: "Standard", retailPrice: 25, moldCost: 0, specialPrice: 18 }],
-    lastUpdated: "2025-02-10", status: "in_stock",
-  },
-  {
-    id: "4", code: "MD-002", name: "เหรียญโลหะซิงค์สำเร็จรูป", image: "/placeholder.svg",
-    additionalImages: [], productType: "เหรียญรางวัล",
-    category: "เหรียญรางวัล", subcategory: "เหรียญโลหะ",
-    color: ["เงา", "รมดำ"], size: ["5cm"], tags: "เหรียญ, premium",
-    description: "เหรียญโลหะซิงค์คุณภาพสูง",
-    currentStock: 45, minimumStock: 50, unit: "ชิ้น", model: "Premium",
-    productionTime: [{ value: 2, unit: "สัปดาห์" }],
-    options: ["ทำป้ายจารึก", "สติ๊กเกอร์"],
-    prices: [{ model: "Premium", retailPrice: 120, moldCost: 50, specialPrice: 90 }],
-    lastUpdated: "2025-02-09", status: "low_stock",
-  },
-  {
-    id: "5", code: "PL-001", name: "โล่คริสตัลพรีเมียม", image: "/placeholder.svg",
-    additionalImages: [], productType: "โล่รางวัล",
-    category: "โล่รางวัล", subcategory: "โล่คริสตัล",
-    color: ["ใส"], size: ["8 นิ้ว"], tags: "โล่, คริสตัล",
-    description: "โล่คริสตัลงานพรีเมียม",
-    currentStock: 80, minimumStock: 30, unit: "ชิ้น", model: "Crystal-8",
-    productionTime: [{ value: 5, unit: "วัน" }],
-    options: ["เลเซอร์มาสี"],
-    prices: [{ model: "Crystal-8", retailPrice: 850, moldCost: 0, specialPrice: 700 }],
-    lastUpdated: "2025-02-10", status: "in_stock",
-    accountingCost: { costPrice: 400, shippingCost: 30, vatPrice: 30.1 },
-  },
-  {
-    id: "6", code: "CP-002", name: "ฐานหินอ่อน", image: "/placeholder.svg",
-    additionalImages: [], productType: "ชิ้นส่วนถ้วยรางวัล",
-    category: "ชิ้นส่วนถ้วยรางวัล", subcategory: "ฐานถ้วย",
-    color: ["ดำ", "ขาว"], size: ["4x4 นิ้ว"], tags: "ชิ้นส่วน, ฐาน",
-    description: "ฐานหินอ่อนสำหรับถ้วยรางวัล",
-    currentStock: 350, minimumStock: 100, unit: "ชิ้น", model: "BASE-M01",
-    productionTime: [], options: [],
-    prices: [{ model: "BASE-M01", retailPrice: 150, moldCost: 0, specialPrice: 120 }],
-    lastUpdated: "2025-02-10", status: "in_stock",
-  },
-  {
-    id: "7", code: "CP-003", name: "ฝาครอบพลาสติก", image: "/placeholder.svg",
-    additionalImages: [], productType: "ชิ้นส่วนถ้วยรางวัล",
-    category: "ชิ้นส่วนถ้วยรางวัล", subcategory: "ฝาครอบ",
-    color: ["ใส"], size: ["มาตรฐาน"], tags: "ชิ้นส่วน",
-    description: "ฝาครอบพลาสติกใส",
-    currentStock: 0, minimumStock: 50, unit: "ชิ้น", model: "LID-P01",
-    productionTime: [], options: [],
-    prices: [{ model: "LID-P01", retailPrice: 30, moldCost: 0, specialPrice: 25 }],
-    lastUpdated: "2025-02-08", status: "out_of_stock",
-  },
-  {
-    id: "8", code: "TC-008", name: "ถ้วยรางวัลสีทอง (ตำหนิ)", image: "/placeholder.svg",
-    additionalImages: [], productType: "ถ้วยรางวัลสำเร็จ",
-    category: "ถ้วยรางวัลสำเร็จ", subcategory: "ถ้วยรางวัลโลหะอิตาลี",
-    color: ["ทอง"], size: ["A"], tags: "ถ้วยรางวัล,ตำหนิ",
-    description: "ถ้วยรางวัลโลหะสีทอง มีรอยขีดข่วน",
-    currentStock: 5, minimumStock: 0, unit: "ชิ้น", model: "911_S_W_D",
-    productionTime: [], options: [],
-    prices: [{ model: "911_S_W_D", retailPrice: 800, moldCost: 100, specialPrice: 600 }],
-    lastUpdated: "2025-02-12", status: "defective",
-  },
-  {
-    id: "9", code: "MD-005", name: "เหรียญโลหะ (ตำหนิ)", image: "/placeholder.svg",
-    additionalImages: [], productType: "เหรียญรางวัล",
-    category: "เหรียญรางวัล", subcategory: "เหรียญโลหะ",
-    color: ["เงิน"], size: ["มาตรฐาน"], tags: "เหรียญ,ตำหนิ",
-    description: "เหรียญโลหะสีเงิน สีไม่สม่ำเสมอ",
-    currentStock: 10, minimumStock: 0, unit: "ชิ้น", model: "MED-M01",
-    productionTime: [], options: [],
-    prices: [{ model: "MED-M01", retailPrice: 150, moldCost: 30, specialPrice: 100 }],
-    lastUpdated: "2025-02-11", status: "defective",
-  },
-];
+const PRODUCTS_API = "https://nacres.co.th/api-lucky/admin/products_catalog.php";
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mapProduct = (row: any): ProductItem => ({
+  id: String(row.id),
+  code: row.product_code || "-",
+  name: row.name || "-",
+  image: row.image_url || "",
+  additionalImages: [],
+  productType: row.product_type || "-",
+  category: row.category || "-",
+  subcategory: row.subcategory || "-",
+  color: [],
+  size: row.size ? [row.size] : [],
+  tags: "",
+  description: row.description || "",
+  currentStock: Number(row.stock_qty) || 0,
+  minimumStock: Number(row.min_qty) || 0,
+  unit: "ชิ้น",
+  model: row.product_type || "-",
+  productionTime: [],
+  options: [],
+  prices: Number(row.unit_price) > 0
+    ? [{ model: row.product_type || "-", retailPrice: Number(row.unit_price), moldCost: 0, specialPrice: Number(row.unit_price) }]
+    : [],
+  lastUpdated: (row.updated_at || "").split(" ")[0] || "-",
+  status: row.stock_status === "out_of_stock" ? "out_of_stock" : row.stock_status === "low_stock" ? "low_stock" : "in_stock",
+  accountingCost: (row.cost_price != null || row.shipping_cost != null || row.vat_price != null)
+    ? {
+      costPrice: Number(row.cost_price) || 0,
+      shippingCost: Number(row.shipping_cost) || 0,
+      vatPrice: Number(row.vat_price) || 0,
+    }
+    : undefined,
+});
 
 const AccountingProductInventory = () => {
-  const [products, setProducts] = useState<ProductItem[]>(initialProducts);
+  const [products, setProducts] = useState<ProductItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [viewMode, setViewMode] = useState<"card" | "table">("card");
   const [selectedCategory, setSelectedCategory] = useState("all");
@@ -241,13 +156,25 @@ const AccountingProductInventory = () => {
 
   const subcategories = subcategoryMap[selectedCategory] || [];
 
+  useEffect(() => {
+    setLoading(true);
+    fetch(`${PRODUCTS_API}?category=&limit=200`)
+      .then(r => r.json())
+      .then(json => {
+        if (json.status === "success" && Array.isArray(json.data)) {
+          setProducts(json.data.map(mapProduct));
+        }
+      })
+      .catch(() => toast.error("ไม่สามารถโหลดข้อมูลสินค้าได้"))
+      .finally(() => setLoading(false));
+  }, []);
+
   const summaryStats = useMemo(() => {
     const total = products.length;
     const lowStock = products.filter(p => p.status === "low_stock").length;
     const outOfStock = products.filter(p => p.status === "out_of_stock").length;
     const defective = products.filter(p => p.status === "defective").length;
-    const todayMovements = 12;
-    return { total, lowStock, outOfStock, defective, todayMovements };
+    return { total, lowStock, outOfStock, defective, todayMovements: 0 };
   }, [products]);
 
   const filteredItems = useMemo(() => {
@@ -299,13 +226,30 @@ const AccountingProductInventory = () => {
     });
   };
 
-  const handleSaveCost = () => {
+  const saveProductCost = async (productId: string, cost: AccountingCost) => {
+    const res = await fetch(`${PRODUCTS_API}?id=${productId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cost_price: cost.costPrice, shipping_cost: cost.shippingCost, vat_price: cost.vatPrice }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (json.status !== "success") {
+      throw new Error(json.message || "Save failed");
+    }
+  };
+
+  const handleSaveCost = async () => {
     if (!costEditItem) return;
-    setProducts(prev => prev.map(p =>
-      p.id === costEditItem.id ? { ...p, accountingCost: { ...costForm } } : p
-    ));
-    toast.success(`บันทึกข้อมูลต้นทุน "${costEditItem.name}" เรียบร้อย`);
-    setCostEditItem(null);
+    try {
+      await saveProductCost(costEditItem.id, costForm);
+      setProducts(prev => prev.map(p =>
+        p.id === costEditItem.id ? { ...p, accountingCost: { ...costForm } } : p
+      ));
+      toast.success(`บันทึกข้อมูลต้นทุน "${costEditItem.name}" เรียบร้อย`);
+      setCostEditItem(null);
+    } catch {
+      toast.error("บันทึกข้อมูลต้นทุนไม่สำเร็จ กรุณาลองใหม่");
+    }
   };
 
   // Inline table edit handlers
@@ -328,15 +272,20 @@ const AccountingProductInventory = () => {
     }));
   };
 
-  const saveInlineEdit = (productId: string) => {
+  const saveInlineEdit = async (productId: string) => {
     const cost = inlineEdits[productId];
     if (!cost) return;
-    setProducts(prev => prev.map(p =>
-      p.id === productId ? { ...p, accountingCost: { ...cost } } : p
-    ));
     const product = products.find(p => p.id === productId);
-    toast.success(`บันทึกต้นทุน "${product?.name}" เรียบร้อย`);
-    setEditingRowId(null);
+    try {
+      await saveProductCost(productId, cost);
+      setProducts(prev => prev.map(p =>
+        p.id === productId ? { ...p, accountingCost: { ...cost } } : p
+      ));
+      toast.success(`บันทึกต้นทุน "${product?.name}" เรียบร้อย`);
+      setEditingRowId(null);
+    } catch {
+      toast.error("บันทึกต้นทุนไม่สำเร็จ กรุณาลองใหม่");
+    }
   };
 
   const cancelInlineEdit = () => {
@@ -719,7 +668,11 @@ const AccountingProductInventory = () => {
             <span className="text-primary font-semibold">{filteredItems.length}</span> รายการ
           </p>
 
-          {viewMode === "card" ? renderCardView() : renderTableView()}
+          {loading ? (
+            <p className="text-center text-muted-foreground py-10">กำลังโหลดข้อมูลสินค้า...</p>
+          ) : (
+            viewMode === "card" ? renderCardView() : renderTableView()
+          )}
 
           {/* Pagination UI */}
           {filteredItems.length > itemsPerPage && (
@@ -783,16 +736,8 @@ const AccountingProductInventory = () => {
                 </TableHeader>
                 <TableBody>
                   {(() => {
-                    const movements = [
-                      { id: "MOV-001", date: "2025-02-10", type: "รับเข้า", item: "ถ้วยรางวัลสีทอง", qty: 100, unit: "ชิ้น", by: "สมชาย", note: "รับจากซัพพลายเออร์" },
-                      { id: "MOV-002", date: "2025-02-10", type: "จ่ายออก", item: "เหรียญพลาสติก", qty: 50, unit: "ชิ้น", by: "วิชัย", note: "เบิกใช้งาน ORD-003" },
-                      { id: "MOV-003", date: "2025-02-09", type: "รับเข้า", item: "โล่คริสตัลพรีเมียม", qty: 30, unit: "ชิ้น", by: "สมชาย", note: "รับจากซัพพลายเออร์" },
-                      { id: "MOV-004", date: "2025-02-09", type: "จ่ายออก", item: "ถ้วยรางวัลสีเงิน", qty: 15, unit: "ชิ้น", by: "มานะ", note: "เบิกใช้งาน ORD-010" },
-                      { id: "MOV-005", date: "2025-02-08", type: "ปรับยอด", item: "ฝาครอบพลาสติก", qty: -5, unit: "ชิ้น", by: "สุชาติ", note: "สินค้าชำรุด" },
-                    ];
-
-                    // Set to empty array to test/observe empty state
-                    // const movements = [];
+                    // ยังไม่มี endpoint ประวัติการเคลื่อนไหวสต็อก (รอระบบ Inventory)
+                    const movements: { id: string; date: string; type: string; item: string; qty: number; unit: string; by: string; note: string }[] = [];
 
                     if (movements.length === 0) {
                       return (

@@ -8,7 +8,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Download, FileSpreadsheet, ChevronDown, ChevronRight, DollarSign, Users, Award, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 import { defaultIncentiveTiers, calculateAdminIncentive } from "@/lib/commissionConfig";
-import { defaultEmployees, getAdminEmployees, type Employee, type EmployeeRole, type EmployeeStatus } from "@/lib/employeeData";
+import { getAdminEmployees, type Employee, type EmployeeRole, type EmployeeStatus } from "@/lib/employeeData";
 import { supabase } from "@/integrations/supabase/client";
 import * as XLSX from "xlsx";
 

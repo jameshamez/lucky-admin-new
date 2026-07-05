@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { UserPlus, UserMinus, TrendingDown } from "lucide-react";
-import { type EmployeeMovement, mockEmployeeMovements } from "./reportMockData";
+import { type EmployeeMovement } from "./reportMockData";
 import { type Employee } from "@/lib/employeeData";
 
 type Props = {

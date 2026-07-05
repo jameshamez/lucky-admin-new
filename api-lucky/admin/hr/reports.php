@@ -38,8 +38,8 @@ if ($method === 'GET') {
         $wSql1 = count($where1) > 0 ? "WHERE " . implode(" AND ", $where1) : "";
         $wSql2 = count($where2) > 0 ? "WHERE " . implode(" AND ", $where2) : "";
 
-        $sql1 = "SELECT id, DATE_FORMAT(delivery_date, '%Y-%m') as month, sale_name as employeeName, po_number as poNumber, job_name as jobName, 'ReadyMade' as type, product_category as productCategory, quantity, total_sales_amount as totalSales, commission_amount as commission, rate_display as rateInfo, commission_status as status FROM hr_commission_ready_made $wSql1";
-        $sql2 = "SELECT id, DATE_FORMAT(delivery_date, '%Y-%m') as month, sale_name as employeeName, po_number as poNumber, job_name as jobName, 'MadeToOrder' as type, product_category as productCategory, quantity, total_sales_amount as totalSales, commission_amount as commission, tier_condition as rateInfo, commission_status as status FROM hr_commission_mto $wSql2";
+        $sql1 = "SELECT rm.id, DATE_FORMAT(rm.delivery_date, '%Y-%m') as month, e.code as employeeId, rm.sale_name as employeeName, rm.po_number as poNumber, rm.job_name as jobName, 'ReadyMade' as type, rm.product_category as productCategory, rm.quantity, rm.total_sales_amount as totalSales, rm.commission_amount as commission, rm.rate_display as rateInfo, rm.commission_status as status FROM hr_commission_ready_made rm LEFT JOIN employees e ON e.full_name = rm.sale_name $wSql1";
+        $sql2 = "SELECT mto.id, DATE_FORMAT(mto.delivery_date, '%Y-%m') as month, e.code as employeeId, mto.sale_name as employeeName, mto.po_number as poNumber, mto.job_name as jobName, 'MadeToOrder' as type, mto.product_category as productCategory, mto.quantity, mto.total_sales_amount as totalSales, mto.commission_amount as commission, mto.tier_condition as rateInfo, mto.commission_status as status FROM hr_commission_mto mto LEFT JOIN employees e ON e.full_name = mto.sale_name $wSql2";
 
         $transactions = [];
         $res1 = $conn->query($sql1);
@@ -63,7 +63,7 @@ if ($method === 'GET') {
     }
 
     if ($type === 'targets' || $type === 'all') {
-        $sql = "SELECT employee_id as employeeId, month, target_amount as target FROM hr_sales_targets";
+        $sql = "SELECT t.employee_id as employeeId, e.full_name as employeeName, e.role, t.month, t.target_amount as target FROM hr_sales_targets t LEFT JOIN employees e ON e.code = t.employee_id";
         $targets = [];
         $res = $conn->query($sql);
         while ($row = $res->fetch_assoc()) {

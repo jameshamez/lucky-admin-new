@@ -64,61 +64,6 @@ const LITTLE_BOY_BLUE = "hsl(210 60% 65%)";     // #16-4132
 const BERMUDA = "hsl(162 50% 50%)";              // green-teal
 const PINK_YARROW = "hsl(330 72% 55%)";          // pink
 
-// ── Mock Data ──
-const initialAssets: Asset[] = [
-  {
-    id: "1", assetId: "INV-20240115-001", name: "MacBook Pro 14 M3", category: "โน้ตบุ๊ก",
-    assignedTo: "สมชาย ใจดี", purchaseDate: "2024-01-15", price: 69900, status: "ใช้งานอยู่",
-    history: [
-      { id: "h1", date: "2024-01-15", type: "register", description: "นำเข้าอุปกรณ์ใหม่" },
-      { id: "h2", date: "2024-01-16", type: "transfer", description: "มอบให้พนักงาน", fromUser: "-", toUser: "สมชาย ใจดี" },
-      { id: "h3", date: "2024-06-10", type: "upgrade", description: "เพิ่ม RAM 16GB → 32GB", cost: 4500 },
-    ],
-  },
-  {
-    id: "2", assetId: "INV-20240220-002", name: "Dell OptiPlex 7010", category: "คอมพิวเตอร์",
-    assignedTo: "สมหญิง รักงาน", purchaseDate: "2024-02-20", price: 25000, status: "ใช้งานอยู่",
-    history: [
-      { id: "h4", date: "2024-02-20", type: "register", description: "นำเข้าอุปกรณ์ใหม่" },
-      { id: "h5", date: "2024-02-21", type: "transfer", description: "มอบให้พนักงาน", fromUser: "-", toUser: "สมหญิง รักงาน" },
-    ],
-  },
-  {
-    id: "3", assetId: "INV-20240301-003", name: "iPhone 15 Pro", category: "มือถือ",
-    assignedTo: "", purchaseDate: "2024-03-01", price: 42900, status: "ว่าง",
-    history: [
-      { id: "h6", date: "2024-03-01", type: "register", description: "นำเข้าอุปกรณ์ใหม่" },
-      { id: "h7", date: "2024-03-05", type: "transfer", description: "มอบให้พนักงาน", fromUser: "-", toUser: "วิชัย สุขใจ" },
-      { id: "h8", date: "2024-11-01", type: "transfer", description: "คืนอุปกรณ์ (พนักงานลาออก)", fromUser: "วิชัย สุขใจ", toUser: "-" },
-    ],
-  },
-  {
-    id: "4", assetId: "INV-20240410-004", name: "Logitech MX Keys", category: "อุปกรณ์เสริม",
-    assignedTo: "สมชาย ใจดี", purchaseDate: "2024-04-10", price: 3490, status: "ส่งซ่อม",
-    history: [
-      { id: "h9", date: "2024-04-10", type: "register", description: "นำเข้าอุปกรณ์ใหม่" },
-      { id: "h10", date: "2024-12-01", type: "repair", description: "คีย์บอร์ดปุ่มค้าง ส่งศูนย์", cost: 800 },
-    ],
-  },
-  {
-    id: "5", assetId: "INV-20230815-005", name: "Samsung Galaxy S23", category: "มือถือ",
-    assignedTo: "", purchaseDate: "2023-08-15", price: 29900, status: "จำหน่ายออก",
-    history: [
-      { id: "h11", date: "2023-08-15", type: "register", description: "นำเข้าอุปกรณ์ใหม่" },
-      { id: "h12", date: "2024-08-15", type: "transfer", description: "จำหน่ายออก (ครบอายุใช้งาน)", fromUser: "แผนกขาย", toUser: "-" },
-    ],
-  },
-  {
-    id: "6", assetId: "INV-20240501-006", name: "ASUS VivoBook 15", category: "โน้ตบุ๊ก",
-    assignedTo: "อรุณ แสงจันทร์", purchaseDate: "2024-05-01", price: 19900, status: "ใช้งานอยู่",
-    history: [
-      { id: "h13", date: "2024-05-01", type: "register", description: "นำเข้าอุปกรณ์ใหม่" },
-      { id: "h14", date: "2024-05-02", type: "transfer", description: "มอบให้พนักงาน", fromUser: "-", toUser: "อรุณ แสงจันทร์" },
-      { id: "h15", date: "2024-09-15", type: "repair", description: "เปลี่ยนแบตเตอรี่", cost: 2200 },
-    ],
-  },
-];
-
 // ── Component ──
 const OfficeInventory = () => {
   const [assets, setAssets] = useState<Asset[]>([]);

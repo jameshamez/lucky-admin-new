@@ -20,7 +20,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Search, Plus, Edit, Users, Briefcase, ShieldCheck, UserMinus, X, UserX, History } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { defaultEmployees, defaultPositions, getSaleEmployees, getAdminEmployees, getActiveEmployees, getResignedEmployees, type Employee, type EmployeeRole, type EmployeeStatus } from "@/lib/employeeData";
+import { defaultPositions, getSaleEmployees, getAdminEmployees, getActiveEmployees, getResignedEmployees, type Employee, type EmployeeRole, type EmployeeStatus } from "@/lib/employeeData";
 import { hrService } from "@/services/hrService";
 import { Loader2 } from "lucide-react";
 

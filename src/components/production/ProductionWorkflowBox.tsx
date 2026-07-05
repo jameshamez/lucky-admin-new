@@ -29,6 +29,7 @@ import {
   Printer,
 } from "lucide-react";
 import { toast } from "sonner";
+import { productionService } from "@/services/productionService";
 
 // Types
 interface ProductionStep {
@@ -48,8 +49,7 @@ interface ProductionStep {
 interface StepData {
   status: string;
   remark: string;
-  images: File[];
-  imagePreviews: string[];
+  imageUrls: string[];
   updatedAt: string;
   updatedBy: string;
   boxCount?: number;
@@ -59,6 +59,8 @@ interface StepData {
 
 interface ProductionWorkflowBoxProps {
   orderId: string;
+  dbOrderId?: number | string;
+  initialWorkflow?: Record<string, Partial<StepData>> | null;
 }
 
 // Production workflow steps configuration
@@ -144,75 +146,52 @@ const productionSteps: ProductionStep[] = [
   },
 ];
 
-// Initial mock data for steps
-const getInitialStepData = (): Record<string, StepData> => ({
-  procurement: {
-    status: "complete",
-    remark: "",
-    images: [],
-    imagePreviews: [],
-    updatedAt: "25/01/2026 10:30",
-    updatedBy: "สมชาย ใจดี",
-  },
-  assembly: {
-    status: "complete",
-    remark: "",
-    images: [],
-    imagePreviews: [],
-    updatedAt: "26/01/2026 14:15",
-    updatedBy: "วิชัย ขยัน",
-  },
-  ribbon: {
+// Default (empty) step data, merged with production_workflow loaded from the order
+const buildStepData = (
+  initialWorkflow?: Record<string, Partial<StepData>> | null
+): Record<string, StepData> => {
+  const emptyStep: StepData = {
     status: "in_progress",
     remark: "",
-    images: [],
-    imagePreviews: [],
+    imageUrls: [],
     updatedAt: "",
     updatedBy: "",
-  },
-  labeling: {
-    status: "in_progress",
-    remark: "",
-    images: [],
-    imagePreviews: [],
-    updatedAt: "",
-    updatedBy: "",
-  },
-  qc: {
-    status: "in_progress",
-    remark: "",
-    images: [],
-    imagePreviews: [],
-    updatedAt: "",
-    updatedBy: "",
-  },
-  packing: {
-    status: "in_progress",
-    remark: "",
-    images: [],
-    imagePreviews: [],
-    updatedAt: "",
-    updatedBy: "",
-    boxCount: 0,
-  },
-  shipping: {
-    status: "in_progress",
-    remark: "",
-    images: [],
-    imagePreviews: [],
-    updatedAt: "",
-    updatedBy: "",
-    carrierName: "",
-    trackingNumber: "",
-  },
-});
-
-export default function ProductionWorkflowBox({ orderId }: ProductionWorkflowBoxProps) {
-  const [stepsData, setStepsData] = useState<Record<string, StepData>>(getInitialStepData());
-  const [lastUpdate, setLastUpdate] = useState({
-    timestamp: "27/01/2026 09:45",
-    employee: "สมหญิง รักงาน",
+  };
+  const data: Record<string, StepData> = {};
+  productionSteps.forEach((step) => {
+    data[step.key] = {
+      ...emptyStep,
+      ...(initialWorkflow?.[step.key] || {}),
+      imageUrls: initialWorkflow?.[step.key]?.imageUrls || [],
+    };
   });
+  return data;
+};
+
+const getLastUpdateFromWorkflow = (stepsData: Record<string, StepData>) => {
+  let latest: { timestamp: string; employee: string } | null = null;
+  Object.values(stepsData).forEach((step) => {
+    if (step.updatedAt && (!latest || step.updatedAt > latest.timestamp)) {
+      latest = { timestamp: step.updatedAt, employee: step.updatedBy };
+    }
+  });
+  return latest || { timestamp: "", employee: "" };
+};
+
+const getCurrentEmployeeName = () => {
+  try {
+    const userData = JSON.parse(localStorage.getItem("user") || "{}");
+    return userData.full_name || "ไม่ระบุผู้ใช้งาน";
+  } catch {
+    return "ไม่ระบุผู้ใช้งาน";
+  }
+};
+
+export default function ProductionWorkflowBox({ orderId, dbOrderId, initialWorkflow }: ProductionWorkflowBoxProps) {
+  const [stepsData, setStepsData] = useState<Record<string, StepData>>(() => buildStepData(initialWorkflow));
+  const [lastUpdate, setLastUpdate] = useState(() => getLastUpdateFromWorkflow(buildStepData(initialWorkflow)));
+  const [isSaving, setIsSaving] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
 
   // Get status badge styling
   const getStatusBadge = (type: "progress" | "issue" | "complete") => {
@@ -261,29 +240,45 @@ export default function ProductionWorkflowBox({ orderId }: ProductionWorkflowBox
     }));
   };
 
-  // Handle image upload (multiple)
-  const handleImageUpload = (stepKey: string, e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle image upload (multiple) - uploads immediately and stores the resulting URLs
+  const handleImageUpload = async (stepKey: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
-    if (files && files.length > 0) {
-      const newFiles = Array.from(files);
-      const readers = newFiles.map((file) => {
-        return new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result as string);
-          reader.readAsDataURL(file);
-        });
-      });
+    if (!files || files.length === 0) return;
 
-      Promise.all(readers).then((previews) => {
+    setIsUploading(true);
+    try {
+      const uploadedUrls: string[] = [];
+      for (const file of Array.from(files)) {
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("category", "general");
+        const res = await fetch("https://nacres.co.th/api-lucky/admin/order_upload.php", {
+          method: "POST",
+          body: formData,
+        });
+        const json = await res.json();
+        if (json.status === "success" && json.data?.fileUrl) {
+          uploadedUrls.push(json.data.fileUrl);
+        }
+      }
+
+      if (uploadedUrls.length > 0) {
         setStepsData((prev) => ({
           ...prev,
           [stepKey]: {
             ...prev[stepKey],
-            images: [...prev[stepKey].images, ...newFiles],
-            imagePreviews: [...prev[stepKey].imagePreviews, ...previews],
+            imageUrls: [...prev[stepKey].imageUrls, ...uploadedUrls],
           },
         }));
-      });
+      }
+      if (uploadedUrls.length < files.length) {
+        toast.error("อัปโหลดรูปบางไฟล์ไม่สำเร็จ");
+      }
+    } catch {
+      toast.error("อัปโหลดรูปไม่สำเร็จ กรุณาลองใหม่");
+    } finally {
+      setIsUploading(false);
+      e.target.value = "";
     }
   };
 
@@ -293,8 +288,7 @@ export default function ProductionWorkflowBox({ orderId }: ProductionWorkflowBox
       ...prev,
       [stepKey]: {
         ...prev[stepKey],
-        images: prev[stepKey].images.filter((_, i) => i !== index),
-        imagePreviews: prev[stepKey].imagePreviews.filter((_, i) => i !== index),
+        imageUrls: prev[stepKey].imageUrls.filter((_, i) => i !== index),
       },
     }));
   };
@@ -352,10 +346,9 @@ export default function ProductionWorkflowBox({ orderId }: ProductionWorkflowBox
     });
   };
 
-  // Handle update button click - Auto-update to next step if in_progress
-  const handleUpdate = () => {
-    // Mock current user and timestamp
-    const currentEmployee = "สมชาย ใจดี";
+  // Handle update button click - Auto-update to next step if in_progress, then persist
+  const handleUpdate = async () => {
+    const currentEmployee = getCurrentEmployeeName();
     const now = new Date();
     const timestamp = `${now.getDate().toString().padStart(2, "0")}/${(now.getMonth() + 1)
       .toString()
@@ -364,44 +357,40 @@ export default function ProductionWorkflowBox({ orderId }: ProductionWorkflowBox
       .toString()
       .padStart(2, "0")}`;
 
-    // Update last update info
-    setLastUpdate({
-      timestamp,
-      employee: currentEmployee,
-    });
-
     // Update each step with timestamp and auto-progress logic
-    const updatedStepsData = { ...stepsData };
-    const stepOrder = ["procurement", "assembly", "ribbon", "labeling", "qc", "packing", "shipping"];
-    
+    const updatedStepsData: Record<string, StepData> = { ...stepsData };
+    const stepOrder = productionSteps.map((s) => s.key);
+
     stepOrder.forEach((key) => {
       const currentStatus = updatedStepsData[key].status;
-      
+
       // If status is in_progress (not issue), auto-update to complete
       if (currentStatus === "in_progress") {
-        updatedStepsData[key].status = "complete";
-        updatedStepsData[key].updatedAt = timestamp;
-        updatedStepsData[key].updatedBy = currentEmployee;
+        updatedStepsData[key] = { ...updatedStepsData[key], status: "complete", updatedAt: timestamp, updatedBy: currentEmployee };
       } else if (currentStatus === "issue") {
         // Keep issue status, just update timestamp
-        updatedStepsData[key].updatedAt = timestamp;
-        updatedStepsData[key].updatedBy = currentEmployee;
+        updatedStepsData[key] = { ...updatedStepsData[key], updatedAt: timestamp, updatedBy: currentEmployee };
       }
     });
-    
-    setStepsData(updatedStepsData);
 
-    // Log to console (would be database in production)
-    console.log("Production Update Log:", {
-      orderId,
-      employee: currentEmployee,
-      timestamp,
-      stepsData: updatedStepsData,
-    });
+    if (!dbOrderId) {
+      toast.error("ไม่พบรหัสออเดอร์ ไม่สามารถบันทึกได้");
+      return;
+    }
 
-    toast.success("อัปเดตสถานะการผลิตสำเร็จ", {
-      description: `บันทึกโดย ${currentEmployee} เวลา ${timestamp}`,
-    });
+    setIsSaving(true);
+    try {
+      await productionService.updateProductionWorkflow(dbOrderId, updatedStepsData);
+      setStepsData(updatedStepsData);
+      setLastUpdate({ timestamp, employee: currentEmployee });
+      toast.success("อัปเดตสถานะการผลิตสำเร็จ", {
+        description: `บันทึกโดย ${currentEmployee} เวลา ${timestamp}`,
+      });
+    } catch {
+      toast.error("บันทึกสถานะการผลิตไม่สำเร็จ กรุณาลองใหม่");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -413,7 +402,7 @@ export default function ProductionWorkflowBox({ orderId }: ProductionWorkflowBox
         </CardTitle>
       </CardHeader>
       <CardContent className="pt-6 space-y-6">
-        {productionSteps.map((step, index) => {
+        {productionSteps.map((step) => {
           const stepData = stepsData[step.key];
           const currentStatusType = getCurrentStatusType(step);
           const isCompleted = currentStatusType === "complete";
@@ -575,18 +564,19 @@ export default function ProductionWorkflowBox({ orderId }: ProductionWorkflowBox
               <div className="mt-4 space-y-2">
                 <Label className="text-sm font-medium flex items-center gap-2">
                   <Camera className="w-4 h-4" />
-                  {step.uploadLabel} ({stepData?.imagePreviews?.length || 0} รูป)
+                  {step.uploadLabel} ({stepData?.imageUrls?.length || 0} รูป)
                 </Label>
                 <Input
                   type="file"
                   accept="image/*"
                   multiple
+                  disabled={isUploading}
                   onChange={(e) => handleImageUpload(step.key, e)}
                   className="max-w-xs"
                 />
-                {stepData?.imagePreviews && stepData.imagePreviews.length > 0 && (
+                {stepData?.imageUrls && stepData.imageUrls.length > 0 && (
                   <div className="flex flex-wrap gap-2 mt-2">
-                    {stepData.imagePreviews.map((preview, idx) => (
+                    {stepData.imageUrls.map((preview, idx) => (
                       <div key={idx} className="relative group">
                         <img
                           src={preview}
@@ -619,16 +609,18 @@ export default function ProductionWorkflowBox({ orderId }: ProductionWorkflowBox
         {/* Footer - Update Button */}
         <div className="pt-4 border-t space-y-3">
           <div className="flex justify-center">
-            <Button size="lg" onClick={handleUpdate} className="px-8">
+            <Button size="lg" onClick={handleUpdate} className="px-8" disabled={isSaving}>
               <Upload className="w-4 h-4 mr-2" />
-              อัปเดตสถานะ
+              {isSaving ? "กำลังบันทึก..." : "อัปเดตสถานะ"}
             </Button>
           </div>
 
           {/* Last Update Log */}
-          <div className="text-center text-sm text-muted-foreground">
-            อัปเดตล่าสุด: {lastUpdate.timestamp} โดย {lastUpdate.employee}
-          </div>
+          {lastUpdate.timestamp && (
+            <div className="text-center text-sm text-muted-foreground">
+              อัปเดตล่าสุด: {lastUpdate.timestamp} โดย {lastUpdate.employee}
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>

@@ -386,7 +386,8 @@ if ($method === 'GET') {
                 SUBSTRING_INDEX(GROUP_CONCAT(item_type ORDER BY item_id ASC SEPARATOR '||'), '||', 1) AS first_item_type,
                 MAX(CASE WHEN item_type IN ('readymade', 'catalog') THEN 1 ELSE 0 END) AS has_readymade_item,
                 MAX(CASE WHEN item_type IN ('custom', 'made-to-order') THEN 1 ELSE 0 END) AS has_custom_item,
-                MAX(CASE WHEN item_type = 'estimate' THEN 1 ELSE 0 END) AS has_estimate_item
+                MAX(CASE WHEN item_type = 'estimate' THEN 1 ELSE 0 END) AS has_estimate_item,
+                SUM(quantity) AS total_quantity
             FROM order_items
             GROUP BY order_id
         ) item_summary ON item_summary.order_id = orders.order_id
@@ -418,8 +419,9 @@ if ($method === 'GET') {
                         item_summary.first_item_type,
                         COALESCE(item_summary.has_readymade_item, 0) AS has_readymade_item,
                         COALESCE(item_summary.has_custom_item, 0) AS has_custom_item,
-                        COALESCE(item_summary.has_estimate_item, 0) AS has_estimate_item
-                 $from_sql $where_sql 
+                        COALESCE(item_summary.has_estimate_item, 0) AS has_estimate_item,
+                        COALESCE(item_summary.total_quantity, 0) AS total_quantity
+                 $from_sql $where_sql
                  ORDER BY orders.created_at DESC LIMIT ? OFFSET ?";
     $data_params = array_merge($params, [$limit, $offset]);
     $data_types = $types . 'ii';

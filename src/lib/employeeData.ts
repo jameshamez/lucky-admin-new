@@ -29,19 +29,6 @@ export const defaultPositions: string[] = [
   "Manager",
 ];
 
-// Central mock data — used as fallback only, Supabase is primary source
-export const defaultEmployees: Employee[] = [
-  { id: "EMP-001", fullName: "คุณสมชาย ใจดี", nickname: "ชาย", position: "Sales Manager", role: "Sale", status: "ACTIVE" },
-  { id: "EMP-002", fullName: "คุณสมหญิง รวยเงิน", nickname: "หญิง", position: "Sales Executive", role: "Sale", status: "ACTIVE" },
-  { id: "EMP-003", fullName: "คุณวิชัย ขยัน", nickname: "วิชัย", position: "Sales Executive", role: "Sale", status: "ACTIVE" },
-  { id: "EMP-004", fullName: "คุณสมศักดิ์ ทำงาน", nickname: "ศักดิ์", position: "Sales Executive", role: "Sale", status: "ACTIVE" },
-  { id: "EMP-005", fullName: "คุณสุดา ดี", nickname: "สุดา", position: "Admin Officer", role: "Admin", status: "ACTIVE" },
-  { id: "EMP-006", fullName: "คุณประยุทธ์ เก่ง", nickname: "ยุทธ์", position: "Sales Executive", role: "Sale", status: "ACTIVE" },
-  { id: "EMP-007", fullName: "คุณนิภา สวย", nickname: "นิภา", position: "Sales Executive", role: "Sale", status: "ACTIVE" },
-  { id: "EMP-008", fullName: "คุณอรุณ แจ่มใส", nickname: "อรุณ", position: "Admin Officer", role: "Admin", status: "ACTIVE" },
-  { id: "EMP-009", fullName: "คุณสมปอง ผลิต", nickname: "ปอง", position: "Production Staff", role: "General", status: "ACTIVE" },
-];
-
 // Helper functions for filtering
 export function getSaleEmployees(employees: Employee[]): Employee[] {
   return employees.filter(e =>

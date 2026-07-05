@@ -31,17 +31,18 @@ import {
   getMadeToOrderCategories,
 } from "@/lib/commissionConfig";
 import { getSaleEmployees, type Employee } from "@/lib/employeeData";
+import { hrService } from "@/services/hrService";
 
 type Props = {
   transactions: CommissionTransaction[];
-  onTransactionsChange: (txns: CommissionTransaction[]) => void;
   employees: Employee[];
   selectedMonth: string;
+  onRefetch: () => void;
 };
 
 const ITEMS_PER_PAGE = 10;
 
-export default function TransactionManagementTab({ transactions, onTransactionsChange, employees, selectedMonth }: Props) {
+export default function TransactionManagementTab({ transactions, employees, selectedMonth, onRefetch }: Props) {
   const { toast } = useToast();
   const saleEmployees = useMemo(() => getSaleEmployees(employees), [employees]);
 
@@ -123,7 +124,7 @@ export default function TransactionManagementTab({ transactions, onTransactionsC
     setIsFormOpen(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!form.poNumber || !form.employeeId || !form.productCategory) {
       toast({ title: "กรุณากรอกข้อมูลให้ครบ", variant: "destructive" });
       return;
@@ -132,8 +133,8 @@ export default function TransactionManagementTab({ transactions, onTransactionsC
     const emp = saleEmployees.find(e => e.id === form.employeeId);
     const empName = emp?.fullName || form.employeeId;
 
-    const baseTxn: CommissionTransaction = {
-      id: editingId || `txn-${Date.now()}`,
+    const draftTxn: CommissionTransaction = {
+      id: editingId || "",
       month: form.month,
       employeeId: form.employeeId,
       employeeName: empName,
@@ -147,25 +148,59 @@ export default function TransactionManagementTab({ transactions, onTransactionsC
       rateInfo: "",
       status: "COMPLETED",
     };
+    const commission = recalculateCommission(draftTxn);
 
-    // Recalculate commission
-    baseTxn.commission = recalculateCommission(baseTxn);
+    const payload = {
+      deliveryDate: `${form.month}-01`,
+      poNumber: form.poNumber,
+      jobName: form.jobName,
+      productCategory: form.productCategory,
+      saleName: empName,
+      quantity: form.quantity,
+      totalSalesAmount: form.totalSales,
+      commissionAmount: commission,
+      commissionStatus: "COMPLETED",
+    };
 
-    if (editingId) {
-      onTransactionsChange(transactions.map(t => t.id === editingId ? baseTxn : t));
-      toast({ title: "แก้ไขสำเร็จ", description: `ค่าคอม: ${formatCurrency(baseTxn.commission)}` });
-    } else {
-      onTransactionsChange([...transactions, baseTxn]);
-      toast({ title: "เพิ่มรายการสำเร็จ", description: `ค่าคอม: ${formatCurrency(baseTxn.commission)}` });
+    const isReadyMade = form.type === "ReadyMade";
+    try {
+      if (editingId) {
+        // id is stored as "rm-123" / "mto-123" — strip the prefix for the backend
+        const rawId = editingId.replace(/^(rm|mto)-/, "");
+        const res = isReadyMade
+          ? await hrService.updateReadyMadeCommission(rawId, payload)
+          : await hrService.updateMTOCommission(rawId, payload);
+        if (res.status !== "success") throw new Error(res.message || "update failed");
+        toast({ title: "แก้ไขสำเร็จ", description: `ค่าคอม: ${formatCurrency(commission)}` });
+      } else {
+        const res = isReadyMade
+          ? await hrService.createReadyMadeCommission(payload)
+          : await hrService.createMTOCommission(payload);
+        if (res.status !== "success") throw new Error(res.message || "create failed");
+        toast({ title: "เพิ่มรายการสำเร็จ", description: `ค่าคอม: ${formatCurrency(commission)}` });
+      }
+      setIsFormOpen(false);
+      onRefetch();
+    } catch (error) {
+      toast({ title: "บันทึกไม่สำเร็จ", description: String(error), variant: "destructive" });
     }
-    setIsFormOpen(false);
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!deleteTarget) return;
-    onTransactionsChange(transactions.filter(t => t.id !== deleteTarget.id));
-    toast({ title: "ลบรายการสำเร็จ", description: deleteTarget.poNumber });
-    setDeleteTarget(null);
+    const isReadyMade = deleteTarget.id.startsWith("rm-");
+    const rawId = deleteTarget.id.replace(/^(rm|mto)-/, "");
+    try {
+      const res = isReadyMade
+        ? await hrService.deleteReadyMadeCommission(rawId)
+        : await hrService.deleteMTOCommission(rawId);
+      if (res.status !== "success") throw new Error(res.message || "delete failed");
+      toast({ title: "ลบรายการสำเร็จ", description: deleteTarget.poNumber });
+      setDeleteTarget(null);
+      onRefetch();
+    } catch (error) {
+      toast({ title: "ลบไม่สำเร็จ", description: String(error), variant: "destructive" });
+    }
   };
 
   return (

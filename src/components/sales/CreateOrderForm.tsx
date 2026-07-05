@@ -638,6 +638,7 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
     customerEmail: string;
     jobDescription: string;
     material?: string;
+    customerId?: number | null;
   } | null>(null);
 
   // Selected estimations for quotation-style product list (multiple selection)
@@ -723,6 +724,7 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
                customerEmail: item.customer_email || "",
                jobDescription: item.job_name || "-",
                material: detailObj.material || "",
+               customerId: item.customer_id ? parseInt(item.customer_id) : null,
              };
           });
           setFetchedPriceEstimations(mapped);
@@ -730,135 +732,6 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
       })
       .catch(err => console.warn("Failed to fetch real estimators", err));
   }, []);
-
-  const basePriceEstimations = [
-    {
-      id: 1,
-      date: "2024-01-15",
-      lineName: "customer_line_001",
-      productType: "เหรียญสั่งผลิต",
-      quantity: 100,
-      price: 15000,
-      status: "รอการอนุมัติ",
-      customerName: "บริษัท ABC จำกัด",
-      customerPhone: "02-123-4567",
-      customerEmail: "contact@abc.co.th",
-      jobDescription: "เหรียญที่ระลึกงานวิ่ง",
-      material: "ซิงค์อัลลอย",
-    },
-    {
-      id: 2,
-      date: "2024-01-14",
-      lineName: "customer_line_001",
-      productType: "โล่สั่งผลิต",
-      quantity: 50,
-      price: 25000,
-      status: "อนุมัติแล้ว",
-      customerName: "บริษัท ABC จำกัด",
-      customerPhone: "02-123-4567",
-      customerEmail: "contact@abc.co.th",
-      jobDescription: "โล่รางวัลประจำปี",
-      material: "คริสตัล",
-    },
-    {
-      id: 3,
-      date: "2024-01-13",
-      lineName: "customer_line_002",
-      productType: "หมวก",
-      quantity: 200,
-      price: 8000,
-      status: "อนุมัติแล้ว",
-      customerName: "โรงเรียนสาธิต",
-      customerPhone: "02-555-1234",
-      customerEmail: "school@example.com",
-      jobDescription: "หมวกวันกีฬาสี",
-      material: "ผ้าโพลีเอสเตอร์",
-    },
-    {
-      id: 4,
-      date: "2024-01-12",
-      lineName: "customer_line_002",
-      productType: "กระเป๋า",
-      quantity: 100,
-      price: 15000,
-      status: "รอการอนุมัติ",
-      customerName: "โรงเรียนสาธิต",
-      customerPhone: "02-555-1234",
-      customerEmail: "school@example.com",
-      jobDescription: "กระเป๋าผ้าของที่ระลึก",
-      material: "ผ้าดิบ",
-    },
-    {
-      id: 5,
-      date: "2024-01-11",
-      lineName: "customer_line_003",
-      productType: "สายคล้อง",
-      quantity: 500,
-      price: 12500,
-      status: "อนุมัติแล้ว",
-      customerName: "บริษัท Event จำกัด",
-      customerPhone: "02-333-4444",
-      customerEmail: "event@company.com",
-      jobDescription: "สายคล้องบัตรงาน Conference",
-      material: "โพลีสกรีน",
-    },
-    {
-      id: 6,
-      date: "2024-01-10",
-      lineName: "customer_line_003",
-      productType: "ลิสแบรนด์",
-      quantity: 300,
-      price: 9000,
-      status: "อนุมัติแล้ว",
-      customerName: "บริษัท Event จำกัด",
-      customerPhone: "02-333-4444",
-      customerEmail: "event@company.com",
-      jobDescription: "ริสแบนด์งาน Music Festival",
-      material: "ซิลิโคน",
-    },
-    {
-      id: 7,
-      date: "2024-01-09",
-      lineName: "customer_line_004",
-      productType: "พวงกุญแจ",
-      quantity: 1000,
-      price: 20000,
-      status: "อนุมัติแล้ว",
-      customerName: "ร้านของฝาก",
-      customerPhone: "02-666-7777",
-      customerEmail: "gift@shop.com",
-      jobDescription: "พวงกุญแจของที่ระลึก",
-      material: "โลหะ",
-    },
-    {
-      id: 8,
-      date: "2024-01-08",
-      lineName: "customer_line_004",
-      productType: "แม่เหล็ก",
-      quantity: 500,
-      price: 10000,
-      status: "รอการอนุมัติ",
-      customerName: "ร้านของฝาก",
-      customerPhone: "02-666-7777",
-      customerEmail: "gift@shop.com",
-      jobDescription: "แม่เหล็กติดตู้เย็น",
-      material: "ยาง",
-    },
-    {
-      id: 9,
-      date: "2024-01-07",
-      lineName: "nun",
-      productType: "เหรียญสั่งผลิต",
-      quantity: 200,
-      price: 30000,
-      status: "อนุมัติแล้ว",
-      customerName: "LINE nun",
-      customerPhone: "089-123-4567",
-      customerEmail: "nun@example.com",
-      jobDescription: "เหรียญสั่งผลิตพิเศษ",
-      material: "ซิงค์อัลลอย",
-    },
-  ];
 
 
   // Mapping from product label to productsByCategory value
@@ -1183,7 +1056,7 @@ export default function CreateOrderForm({ onSubmit, onCancel, initialData, estim
   // If user navigated from PriceEstimation, merge that record into the list
   // (and replace same-id records to prevent mock ID collision)
   const priceEstimations = useMemo(() => {
-    const combinedBase = fetchedPriceEstimations.length > 0 ? fetchedPriceEstimations : basePriceEstimations;
+    const combinedBase = fetchedPriceEstimations;
 
     if (!estimationData) return combinedBase;
 
