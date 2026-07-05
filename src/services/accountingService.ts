@@ -45,6 +45,20 @@ export const accountingService = {
         return await res.json();
     },
 
+    getPettyCashFund: async () => {
+        const res = await fetch(`${API_BASE_URL}/accounting/petty_cash.php?type=fund`);
+        return await res.json();
+    },
+
+    setPettyCashFund: async (fundAmount: number) => {
+        const res = await fetch(`${API_BASE_URL}/accounting/petty_cash.php`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'set_fund', fundAmount })
+        });
+        return await res.json();
+    },
+
     getWorkOrders: async () => {
         const res = await fetch(`${API_BASE_URL}/accounting/work_orders.php`);
         return await res.json();

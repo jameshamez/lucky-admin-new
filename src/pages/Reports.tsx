@@ -41,6 +41,7 @@ import {
 import { format } from "date-fns";
 import { reportService } from "@/services/reportService";
 import { toast } from "sonner";
+import * as XLSX from "xlsx";
 
 export default function Reports() {
   const [activeTab, setActiveTab] = useState("operational");
@@ -116,6 +117,62 @@ export default function Reports() {
   const hrStats = hrData?.kpi || [];
   const summary = prodStats?.summary || {};
 
+  const handleExportExcel = () => {
+    const wb = XLSX.utils.book_new();
+
+    const summaryRows = [
+      ["สรุปรายงานผลองค์กร", selectedPeriod, format(date, "dd/MM/yyyy")],
+      [],
+      ["รายการ", "ค่า"],
+      ["ออเดอร์ที่เสร็จสิ้น", summary.completedOrders || 0],
+      ["ประสิทธิภาพเฉลี่ย", summary.efficiency || "0%"],
+      ["กำไรสุทธิ (เดือนล่าสุด)", financialData[financialData.length - 1]?.profit || 0],
+    ];
+    const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
+    wsSummary["!cols"] = [{ wch: 24 }, { wch: 16 }, { wch: 14 }];
+    XLSX.utils.book_append_sheet(wb, wsSummary, "สรุปรวม");
+
+    if (orderStatus.length > 0) {
+      const rows = [["สถานะออเดอร์", "จำนวน"], ...orderStatus.map((o: any) => [o.name, o.value])];
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws["!cols"] = [{ wch: 22 }, { wch: 12 }];
+      XLSX.utils.book_append_sheet(wb, ws, "สถานะออเดอร์");
+    }
+
+    if (prodEfficiency.length > 0) {
+      const rows = [
+        ["สัปดาห์", "เป้าหมาย", "ผลิตได้จริง"],
+        ...prodEfficiency.map((w: any) => [w.week, w.target, w.actual]),
+      ];
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws["!cols"] = [{ wch: 14 }, { wch: 12 }, { wch: 12 }];
+      XLSX.utils.book_append_sheet(wb, ws, "ประสิทธิภาพการผลิต");
+    }
+
+    if (inventoryData.length > 0) {
+      const rows = [
+        ["รายการ", "คงเหลือ", "ขั้นต่ำ", "สถานะ"],
+        ...inventoryData.map((i: any) => [i.item, i.current, i.minimum, i.status]),
+      ];
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws["!cols"] = [{ wch: 24 }, { wch: 12 }, { wch: 12 }, { wch: 12 }];
+      XLSX.utils.book_append_sheet(wb, ws, "สถานะสต็อก");
+    }
+
+    if (hrStats.length > 0) {
+      const rows = [
+        ["พนักงาน", "แผนก", "คะแนน KPI"],
+        ...hrStats.map((r: any) => [r.employeeName, r.department, r.score]),
+      ];
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws["!cols"] = [{ wch: 20 }, { wch: 16 }, { wch: 12 }];
+      XLSX.utils.book_append_sheet(wb, ws, "KPI พนักงาน");
+    }
+
+    XLSX.writeFile(wb, `reports-${selectedPeriod}-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    toast.success("ส่งออกรายงานสำเร็จ");
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -156,7 +213,7 @@ export default function Reports() {
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           </Button>
 
-          <Button className="gap-2">
+          <Button className="gap-2" onClick={handleExportExcel}>
             <Download className="h-4 w-4" />
             ส่งออกรายงาน
           </Button>

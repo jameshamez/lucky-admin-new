@@ -46,6 +46,7 @@ import {
 import { accountingService } from "@/services/accountingService";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
+import * as XLSX from "xlsx";
 
 const COLORS = ['hsl(var(--primary))', 'hsl(var(--secondary))', 'hsl(var(--accent))', '#f59e0b', '#10b981', '#6366f1'];
 
@@ -114,20 +115,97 @@ export default function AccountingDashboard() {
 
   const averageKPI = currentKPIData.length > 0 ? Math.round(currentKPIData.reduce((sum, kpi) => sum + kpi.value, 0) / currentKPIData.length) : 0;
 
+  const handleExportExcel = () => {
+    const wb = XLSX.utils.book_new();
+
+    const summaryRows = [
+      ["สรุปภาพรวมฝ่ายบัญชี"],
+      [],
+      ["รายการ", "ค่า"],
+      ["ยอดรายรับเดือนนี้", stats.monthlyIncome],
+      ["ยอดรายจ่ายเดือนนี้", stats.monthlyExpense],
+      ["ออเดอร์รอการชำระ", stats.pendingPayments],
+      ["สต็อกออฟฟิศ", stats.stockCount],
+      [],
+      ["วงเงินกองทุนย่อย", pettyCash.total],
+      ["เบิกจ่ายแล้ว", pettyCash.spent],
+      ["คงเหลือ", pettyCash.remaining],
+    ];
+    const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
+    wsSummary["!cols"] = [{ wch: 26 }, { wch: 16 }];
+    XLSX.utils.book_append_sheet(wb, wsSummary, "สรุปรวม");
+
+    if (cashFlow.length > 0) {
+      const rows = [["เดือน", "รายรับ", "รายจ่าย"], ...cashFlow.map((c: any) => [c.month, c.income, c.expense])];
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws["!cols"] = [{ wch: 12 }, { wch: 14 }, { wch: 14 }];
+      XLSX.utils.book_append_sheet(wb, ws, "กระแสเงินสด");
+    }
+
+    if (currentSalesByPerson.length > 0) {
+      const rows = [["พนักงานขาย", "ยอดขาย", "เป้าหมาย"], ...currentSalesByPerson.map((s: any) => [s.name, s.sales, s.target])];
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws["!cols"] = [{ wch: 20 }, { wch: 14 }, { wch: 14 }];
+      XLSX.utils.book_append_sheet(wb, ws, "ยอดขายรายบุคคล");
+    }
+
+    if (currentTopProducts.length > 0) {
+      const rows = [["อันดับ", "สินค้า", "หมวดหมู่", "ยอดขาย", "จำนวนออเดอร์"], ...currentTopProducts.map((p: any, i: number) => [i + 1, p.name, p.category, p.sales, p.orders])];
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws["!cols"] = [{ wch: 8 }, { wch: 22 }, { wch: 16 }, { wch: 14 }, { wch: 14 }];
+      XLSX.utils.book_append_sheet(wb, ws, "Top 5 สินค้า");
+    }
+
+    if (currentAR.length > 0) {
+      const rows = [["บริษัท", "ครบกำหนด", "Aging", "ยอดค้างชำระ"], ...currentAR.map((a: any) => [a.company, a.dueDate, a.aging, a.amount])];
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws["!cols"] = [{ wch: 22 }, { wch: 14 }, { wch: 14 }, { wch: 14 }];
+      XLSX.utils.book_append_sheet(wb, ws, "ลูกหนี้");
+    }
+
+    const ap = dashboardData?.accountsPayable || [];
+    if (ap.length > 0) {
+      const rows = [["ผู้จำหน่าย", "ครบกำหนด", "ประเภท", "ยอดค้างจ่าย"], ...ap.map((a: any) => [a.supplier, a.dueDate, a.type, a.amount])];
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws["!cols"] = [{ wch: 22 }, { wch: 14 }, { wch: 14 }, { wch: 14 }];
+      XLSX.utils.book_append_sheet(wb, ws, "เจ้าหนี้");
+    }
+
+    if (apiInventory.lowStock?.length > 0) {
+      const rows = [["สินค้า", "คลัง", "สต็อกคงเหลือ", "จุดสั่งซื้อ"], ...apiInventory.lowStock.map((i: any) => [i.name, i.warehouse, i.stock, i.min])];
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws["!cols"] = [{ wch: 22 }, { wch: 14 }, { wch: 14 }, { wch: 14 }];
+      XLSX.utils.book_append_sheet(wb, ws, "สินค้าใกล้หมด");
+    }
+
+    if (currentTasks.length > 0) {
+      const rows = [
+        ["รหัสงาน", "งาน", "สถานะ", "ความสำคัญ", "ครบกำหนด"],
+        ...currentTasks.map((t: any) => [t.id, t.task, t.status === "completed" ? "เสร็จสิ้น" : t.status === "in-progress" ? "ดำเนินการ" : "รอดำเนินการ", t.priority === "high" ? "ด่วน" : "ปกติ", t.dueDate]),
+      ];
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws["!cols"] = [{ wch: 12 }, { wch: 30 }, { wch: 14 }, { wch: 12 }, { wch: 14 }];
+      XLSX.utils.book_append_sheet(wb, ws, "งานรอดำเนินการ");
+    }
+
+    XLSX.writeFile(wb, `accounting-dashboard-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    toast.success("ส่งออกรายงานสำเร็จ");
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 print-area">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">แดชบอร์ดฝ่ายบัญชี</h1>
           <p className="text-muted-foreground">ภาพรวมข้อมูลทางการเงินแบบ Real-time</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm">
+        <div className="flex gap-2 print-hide">
+          <Button variant="outline" size="sm" onClick={handleExportExcel}>
             <Download className="h-4 w-4 mr-2" />
             Export Excel
           </Button>
-          <Button variant="outline" size="sm">
+          <Button variant="outline" size="sm" onClick={() => window.print()}>
             <Download className="h-4 w-4 mr-2" />
             Export PDF
           </Button>

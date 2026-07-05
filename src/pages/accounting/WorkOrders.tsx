@@ -15,6 +15,7 @@ import { Plus, FileDown, Search, ArrowUpDown, Trophy, ClipboardCheck, Lock, Imag
 import { toast } from "@/hooks/use-toast";
 import { accountingService } from "@/services/accountingService";
 import { Skeleton } from "@/components/ui/skeleton";
+import * as XLSX from "xlsx";
 
 interface StockItem {
   name: string;
@@ -161,7 +162,24 @@ export default function WorkOrders() {
   };
 
   const handleExport = () => {
-    toast({ title: "ส่งออกข้อมูลสำเร็จ", description: "กำลังดาวน์โหลดไฟล์ Excel..." });
+    if (filteredOrders.length === 0) {
+      toast({ title: "ไม่มีข้อมูลสำหรับส่งออก", variant: "destructive" });
+      return;
+    }
+    const rows = [
+      ["เลขที่ใบสั่งงาน", "Job ID", "ลูกค้า", "โปรเจกต์", "โรงงาน", "วันที่ออก PR", "วันที่ส่งมอบ", "จำนวน", "รายรับ", "รายจ่าย", "GP", "Margin %", "สต็อก", "สถานะงาน", "ผู้มอบหมาย"],
+      ...filteredOrders.map(o => {
+        const gp = o.revenue - o.expense;
+        const margin = o.revenue ? (gp / o.revenue) * 100 : 0;
+        return [o.id, o.jobId, o.customer, o.project, o.factory, o.prIssueDate, o.shipmentDate, o.quantity, o.revenue, o.expense, gp, Number(margin.toFixed(1)), o.stockStatus, o.workStatus, o.assignedBy];
+      }),
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws["!cols"] = [{ wch: 14 }, { wch: 14 }, { wch: 22 }, { wch: 22 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 10 }, { wch: 16 }, { wch: 16 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "ใบสั่งงาน");
+    XLSX.writeFile(wb, `work-orders-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    toast({ title: "ส่งออกสำเร็จ", description: `ดาวน์โหลดไฟล์ Excel ${filteredOrders.length} รายการแล้ว` });
   };
 
   const openDrawer = (order: WorkOrder) => {

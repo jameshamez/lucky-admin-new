@@ -8,6 +8,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import { FileDown, Search, Loader2 } from "lucide-react";
 import { accountingService } from "@/services/accountingService";
 import { toast } from "sonner";
+import * as XLSX from "xlsx";
 
 export default function SalesReport() {
   const [filterDate, setFilterDate] = useState("");
@@ -46,19 +47,51 @@ export default function SalesReport() {
     );
   }
 
+  const handleExportExcel = () => {
+    if (monthlyData.length === 0 && topProducts.length === 0 && dailySales.length === 0) {
+      toast.error("ไม่มีข้อมูลสำหรับส่งออก");
+      return;
+    }
+    const wb = XLSX.utils.book_new();
+
+    if (monthlyData.length > 0) {
+      const rows = [["เดือน", "ยอดขายจริง", "เป้าหมาย"], ...monthlyData.map((m: any) => [m.month, m.actual, m.target])];
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws["!cols"] = [{ wch: 12 }, { wch: 14 }, { wch: 14 }];
+      XLSX.utils.book_append_sheet(wb, ws, "ยอดขายรายเดือน");
+    }
+
+    if (topProducts.length > 0) {
+      const rows = [["อันดับ", "ชื่อสินค้า", "จำนวนขาย", "มูลค่า"], ...topProducts.map((p: any) => [p.rank, p.name, p.quantity, p.value])];
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws["!cols"] = [{ wch: 8 }, { wch: 24 }, { wch: 12 }, { wch: 14 }];
+      XLSX.utils.book_append_sheet(wb, ws, "Top 10 สินค้า");
+    }
+
+    if (dailySales.length > 0) {
+      const rows = [["วันที่", "จำนวนออเดอร์", "มูลค่า", "พนักงานขาย"], ...dailySales.map((s: any) => [s.date, s.orders, s.value, s.salesperson])];
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws["!cols"] = [{ wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 18 }];
+      XLSX.utils.book_append_sheet(wb, ws, "ยอดขายรายวัน");
+    }
+
+    XLSX.writeFile(wb, `sales-report-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    toast.success("ส่งออกรายงานสำเร็จ");
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 print-area">
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold">รายงานยอดขาย</h1>
           <p className="text-muted-foreground">วิเคราะห์ยอดขายและประสิทธิภาพการขาย</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline">
+        <div className="flex gap-2 print-hide">
+          <Button variant="outline" onClick={handleExportExcel}>
             <FileDown className="mr-2 h-4 w-4" />
             Export Excel
           </Button>
-          <Button variant="outline">
+          <Button variant="outline" onClick={() => window.print()}>
             <FileDown className="mr-2 h-4 w-4" />
             Export PDF
           </Button>

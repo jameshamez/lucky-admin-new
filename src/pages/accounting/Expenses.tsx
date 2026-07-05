@@ -18,6 +18,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
 import { Download, Search, Plus, FileText, AlertCircle, Edit, Trash2, ArrowUpDown, Eye, Paperclip, Upload } from "lucide-react";
 import { toast } from "sonner";
+import * as XLSX from "xlsx";
 
 // ── Types ──
 interface ExpenseItem {
@@ -626,16 +627,36 @@ export default function Expenses() {
     }
   };
 
+  const handleExportExcel = () => {
+    if (filteredExpenses.length === 0) {
+      toast.error("ไม่มีข้อมูลสำหรับส่งออก");
+      return;
+    }
+    const rows = [
+      ["รหัสรายจ่าย", "ผู้จำหน่าย", "PO", "เลขที่ใบแจ้งหนี้", "รายละเอียด", "วันที่ซื้อ", "วันที่ชำระ", "ยอดสุทธิ", "ชำระแล้ว", "ค้างชำระ", "วิธีชำระ", "สถานะ"],
+      ...filteredExpenses.map((e: any) => [
+        e.expenseCode, e.supplier, e.poNo, e.invoiceNo, e.description, e.purchaseDate, e.paymentDate || "",
+        e.netAmount, e.paidAmount, e.outstandingAmount, e.paymentMethod, e.paymentStatus,
+      ]),
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws["!cols"] = [{ wch: 14 }, { wch: 20 }, { wch: 14 }, { wch: 14 }, { wch: 26 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 14 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "รายจ่าย");
+    XLSX.writeFile(wb, `expenses-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    toast.success(`ส่งออกสำเร็จ ${filteredExpenses.length} รายการ`);
+  };
+
   return (
     <>
-      <div className="space-y-6">
+      <div className="space-y-6 print-area">
         {/* Header */}
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-3xl font-bold text-foreground">หน้ารายจ่าย</h1>
             <p className="text-muted-foreground">ระบบจัดการรายจ่ายและการสั่งซื้อทั้งหมด</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 print-hide">
             <Button onClick={openAddDrawer}>
               <Plus className="w-4 h-4 mr-2" />
               เพิ่มรายจ่าย
@@ -644,11 +665,11 @@ export default function Expenses() {
               <Upload className="w-4 h-4 mr-2" />
               นำเข้า Excel
             </Button>
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" onClick={handleExportExcel}>
               <Download className="w-4 h-4 mr-2" />
               Export Excel
             </Button>
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" onClick={() => window.print()}>
               <FileText className="w-4 h-4 mr-2" />
               Export PDF
             </Button>

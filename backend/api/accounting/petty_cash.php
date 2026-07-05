@@ -21,6 +21,31 @@ if ($method === 'OPTIONS') {
 
 try {
     if ($method === 'GET') {
+        if (isset($_GET['type']) && $_GET['type'] === 'fund') {
+            $fundAmount = 0.0;
+            $settingRes = $conn->query("SELECT setting_value FROM system_settings WHERE setting_key = 'petty_cash_fund'");
+            if ($settingRes && $settingRow = $settingRes->fetch_assoc()) {
+                $decoded = json_decode($settingRow['setting_value'], true);
+                $fundAmount = isset($decoded['amount']) ? (float) $decoded['amount'] : 0.0;
+            }
+
+            $pendingClearance = 0.0;
+            $sumRes = $conn->query("SELECT COALESCE(SUM(amount), 0) AS total FROM accounting_petty_cash WHERE status = 'จ่ายแล้ว' AND clearance_status = 'รอเคลียร์'");
+            if ($sumRes && $sumRow = $sumRes->fetch_assoc()) {
+                $pendingClearance = (float) $sumRow['total'];
+            }
+
+            echo json_encode([
+                "status" => "success",
+                "data" => [
+                    "fundAmount" => $fundAmount,
+                    "pendingClearance" => $pendingClearance,
+                    "balance" => $fundAmount - $pendingClearance,
+                ],
+            ]);
+            exit();
+        }
+
         if (isset($_GET['id'])) {
             $id = (int) $_GET['id'];
             $sql = "SELECT * FROM accounting_petty_cash WHERE id = $id";
@@ -45,7 +70,17 @@ try {
     } elseif ($method === 'POST') {
         $input = json_decode(file_get_contents("php://input"), true);
 
-        if (isset($input['action']) && $input['action'] === 'bulk_clear') {
+        if (isset($input['action']) && $input['action'] === 'set_fund') {
+            $fundAmount = (float) ($input['fundAmount'] ?? 0);
+            $value = json_encode(["amount" => $fundAmount], JSON_UNESCAPED_UNICODE);
+            $stmt = $conn->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('petty_cash_fund', ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)");
+            $stmt->bind_param("s", $value);
+            if ($stmt->execute()) {
+                echo json_encode(["status" => "success", "fundAmount" => $fundAmount]);
+            } else {
+                echo json_encode(["status" => "error", "message" => $stmt->error]);
+            }
+        } elseif (isset($input['action']) && $input['action'] === 'bulk_clear') {
             $ids = $input['ids']; // Array of IDs
             $date = $input['date'];
             $idsStr = implode(',', array_map('intval', $ids));

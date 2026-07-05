@@ -14,6 +14,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { format } from "date-fns";
 import { th } from "date-fns/locale";
 import { designJobService } from "@/services/designJobService";
+import * as XLSX from "xlsx";
+import { toast } from "sonner";
 
 // Status configuration
 const statusConfig = {
@@ -128,6 +130,40 @@ export default function DesignReports() {
     };
   });
 
+  const handleExportExcel = () => {
+    if (jobs.length === 0) {
+      toast.error("ไม่มีข้อมูลสำหรับส่งออก");
+      return;
+    }
+    const wb = XLSX.utils.book_new();
+
+    const summaryRows = [
+      ["สรุปสถานะงานออกแบบ"],
+      [],
+      ["สถานะ", "จำนวนงาน"],
+      ...pieChartData.map(p => [p.name, p.value]),
+      [],
+      ["งานทั้งหมด", totalJobs],
+    ];
+    const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
+    wsSummary["!cols"] = [{ wch: 26 }, { wch: 14 }];
+    XLSX.utils.book_append_sheet(wb, wsSummary, "สรุปสถานะ");
+
+    const jobRows = [
+      ["รหัสงาน", "ลูกค้า", "ประเภทงาน", "นักออกแบบ", "วันที่เริ่ม", "กำหนดส่ง", "สถานะ", "ความสำคัญ"],
+      ...jobs.map(j => [
+        j.job_code, j.customer_name, j.job_type, j.designer, j.start_date, j.due_date,
+        statusConfig[j.status as keyof typeof statusConfig]?.label ?? j.status, j.priority,
+      ]),
+    ];
+    const wsJobs = XLSX.utils.aoa_to_sheet(jobRows);
+    wsJobs["!cols"] = [{ wch: 14 }, { wch: 20 }, { wch: 18 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 18 }, { wch: 12 }];
+    XLSX.utils.book_append_sheet(wb, wsJobs, "รายการงานทั้งหมด");
+
+    XLSX.writeFile(wb, `design-reports-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    toast.success(`ส่งออกสำเร็จ ${jobs.length} รายการ`);
+  };
+
   return (
     <div className="space-y-6 p-6">
       {/* Header */}
@@ -141,7 +177,7 @@ export default function DesignReports() {
             <RefreshCw className="h-4 w-4" />
             รีเฟรช
           </Button>
-          <Button className="gap-2">
+          <Button className="gap-2" onClick={handleExportExcel}>
             <Download className="h-4 w-4" />
             ส่งออกรายงาน
           </Button>

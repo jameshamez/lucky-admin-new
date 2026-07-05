@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { accountingService } from "@/services/accountingService";
 import { toast } from "sonner";
+import * as XLSX from "xlsx";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -305,6 +306,26 @@ export default function CustomerAccounts() {
     return matchesSearch && matchesOverdue;
   });
 
+  const handleExportExcel = () => {
+    if (filteredAccounts.length === 0) {
+      toast.error("ไม่มีข้อมูลสำหรับส่งออก");
+      return;
+    }
+    const rows = [
+      ["เลขที่ใบแจ้งหนี้", "ลูกค้า", "วันที่ออกใบแจ้งหนี้", "ครบกำหนด", "ยอดรวม", "ชำระแล้ว", "คงเหลือ", "เกินกำหนด (วัน)", "สถานะ", "ผู้ดูแล"],
+      ...filteredAccounts.map(a => [
+        a.invoiceNumber, a.customer, a.invoiceDate, a.dueDate,
+        a.totalAmount, a.paidAmount, a.remainingAmount, a.daysOverdue, a.status, a.accountManager,
+      ]),
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws["!cols"] = [{ wch: 16 }, { wch: 25 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 18 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "ลูกหนี้");
+    XLSX.writeFile(wb, `customer-accounts-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    toast.success(`ส่งออกสำเร็จ ${filteredAccounts.length} รายการ`);
+  };
+
   const getStatusBadge = (status: string) => {
     if (status === "ชำระเสร็จสิ้น") return "default";
     if (status === "รอชำระ") return "secondary";
@@ -325,7 +346,7 @@ export default function CustomerAccounts() {
           <p className="text-muted-foreground">ตรวจสอบสถานะการชำระเงินของลูกค้า และติดตามลูกหนี้คงค้าง</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline">
+          <Button variant="outline" onClick={handleExportExcel}>
             <Download className="w-4 h-4 mr-2" />
             Export Excel
           </Button>

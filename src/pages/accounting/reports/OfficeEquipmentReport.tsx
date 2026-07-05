@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { FileDown, Search, Image as ImageIcon, Loader2 } from "lucide-react";
 import { accountingService } from "@/services/accountingService";
 import { toast } from "sonner";
+import * as XLSX from "xlsx";
 
 export default function OfficeEquipmentReport() {
   const [filterCategory, setFilterCategory] = useState("");
@@ -59,19 +60,36 @@ export default function OfficeEquipmentReport() {
     }
   };
 
+  const handleExportExcel = () => {
+    if (equipmentList.length === 0) {
+      toast.error("ไม่มีข้อมูลสำหรับส่งออก");
+      return;
+    }
+    const rows = [
+      ["หมายเลขครุภัณฑ์", "รายการ", "หมวด", "วันที่ซื้อ", "ราคา", "สถานะ", "ผู้ถือครอง"],
+      ...equipmentList.map((i: any) => [i.assetNo, i.name, i.category, i.purchaseDate, i.price, i.status, i.assignedTo]),
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws["!cols"] = [{ wch: 16 }, { wch: 24 }, { wch: 16 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 18 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "ทรัพย์สินสำนักงาน");
+    XLSX.writeFile(wb, `office-equipment-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    toast.success(`ส่งออกสำเร็จ ${equipmentList.length} รายการ`);
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 print-area">
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold">รายงานอุปกรณ์สำนักงาน</h1>
           <p className="text-muted-foreground">จัดการทรัพย์สินและครุภัณฑ์ของบริษัท</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline">
+        <div className="flex gap-2 print-hide">
+          <Button variant="outline" onClick={handleExportExcel}>
             <FileDown className="mr-2 h-4 w-4" />
             Export Excel
           </Button>
-          <Button variant="outline">
+          <Button variant="outline" onClick={() => window.print()}>
             <FileDown className="mr-2 h-4 w-4" />
             Export PDF
           </Button>

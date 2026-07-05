@@ -335,11 +335,48 @@ export default function StandalonePettyCash() {
   const [requests, setRequests] = useState<PettyCashRequest[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [pettyCashBalance, setPettyCashBalance] = useState(0);
+  const [fundAmount, setFundAmount] = useState(0);
+  const [isFundDialogOpen, setIsFundDialogOpen] = useState(false);
+  const [fundInput, setFundInput] = useState("");
 
   useEffect(() => {
     fetchPettyCash();
     fetchEmployees();
+    fetchFund();
   }, []);
+
+  const fetchFund = async () => {
+    try {
+      const res = await accountingService.getPettyCashFund();
+      if (res.status === 'success') {
+        setFundAmount(Number(res.data.fundAmount));
+        setPettyCashBalance(Number(res.data.balance));
+      }
+    } catch (error) {
+      console.error("Fetch petty cash fund failed", error);
+    }
+  };
+
+  const handleSaveFund = async () => {
+    const parsed = Number(fundInput.replace(/,/g, ""));
+    if (isNaN(parsed) || parsed < 0) {
+      toast.error("กรุณากรอกวงเงินเป็นตัวเลขที่ถูกต้อง");
+      return;
+    }
+    try {
+      const res = await accountingService.setPettyCashFund(parsed);
+      if (res.status === 'success') {
+        toast.success("บันทึกวงเงินสดย่อยเรียบร้อย");
+        setIsFundDialogOpen(false);
+        fetchFund();
+      } else {
+        toast.error(res.message || "บันทึกวงเงินไม่สำเร็จ");
+      }
+    } catch (error) {
+      toast.error("บันทึกวงเงินไม่สำเร็จ");
+    }
+  };
 
   const fetchEmployees = async () => {
     try {
@@ -496,7 +533,7 @@ export default function StandalonePettyCash() {
     pending: requests.filter(r => r.status === "รออนุมัติ").length,
     readyToPay: requests.filter(r => r.status === "รอเบิกจ่าย").length,
     paid: requests.filter(r => r.status === "จ่ายแล้ว").length,
-    balance: 50000,
+    balance: pettyCashBalance,
   };
 
   // Monthly spending data
@@ -1135,11 +1172,27 @@ export default function StandalonePettyCash() {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <StatsCard
-          title="ยอดเงินคงเหลือ"
-          value={`฿${stats.balance.toLocaleString()}`}
-          icon={<Wallet className="h-5 w-5" />}
-        />
+        <div className="relative">
+          <StatsCard
+            title="ยอดเงินคงเหลือ"
+            value={`฿${stats.balance.toLocaleString()}`}
+            change={`วงเงินสดย่อย ฿${fundAmount.toLocaleString()}`}
+            icon={<Wallet className="h-5 w-5" />}
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="absolute bottom-2 right-2 h-7 w-7 text-muted-foreground"
+            onClick={() => {
+              setFundInput(fundAmount.toString());
+              setIsFundDialogOpen(true);
+            }}
+            title="ตั้งค่าวงเงินสดย่อย"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+        </div>
         <StatsCard
           title="รออนุมัติ"
           value={stats.pending.toString()}
@@ -2095,6 +2148,38 @@ export default function StandalonePettyCash() {
             </span>
             <span className="text-lg font-bold">รวม ฿{selectedMonthTotal.toLocaleString()}</span>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Petty Cash Fund Dialog */}
+      <Dialog open={isFundDialogOpen} onOpenChange={setIsFundDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>ตั้งค่าวงเงินสดย่อย</DialogTitle>
+            <DialogDescription>
+              กำหนดวงเงินสดย่อยตั้งต้น (Float) ที่บริษัทจัดไว้ให้ ระบบจะคำนวณ "ยอดเงินคงเหลือ"
+              จากวงเงินนี้หักด้วยรายการที่จ่ายแล้วแต่ยังไม่ได้เคลียร์ (รอเคลียร์)
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="fund-amount">วงเงินสดย่อย (บาท)</Label>
+            <Input
+              id="fund-amount"
+              type="number"
+              min="0"
+              value={fundInput}
+              onChange={(e) => setFundInput(e.target.value)}
+              placeholder="เช่น 50000"
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setIsFundDialogOpen(false)}>
+              ยกเลิก
+            </Button>
+            <Button type="button" onClick={handleSaveFund}>
+              บันทึก
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { Label } from "@/components/ui/label";
 import { accountingService } from "@/services/accountingService";
 import { Skeleton } from "@/components/ui/skeleton";
+import * as XLSX from "xlsx";
 
 interface OrderData {
   id: string;
@@ -204,20 +205,40 @@ export default function Revenue() {
   const today = new Date().toISOString().split("T")[0];
   const docNumber = selectedOrder ? `DOC-${selectedOrder.id.replace("ORD-", "")}` : "";
 
+  const handleExportExcel = () => {
+    if (filteredOrders.length === 0) {
+      toast.error("ไม่มีข้อมูลสำหรับส่งออก");
+      return;
+    }
+    const rows = [
+      ["เลขที่ออเดอร์", "ประเภท", "ลูกค้า", "วันที่สั่งซื้อ", "วันที่ส่งมอบ", "ยอดรวม", "ชำระแล้ว", "ค้างชำระ", "สถานะการชำระ", "ความเร่งด่วน"],
+      ...filteredOrders.map(o => [
+        o.id, o.orderType, o.customerName, o.orderDate, o.deliveryDate,
+        o.totalAmount, o.paidAmount, o.outstandingAmount, o.paymentStatus, o.urgency,
+      ]),
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws["!cols"] = [{ wch: 14 }, { wch: 14 }, { wch: 22 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 14 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "รายรับ");
+    XLSX.writeFile(wb, `revenue-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    toast.success(`ส่งออกสำเร็จ ${filteredOrders.length} รายการ`);
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 print-area">
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold text-foreground">หน้ารายรับ</h1>
           <p className="text-muted-foreground">ระบบจัดการรายรับและออเดอร์ทั้งหมด</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm">
+        <div className="flex gap-2 print-hide">
+          <Button variant="outline" size="sm" onClick={handleExportExcel}>
             <Download className="w-4 h-4 mr-2" />
             Export Excel
           </Button>
-          <Button variant="outline" size="sm">
+          <Button variant="outline" size="sm" onClick={() => window.print()}>
             <FileText className="w-4 h-4 mr-2" />
             Export PDF
           </Button>

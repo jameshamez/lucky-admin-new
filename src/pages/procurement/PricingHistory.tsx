@@ -13,6 +13,8 @@ import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { format } from "date-fns";
 import { th } from "date-fns/locale";
 import sampleArtwork from "@/assets/sample-artwork.png";
+import * as XLSX from "xlsx";
+import { toast } from "sonner";
 
 // Status types for history
 type HistoryStatus = "สำเร็จ" | "ยกเลิก";
@@ -217,6 +219,27 @@ const PricingHistory = () => {
 
   const hasActiveFilters = searchTerm || selectedFactory !== "all" || selectedProductType !== "all" || selectedStatus !== "all" || startDate || endDate;
 
+  const handleExportExcel = () => {
+    if (filteredData.length === 0) {
+      toast.error("ไม่มีข้อมูลสำหรับส่งออก");
+      return;
+    }
+    const rows = [
+      ["รหัสงาน", "ชื่องาน", "ลูกค้า", "โรงงาน", "ประเภทสินค้า", "วันที่สร้าง", "วันที่เสร็จ", "จำนวน", "ต้นทุนรวม", "ราคาขายรวม", "กำไร", "สถานะ", "พนักงานขาย"],
+      ...filteredData.map(item => [
+        item.jobCode, item.jobName, item.customerName, item.factoryLabel, item.productType,
+        item.createdDate, item.completedDate, item.quantity, item.totalCost, item.totalSellingPrice,
+        item.profit, item.status, item.salesPerson,
+      ]),
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws["!cols"] = [{ wch: 14 }, { wch: 24 }, { wch: 20 }, { wch: 14 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 16 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "ประวัติราคา");
+    XLSX.writeFile(wb, `pricing-history-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    toast.success(`ส่งออกสำเร็จ ${filteredData.length} รายการ`);
+  };
+
   const getStatusBadge = (status: HistoryStatus) => {
     if (status === "สำเร็จ") {
       return <Badge className="bg-green-100 text-green-700 border-green-300 text-xs px-2 py-0.5">{status}</Badge>;
@@ -237,7 +260,7 @@ const PricingHistory = () => {
           <h1 className="text-3xl font-bold text-foreground">ประวัติรายการสั่งผลิต</h1>
           <p className="text-muted-foreground">รายการที่สั่งผลิตสำเร็จหรือยกเลิก - ใช้เป็นฐานข้อมูลราคากลาง</p>
         </div>
-        <Button variant="outline" className="gap-2">
+        <Button variant="outline" className="gap-2" onClick={handleExportExcel}>
           <Download className="w-4 h-4" />
           ส่งออกรายงาน
         </Button>

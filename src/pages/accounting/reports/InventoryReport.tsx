@@ -9,6 +9,7 @@ import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Toolti
 import { FileDown, Search, Loader2 } from "lucide-react";
 import { accountingService } from "@/services/accountingService";
 import { toast } from "sonner";
+import * as XLSX from "xlsx";
 
 export default function InventoryReport() {
   const [filterDate, setFilterDate] = useState("");
@@ -65,19 +66,36 @@ export default function InventoryReport() {
     }
   };
 
+  const handleExportExcel = () => {
+    if (inventoryList.length === 0) {
+      toast.error("ไม่มีข้อมูลสำหรับส่งออก");
+      return;
+    }
+    const rows = [
+      ["รหัสสินค้า", "ชื่อสินค้า", "หมวดหมู่", "คงเหลือ", "Min Stock", "มูลค่า", "สถานะ"],
+      ...inventoryList.map((i: any) => [i.code, i.name, i.category, i.quantity, i.minStock, i.value, i.status]),
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws["!cols"] = [{ wch: 14 }, { wch: 24 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 14 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "สต๊อกสินค้า");
+    XLSX.writeFile(wb, `inventory-report-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    toast.success(`ส่งออกสำเร็จ ${inventoryList.length} รายการ`);
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 print-area">
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold">รายงานสต๊อกสินค้า</h1>
           <p className="text-muted-foreground">ติดตามมูลค่าและสถานะสต๊อกสินค้า</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline">
+        <div className="flex gap-2 print-hide">
+          <Button variant="outline" onClick={handleExportExcel}>
             <FileDown className="mr-2 h-4 w-4" />
             Export Excel
           </Button>
-          <Button variant="outline">
+          <Button variant="outline" onClick={() => window.print()}>
             <FileDown className="mr-2 h-4 w-4" />
             Export PDF
           </Button>

@@ -37,6 +37,8 @@ import { format } from "date-fns";
 import { th } from "date-fns/locale";
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import { procurementService } from "@/services/procurementService";
+import * as XLSX from "xlsx";
+import { toast } from "sonner";
 
 // Initialize moment localizer for calendar
 const localizer = momentLocalizer(moment);
@@ -227,6 +229,44 @@ export default function ProcurementDashboard() {
     fetchData();
   }, []);
 
+  const handleExportExcel = () => {
+    const stats = dashboardData?.stats;
+    const tasks = dashboardData?.tasks || [];
+    if (!stats && tasks.length === 0) {
+      toast.error("ไม่มีข้อมูลสำหรับส่งออก");
+      return;
+    }
+    const wb = XLSX.utils.book_new();
+
+    const summaryRows = [
+      ["สรุปภาพรวมฝ่ายจัดซื้อ"],
+      [],
+      ["รายการ", "ค่า"],
+      ["งานที่คำนวณราคาแล้ว", stats?.totalCalculated ?? 0],
+      ["งานที่ผลิตแล้ว", stats?.totalProduced ?? 0],
+      ["จัดส่งสัปดาห์นี้", stats?.weeklyShipments ?? 0],
+      ["ยอดค้างชำระ", stats?.unpaidOrders ?? "฿0"],
+      ["งานที่ต้องทำวันนี้", stats?.todaysTasks ?? 0],
+      ["การแจ้งเตือนวิกฤต", stats?.criticalAlerts ?? 0],
+    ];
+    const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
+    wsSummary["!cols"] = [{ wch: 26 }, { wch: 18 }];
+    XLSX.utils.book_append_sheet(wb, wsSummary, "สรุปรวม");
+
+    if (tasks.length > 0) {
+      const taskRows = [
+        ["งาน", "ความสำคัญ", "กำหนดเวลา", "สถานะ"],
+        ...tasks.map((t: any) => [t.task, t.priority, t.dueTime, t.status === "completed" ? "เสร็จสิ้น" : "รอดำเนินการ"]),
+      ];
+      const wsTasks = XLSX.utils.aoa_to_sheet(taskRows);
+      wsTasks["!cols"] = [{ wch: 35 }, { wch: 12 }, { wch: 12 }, { wch: 14 }];
+      XLSX.utils.book_append_sheet(wb, wsTasks, "งานวันนี้");
+    }
+
+    XLSX.writeFile(wb, `procurement-dashboard-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    toast.success("ส่งออกรายงานสำเร็จ");
+  };
+
   const [selectedEvent, setSelectedEvent] = useState<any>(null);
   const [showEventModal, setShowEventModal] = useState(false);
 
@@ -280,7 +320,7 @@ export default function ProcurementDashboard() {
           <p className="text-muted-foreground">ภาพรวมการดำเนินงานฝ่ายจัดซื้อ และการติดตามผลผลิตแบบเรียลไทม์</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline">
+          <Button variant="outline" onClick={handleExportExcel}>
             <Download className="w-4 h-4 mr-2" />
             ส่งออกรายงาน
           </Button>

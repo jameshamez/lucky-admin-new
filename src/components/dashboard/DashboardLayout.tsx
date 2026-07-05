@@ -30,9 +30,13 @@ export function DashboardLayout({ children, requiredDepartment }: DashboardLayou
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full bg-background">
-        <AppSidebar />
+        <div className="print-hide">
+          <AppSidebar />
+        </div>
         <div className="flex-1 flex flex-col">
-          <DashboardHeader />
+          <div className="print-hide">
+            <DashboardHeader />
+          </div>
           <main className="flex-1 p-6 overflow-auto">
             {children}
           </main>

@@ -14,6 +14,7 @@ import { CalendarIcon, RefreshCw, Download, Filter, TrendingUp, TrendingDown, Do
 import { format } from "date-fns";
 import { th } from "date-fns/locale";
 import { toast } from "sonner";
+import * as XLSX from "xlsx";
 
 const COLORS = ['#FF5A5F', '#FF7F8A', '#FFA5A8', '#FFB3B5', '#FFC2C3'];
 
@@ -47,8 +48,63 @@ export default function ComprehensiveReports() {
     loadData();
   }, [selectedPeriod, selectedDepartment, date]);
 
-  const handleExport = (format: string) => {
-    toast.success(`ส่งออกรายงานเป็น ${format.toUpperCase()} สำเร็จ`);
+  const handleExport = (exportFormat: string) => {
+    if (exportFormat === "pdf") {
+      window.print();
+      return;
+    }
+
+    const wb = XLSX.utils.book_new();
+
+    if (financialData.length > 0) {
+      const rows = [
+        ["เดือน", "รายรับ", "รายจ่าย", "กำไรสุทธิ", "อัตรากำไร (%)"],
+        ...financialData.map((i: any) => [i.month, i.revenue, i.costs, i.profit, i.revenue ? Number(((i.profit / i.revenue) * 100).toFixed(1)) : 0]),
+      ];
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws["!cols"] = [{ wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }];
+      XLSX.utils.book_append_sheet(wb, ws, "การเงิน");
+    }
+
+    if (operationalData.length > 0) {
+      const rows = [
+        ["แผนก", "จำนวนออเดอร์", "เวลาเฉลี่ย (วัน)", "ประสิทธิภาพ (%)"],
+        ...operationalData.map((i: any) => [i.department, i.orders, i.avgTime, i.efficiency]),
+      ];
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws["!cols"] = [{ wch: 18 }, { wch: 14 }, { wch: 16 }, { wch: 14 }];
+      XLSX.utils.book_append_sheet(wb, ws, "ประสิทธิภาพการดำเนินงาน");
+    }
+
+    if (salesData.length > 0) {
+      const rows = [
+        ["สินค้า", "จำนวน", "ยอดขาย", "การเติบโต (%)"],
+        ...salesData.map((i: any) => [i.product, i.quantity, i.sales, i.growth]),
+      ];
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws["!cols"] = [{ wch: 20 }, { wch: 12 }, { wch: 14 }, { wch: 14 }];
+      XLSX.utils.book_append_sheet(wb, ws, "ยอดขายสินค้า");
+    }
+
+    if (customerData.length > 0) {
+      const rows = [
+        ["กลุ่มลูกค้า", "จำนวนคน", "รายรับ"],
+        ...customerData.map((i: any) => [i.segment, i.count, i.revenue]),
+      ];
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws["!cols"] = [{ wch: 20 }, { wch: 14 }, { wch: 14 }];
+      XLSX.utils.book_append_sheet(wb, ws, "กลุ่มลูกค้า");
+    }
+
+    if (kpiData.length > 0) {
+      const rows = [["KPI", "ค่า", "แนวโน้ม", "เปลี่ยนแปลง (%)"], ...kpiData.map((k: any) => [k.name, k.value, k.trend === "up" ? "เพิ่มขึ้น" : "ลดลง", k.change])];
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws["!cols"] = [{ wch: 20 }, { wch: 14 }, { wch: 12 }, { wch: 14 }];
+      XLSX.utils.book_append_sheet(wb, ws, "สรุป KPI");
+    }
+
+    XLSX.writeFile(wb, `comprehensive-reports-${selectedPeriod}-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    toast.success("ส่งออกรายงานเป็น Excel สำเร็จ");
   };
 
   const handleRefresh = () => {
@@ -74,7 +130,7 @@ export default function ComprehensiveReports() {
   } = reportData || {};
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 print-area">
       {/* Header */}
       <div>
         <h1 className="text-3xl font-bold text-foreground mb-2">รายงานผลรวมทั้งหมด</h1>
@@ -84,7 +140,7 @@ export default function ComprehensiveReports() {
       </div>
 
       {/* Control Bar */}
-      <Card>
+      <Card className="print-hide">
         <CardContent className="pt-6">
           <div className="flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-2">

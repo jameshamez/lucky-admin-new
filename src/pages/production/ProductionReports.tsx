@@ -36,6 +36,7 @@ import { useEffect, useState } from "react";
 import { productionService } from "@/services/productionService";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
+import * as XLSX from "xlsx";
 
 // Mock data removed
 
@@ -94,6 +95,66 @@ export default function ProductionReports() {
     summary: { efficiency: "0%", completedOrders: 0, onTimeRate: "0%", defectRate: "0.0%" }
   };
 
+  const handleExportExcel = () => {
+    const wb = XLSX.utils.book_new();
+
+    const summaryRows = [
+      ["สรุปผลการผลิต"],
+      [],
+      ["รายการ", "ค่า"],
+      ["ประสิทธิภาพ", summary.efficiency],
+      ["ออเดอร์ที่เสร็จสิ้น", summary.completedOrders],
+      ["อัตราส่งตรงเวลา", summary.onTimeRate],
+      ["อัตราของเสีย", summary.defectRate],
+    ];
+    const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
+    wsSummary["!cols"] = [{ wch: 22 }, { wch: 16 }];
+    XLSX.utils.book_append_sheet(wb, wsSummary, "สรุปรวม");
+
+    if (efficiencyCharts.length > 0) {
+      const rows = [
+        ["สัปดาห์", "เป้าหมาย", "ผลงานจริง", "ประสิทธิภาพ (%)"],
+        ...efficiencyCharts.map((w: any) => [w.week, w.target, w.actual, w.efficiency]),
+      ];
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws["!cols"] = [{ wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 16 }];
+      XLSX.utils.book_append_sheet(wb, ws, "ประสิทธิภาพการผลิต");
+    }
+
+    if (inventoryStatus.length > 0) {
+      const rows = [
+        ["รายการ", "คงเหลือ", "ขั้นต่ำ", "มูลค่า (บาท)", "สถานะ"],
+        ...inventoryStatus.map((i: any) => [i.item, i.current, i.minimum, i.value, i.status]),
+      ];
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws["!cols"] = [{ wch: 24 }, { wch: 12 }, { wch: 12 }, { wch: 16 }, { wch: 12 }];
+      XLSX.utils.book_append_sheet(wb, ws, "สถานะสต็อก");
+    }
+
+    if (defectAnalysis.length > 0) {
+      const rows = [
+        ["ประเภทของเสีย", "จำนวนครั้ง", "สัดส่วน (%)"],
+        ...defectAnalysis.map((d: any) => [d.type, d.count, d.percentage]),
+      ];
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws["!cols"] = [{ wch: 22 }, { wch: 14 }, { wch: 14 }];
+      XLSX.utils.book_append_sheet(wb, ws, "วิเคราะห์ของเสีย");
+    }
+
+    if (deliveryPerformance.length > 0) {
+      const rows = [
+        ["เดือน", "ตรงเวลา (%)", "ล่าช้า (%)"],
+        ...deliveryPerformance.map((d: any) => [d.month, d.onTime, d.late]),
+      ];
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws["!cols"] = [{ wch: 14 }, { wch: 14 }, { wch: 14 }];
+      XLSX.utils.book_append_sheet(wb, ws, "ประสิทธิภาพการจัดส่ง");
+    }
+
+    XLSX.writeFile(wb, `production-reports-${period}-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    toast.success("ส่งออกรายงานสำเร็จ");
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -112,7 +173,7 @@ export default function ProductionReports() {
               <SelectItem value="this-quarter">ไตรมาสนี้</SelectItem>
             </SelectContent>
           </Select>
-          <Button className="bg-gradient-to-r from-primary to-primary-hover">
+          <Button className="bg-gradient-to-r from-primary to-primary-hover" onClick={handleExportExcel} disabled={loading}>
             {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
             ส่งออกรายงาน
           </Button>

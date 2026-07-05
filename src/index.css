@@ -136,3 +136,21 @@ All colors MUST be HSL.
 .scrollbar-littleboy::-webkit-scrollbar-thumb:hover {
   background: hsla(207, 62%, 67%, 0.55);
 }
+
+/* Report "Export PDF" support: print only the .print-area content, hide chrome via .print-hide */
+@media print {
+  .print-hide {
+    display: none !important;
+  }
+  .print-area {
+    position: absolute;
+    inset: 0;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+  body {
+    background: #fff !important;
+  }
+}
