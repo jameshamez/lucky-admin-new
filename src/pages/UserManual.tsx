@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -12,9 +12,10 @@ import {
   Plus,
   Edit,
   Trash2,
-  Play,
   Search,
   Save,
+  Loader2,
+  Paperclip,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -41,132 +42,132 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
+import {
+  userManualService,
+  VideoTutorial,
+  ManualSection,
+  Quiz,
+  QuizQuestion,
+  QuizAttemptResult,
+} from "@/services/userManualService";
 
-interface VideoTutorial {
-  id: string;
-  title: string;
-  description: string;
-  videoUrl: string;
-  thumbnail: string;
-}
-
-interface ManualSection {
-  id: string;
-  category: string;
-  subcategories: {
-    id: string;
-    title: string;
-    content: string;
-    attachments?: string[];
-  }[];
-}
-
-interface QuizQuestion {
-  id: string;
-  question: string;
-  options: string[];
-  correctIndex: number;
-}
-
-interface Quiz {
-  id: string;
-  title: string;
-  category: string;
-  questions: number;
-  passingScore: number;
-  questionList: QuizQuestion[];
-}
-
-const emptyVideo: VideoTutorial = { id: "", title: "", description: "", videoUrl: "", thumbnail: "/placeholder.svg" };
-const emptyQuiz: Quiz = { id: "", title: "", category: "", questions: 10, passingScore: 70, questionList: [] };
+const emptyVideo: Partial<VideoTutorial> = { title: "", description: "", videoUrl: "", thumbnail: "/placeholder.svg" };
+const emptyQuestion: QuizQuestion = { question: "", options: ["", "", "", ""], correctIndex: 0 };
 
 export default function UserManual() {
+  const { user, isAdminOrManager } = useAuth();
+  const isAdmin = isAdminOrManager;
+
   const [searchTerm, setSearchTerm] = useState("");
-  const [isAdmin] = useState(true);
+  const [loading, setLoading] = useState(true);
 
   // --- Data states ---
-  const [videos, setVideos] = useState<VideoTutorial[]>([
-    { id: "1", title: "วิธีการทำงาน", description: "แนะนำขั้นตอนการทำงานพื้นฐาน", videoUrl: "https://www.youtube.com/embed/dQw4w9WgXcQ", thumbnail: "/placeholder.svg" },
-    { id: "2", title: "ขั้นตอนเปิดใบเสนอราคา", description: "วิธีการสร้างและจัดการใบเสนอราคา", videoUrl: "https://www.youtube.com/embed/dQw4w9WgXcQ", thumbnail: "/placeholder.svg" },
-    { id: "3", title: "การค้นหาสินค้าในสต็อก", description: "วิธีการค้นหาและตรวจสอบสต็อกสินค้า", videoUrl: "https://www.youtube.com/embed/dQw4w9WgXcQ", thumbnail: "/placeholder.svg" },
-  ]);
+  const [videos, setVideos] = useState<VideoTutorial[]>([]);
+  const [manuals, setManuals] = useState<ManualSection[]>([]);
+  const [quizzes, setQuizzes] = useState<Quiz[]>([]);
 
-  const [manuals, setManuals] = useState<ManualSection[]>([
-    {
-      id: "1", category: "การขออนุมัติเบิกค่าใช้จ่าย",
-      subcategories: [
-        { id: "1-1", title: "การกรอกฟอร์มคำขอเบิก", content: "ขั้นตอนการกรอกฟอร์มคำขอเบิกค่าใช้จ่ายอย่างถูกต้อง...", attachments: ["form-template.pdf"] },
-        { id: "1-2", title: "เอกสารที่ต้องแนบ", content: "รายการเอกสารที่จำเป็นต้องแนบพร้อมคำขอ..." },
-        { id: "1-3", title: "เงื่อนไขการอนุมัติ", content: "เงื่อนไขและขั้นตอนการอนุมัติค่าใช้จ่าย..." },
-      ],
-    },
-    {
-      id: "2", category: "การใช้ระบบบัญชีพื้นฐาน",
-      subcategories: [
-        { id: "2-1", title: "การเข้าสู่ระบบ", content: "วิธีการ login และ setup บัญชีผู้ใช้..." },
-        { id: "2-2", title: "หน้า Dashboard", content: "การใช้งานหน้า Dashboard และฟีเจอร์ต่างๆ..." },
-        { id: "2-3", title: "การดูรายงานส่วนตัว", content: "วิธีการดูและ export รายงาน..." },
-      ],
-    },
-  ]);
+  const fetchAll = async () => {
+    setLoading(true);
+    try {
+      const [videosRes, manualsRes, quizzesRes] = await Promise.all([
+        userManualService.getVideos(),
+        userManualService.getManuals(),
+        userManualService.getQuizzes(),
+      ]);
+      if (videosRes.status === "success") setVideos(videosRes.data);
+      if (manualsRes.status === "success") setManuals(manualsRes.data);
+      if (quizzesRes.status === "success") setQuizzes(quizzesRes.data);
+    } catch (error) {
+      toast.error("ไม่สามารถโหลดข้อมูลคู่มือการทำงานได้");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const [quizzes, setQuizzes] = useState<Quiz[]>([
-    { id: "1", title: "ทดสอบความรู้พื้นฐานการทำงาน", category: "พื้นฐาน", questions: 3, passingScore: 70, questionList: [
-      { id: "q1", question: "ขั้นตอนแรกในการเปิดใบเสนอราคาคืออะไร?", options: ["เลือกลูกค้า", "พิมพ์เอกสาร", "ส่งอีเมล", "โทรหาลูกค้า"], correctIndex: 0 },
-      { id: "q2", question: "ระบบจัดเก็บข้อมูลลูกค้าอยู่ในเมนูใด?", options: ["รายงาน", "ตั้งค่า", "การขาย", "บัญชี"], correctIndex: 2 },
-      { id: "q3", question: "การขออนุมัติเบิกค่าใช้จ่ายต้องแนบเอกสารอะไร?", options: ["ใบเสร็จรับเงิน", "สำเนาบัตรประชาชน", "ใบสมัครงาน", "หนังสือรับรอง"], correctIndex: 0 },
-    ]},
-    { id: "2", title: "ทดสอบการใช้ระบบจัดซื้อ", category: "การจัดซื้อ", questions: 3, passingScore: 80, questionList: [
-      { id: "q4", question: "ใบสั่งซื้อ (PO) ต้องได้รับอนุมัติจากใคร?", options: ["พนักงานขาย", "ผู้จัดการฝ่ายจัดซื้อ", "ลูกค้า", "พนักงานคลัง"], correctIndex: 1 },
-      { id: "q5", question: "การเปรียบเทียบราคาควรขอจากผู้ขายกี่ราย?", options: ["1 ราย", "อย่างน้อย 2 ราย", "อย่างน้อย 3 ราย", "5 ราย"], correctIndex: 2 },
-      { id: "q6", question: "เมื่อได้รับสินค้าต้องตรวจสอบอะไรก่อน?", options: ["ราคา", "จำนวนและสภาพสินค้า", "ชื่อผู้ส่ง", "วันหมดอายุ"], correctIndex: 1 },
-    ]},
-  ]);
+  useEffect(() => {
+    fetchAll();
+  }, []);
 
   // --- Dialog states ---
   const [videoDialogOpen, setVideoDialogOpen] = useState(false);
-  const [editVideo, setEditVideo] = useState<VideoTutorial>(emptyVideo);
+  const [editVideo, setEditVideo] = useState<Partial<VideoTutorial>>(emptyVideo);
   const [isVideoAdd, setIsVideoAdd] = useState(false);
+  const [savingVideo, setSavingVideo] = useState(false);
 
   const [manualDialogOpen, setManualDialogOpen] = useState(false);
   const [editManualCategory, setEditManualCategory] = useState("");
   const [isManualAdd, setIsManualAdd] = useState(false);
-  const [editManualId, setEditManualId] = useState("");
+  const [editManualId, setEditManualId] = useState<number | undefined>(undefined);
+  const [savingManual, setSavingManual] = useState(false);
 
   const [subDialogOpen, setSubDialogOpen] = useState(false);
-  const [editSub, setEditSub] = useState({ sectionId: "", id: "", title: "", content: "" });
+  const [editSub, setEditSub] = useState<{ sectionId: number; id?: number; title: string; content: string }>({ sectionId: 0, title: "", content: "" });
   const [isSubAdd, setIsSubAdd] = useState(false);
+  const [editSubFile, setEditSubFile] = useState<File | null>(null);
+  const [savingSub, setSavingSub] = useState(false);
 
   const [quizDialogOpen, setQuizDialogOpen] = useState(false);
-  const [editQuiz, setEditQuiz] = useState<Quiz>(emptyQuiz);
+  const [editQuiz, setEditQuiz] = useState<{ id?: number; title: string; category: string; passingScore: number }>({ title: "", category: "", passingScore: 70 });
+  const [editQuizQuestions, setEditQuizQuestions] = useState<QuizQuestion[]>([]);
   const [isQuizAdd, setIsQuizAdd] = useState(false);
+  const [savingQuiz, setSavingQuiz] = useState(false);
+  const [loadingQuizEdit, setLoadingQuizEdit] = useState(false);
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<{ type: string; id: string; parentId?: string } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ type: string; id: number; parentId?: number } | null>(null);
 
   // --- Quiz Taking ---
   const [activeQuiz, setActiveQuiz] = useState<Quiz | null>(null);
-  const [quizAnswers, setQuizAnswers] = useState<Record<string, number>>({});
+  const [quizAnswers, setQuizAnswers] = useState<Record<number, number>>({});
   const [quizSubmitted, setQuizSubmitted] = useState(false);
+  const [quizResult, setQuizResult] = useState<QuizAttemptResult | null>(null);
+  const [loadingQuizTake, setLoadingQuizTake] = useState(false);
+  const [submittingQuiz, setSubmittingQuiz] = useState(false);
 
-  const startQuiz = (quiz: Quiz) => {
-    setActiveQuiz(quiz);
-    setQuizAnswers({});
-    setQuizSubmitted(false);
+  const startQuiz = async (quiz: Quiz) => {
+    setLoadingQuizTake(true);
+    try {
+      const res = await userManualService.getQuiz(quiz.id, "take");
+      if (res.status === "success") {
+        setActiveQuiz(res.data);
+        setQuizAnswers({});
+        setQuizSubmitted(false);
+        setQuizResult(null);
+      } else {
+        toast.error("ไม่สามารถโหลดแบบทดสอบได้");
+      }
+    } finally {
+      setLoadingQuizTake(false);
+    }
   };
 
-  const submitQuiz = () => {
-    setQuizSubmitted(true);
+  const submitQuiz = async () => {
+    if (!activeQuiz) return;
+    setSubmittingQuiz(true);
+    try {
+      const answers = activeQuiz.questionList.map((q) => ({
+        questionId: q.id!,
+        selectedIndex: quizAnswers[q.id!] ?? -1,
+      }));
+      const res = await userManualService.submitAttempt({
+        quizId: activeQuiz.id,
+        username: user?.username,
+        fullName: user?.full_name,
+        answers,
+      });
+      if (res.status === "success") {
+        setQuizResult(res.data);
+        setQuizSubmitted(true);
+      } else {
+        toast.error(res.message || "ส่งคำตอบไม่สำเร็จ");
+      }
+    } finally {
+      setSubmittingQuiz(false);
+    }
   };
-
-  const quizScore = activeQuiz ? (() => {
-    let correct = 0;
-    activeQuiz.questionList.forEach(q => {
-      if (quizAnswers[q.id] === q.correctIndex) correct++;
-    });
-    return { correct, total: activeQuiz.questionList.length, percent: Math.round((correct / activeQuiz.questionList.length) * 100) };
-  })() : null;
 
   // --- Filters ---
   const filteredVideos = videos.filter(v =>
@@ -181,87 +182,171 @@ export default function UserManual() {
   );
 
   // --- Video CRUD ---
-  const openAddVideo = () => { setIsVideoAdd(true); setEditVideo({ ...emptyVideo, id: crypto.randomUUID() }); setVideoDialogOpen(true); };
+  const openAddVideo = () => { setIsVideoAdd(true); setEditVideo({ ...emptyVideo }); setVideoDialogOpen(true); };
   const openEditVideo = (v: VideoTutorial) => { setIsVideoAdd(false); setEditVideo({ ...v }); setVideoDialogOpen(true); };
-  const saveVideo = () => {
-    if (!editVideo.title.trim()) { toast.error("กรุณาระบุชื่อหัวข้อ"); return; }
-    if (isVideoAdd) {
-      setVideos(prev => [...prev, editVideo]);
-      toast.success("เพิ่มวิดีโอเรียบร้อย");
-    } else {
-      setVideos(prev => prev.map(v => v.id === editVideo.id ? editVideo : v));
-      toast.success("แก้ไขวิดีโอเรียบร้อย");
+  const saveVideo = async () => {
+    if (!editVideo.title?.trim()) { toast.error("กรุณาระบุชื่อหัวข้อ"); return; }
+    if (!editVideo.videoUrl?.trim()) { toast.error("กรุณาระบุลิงก์วิดีโอ"); return; }
+    setSavingVideo(true);
+    try {
+      const res = await userManualService.saveVideo(editVideo);
+      if (res.status === "success") {
+        toast.success(isVideoAdd ? "เพิ่มวิดีโอเรียบร้อย" : "แก้ไขวิดีโอเรียบร้อย");
+        setVideoDialogOpen(false);
+        fetchAll();
+      } else {
+        toast.error(res.message || "บันทึกไม่สำเร็จ");
+      }
+    } finally {
+      setSavingVideo(false);
     }
-    setVideoDialogOpen(false);
   };
 
   // --- Manual CRUD ---
-  const openAddManual = () => { setIsManualAdd(true); setEditManualCategory(""); setEditManualId(crypto.randomUUID()); setManualDialogOpen(true); };
+  const openAddManual = () => { setIsManualAdd(true); setEditManualCategory(""); setEditManualId(undefined); setManualDialogOpen(true); };
   const openEditManual = (section: ManualSection) => { setIsManualAdd(false); setEditManualCategory(section.category); setEditManualId(section.id); setManualDialogOpen(true); };
-  const saveManual = () => {
+  const saveManual = async () => {
     if (!editManualCategory.trim()) { toast.error("กรุณาระบุชื่อหัวข้อ"); return; }
-    if (isManualAdd) {
-      setManuals(prev => [...prev, { id: editManualId, category: editManualCategory, subcategories: [] }]);
-      toast.success("เพิ่มหัวข้อเรียบร้อย");
-    } else {
-      setManuals(prev => prev.map(m => m.id === editManualId ? { ...m, category: editManualCategory } : m));
-      toast.success("แก้ไขหัวข้อเรียบร้อย");
+    setSavingManual(true);
+    try {
+      const res = await userManualService.saveSection({ id: editManualId, category: editManualCategory });
+      if (res.status === "success") {
+        toast.success(isManualAdd ? "เพิ่มหัวข้อเรียบร้อย" : "แก้ไขหัวข้อเรียบร้อย");
+        setManualDialogOpen(false);
+        fetchAll();
+      } else {
+        toast.error(res.message || "บันทึกไม่สำเร็จ");
+      }
+    } finally {
+      setSavingManual(false);
     }
-    setManualDialogOpen(false);
   };
 
   // --- Subcategory CRUD ---
-  const openAddSub = (sectionId: string) => { setIsSubAdd(true); setEditSub({ sectionId, id: crypto.randomUUID(), title: "", content: "" }); setSubDialogOpen(true); };
-  const openEditSub = (sectionId: string, sub: { id: string; title: string; content: string }) => {
-    setIsSubAdd(false); setEditSub({ sectionId, id: sub.id, title: sub.title, content: sub.content }); setSubDialogOpen(true);
+  const openAddSub = (sectionId: number) => { setIsSubAdd(true); setEditSub({ sectionId, title: "", content: "" }); setEditSubFile(null); setSubDialogOpen(true); };
+  const openEditSub = (sectionId: number, sub: { id: number; title: string; content: string }) => {
+    setIsSubAdd(false); setEditSub({ sectionId, id: sub.id, title: sub.title, content: sub.content }); setEditSubFile(null); setSubDialogOpen(true);
   };
-  const saveSub = () => {
+  const saveSub = async () => {
     if (!editSub.title.trim()) { toast.error("กรุณาระบุชื่อหัวข้อย่อย"); return; }
-    setManuals(prev => prev.map(m => {
-      if (m.id !== editSub.sectionId) return m;
-      if (isSubAdd) {
-        return { ...m, subcategories: [...m.subcategories, { id: editSub.id, title: editSub.title, content: editSub.content }] };
-      } else {
-        return { ...m, subcategories: m.subcategories.map(s => s.id === editSub.id ? { ...s, title: editSub.title, content: editSub.content } : s) };
+    setSavingSub(true);
+    try {
+      const res = await userManualService.saveSubsection(editSub);
+      if (res.status !== "success") {
+        toast.error(res.message || "บันทึกไม่สำเร็จ");
+        return;
       }
-    }));
-    toast.success(isSubAdd ? "เพิ่มหัวข้อย่อยเรียบร้อย" : "แก้ไขหัวข้อย่อยเรียบร้อย");
-    setSubDialogOpen(false);
+      const subsectionId = editSub.id ?? res.id;
+      if (editSubFile) {
+        const uploadRes = await userManualService.uploadFile(editSubFile, "user-manual/attachments");
+        if (uploadRes.status === "success") {
+          await userManualService.addAttachment({ subsectionId, fileName: editSubFile.name, fileUrl: uploadRes.url });
+        } else {
+          toast.error("แนบไฟล์ไม่สำเร็จ แต่บันทึกหัวข้อย่อยแล้ว");
+        }
+      }
+      toast.success(isSubAdd ? "เพิ่มหัวข้อย่อยเรียบร้อย" : "แก้ไขหัวข้อย่อยเรียบร้อย");
+      setSubDialogOpen(false);
+      fetchAll();
+    } finally {
+      setSavingSub(false);
+    }
   };
 
   // --- Quiz CRUD ---
-  const openAddQuiz = () => { setIsQuizAdd(true); setEditQuiz({ ...emptyQuiz, id: crypto.randomUUID() }); setQuizDialogOpen(true); };
-  const openEditQuiz = (q: Quiz) => { setIsQuizAdd(false); setEditQuiz({ ...q }); setQuizDialogOpen(true); };
-  const saveQuiz = () => {
-    if (!editQuiz.title.trim()) { toast.error("กรุณาระบุชื่อแบบทดสอบ"); return; }
-    if (isQuizAdd) {
-      setQuizzes(prev => [...prev, editQuiz]);
-      toast.success("สร้างแบบทดสอบเรียบร้อย");
-    } else {
-      setQuizzes(prev => prev.map(q => q.id === editQuiz.id ? editQuiz : q));
-      toast.success("แก้ไขแบบทดสอบเรียบร้อย");
+  const openAddQuiz = () => {
+    setIsQuizAdd(true);
+    setEditQuiz({ title: "", category: "", passingScore: 70 });
+    setEditQuizQuestions([]);
+    setQuizDialogOpen(true);
+  };
+  const openEditQuiz = async (q: Quiz) => {
+    setIsQuizAdd(false);
+    setQuizDialogOpen(true);
+    setLoadingQuizEdit(true);
+    try {
+      const res = await userManualService.getQuiz(q.id, "edit");
+      if (res.status === "success") {
+        setEditQuiz({ id: res.data.id, title: res.data.title, category: res.data.category, passingScore: res.data.passingScore });
+        setEditQuizQuestions(res.data.questionList);
+      } else {
+        toast.error("ไม่สามารถโหลดแบบทดสอบได้");
+        setQuizDialogOpen(false);
+      }
+    } finally {
+      setLoadingQuizEdit(false);
     }
-    setQuizDialogOpen(false);
+  };
+  const addQuestionRow = () => setEditQuizQuestions(prev => [...prev, { ...emptyQuestion, options: [...emptyQuestion.options] }]);
+  const removeQuestionRow = (index: number) => setEditQuizQuestions(prev => prev.filter((_, i) => i !== index));
+  const updateQuestionText = (index: number, value: string) =>
+    setEditQuizQuestions(prev => prev.map((q, i) => i === index ? { ...q, question: value } : q));
+  const updateQuestionOption = (index: number, optionIndex: number, value: string) =>
+    setEditQuizQuestions(prev => prev.map((q, i) => {
+      if (i !== index) return q;
+      const options = [...q.options];
+      options[optionIndex] = value;
+      return { ...q, options };
+    }));
+  const updateQuestionCorrect = (index: number, optionIndex: number) =>
+    setEditQuizQuestions(prev => prev.map((q, i) => i === index ? { ...q, correctIndex: optionIndex } : q));
+
+  const saveQuiz = async () => {
+    if (!editQuiz.title.trim()) { toast.error("กรุณาระบุชื่อแบบทดสอบ"); return; }
+    if (editQuizQuestions.length === 0) { toast.error("กรุณาเพิ่มคำถามอย่างน้อย 1 ข้อ"); return; }
+    const incomplete = editQuizQuestions.some(q => !q.question.trim() || q.options.some(o => !o.trim()));
+    if (incomplete) { toast.error("กรุณากรอกคำถามและตัวเลือกให้ครบทุกข้อ"); return; }
+
+    setSavingQuiz(true);
+    try {
+      const res = await userManualService.saveQuiz({ ...editQuiz, questionList: editQuizQuestions });
+      if (res.status === "success") {
+        toast.success(isQuizAdd ? "สร้างแบบทดสอบเรียบร้อย" : "แก้ไขแบบทดสอบเรียบร้อย");
+        setQuizDialogOpen(false);
+        fetchAll();
+      } else {
+        toast.error(res.message || "บันทึกไม่สำเร็จ");
+      }
+    } finally {
+      setSavingQuiz(false);
+    }
   };
 
   // --- Delete ---
-  const openDelete = (type: string, id: string, parentId?: string) => { setDeleteTarget({ type, id, parentId }); setDeleteDialogOpen(true); };
-  const confirmDelete = () => {
+  const openDelete = (type: string, id: number, parentId?: number) => { setDeleteTarget({ type, id, parentId }); setDeleteDialogOpen(true); };
+  const confirmDelete = async () => {
     if (!deleteTarget) return;
-    const { type, id, parentId } = deleteTarget;
+    const { type, id } = deleteTarget;
+    let res;
     if (type === "video") {
-      setVideos(prev => prev.filter(v => v.id !== id));
+      res = await userManualService.deleteVideo(id);
     } else if (type === "manual") {
-      setManuals(prev => prev.filter(m => m.id !== id));
-    } else if (type === "sub" && parentId) {
-      setManuals(prev => prev.map(m => m.id === parentId ? { ...m, subcategories: m.subcategories.filter(s => s.id !== id) } : m));
+      res = await userManualService.deleteManualEntity("section", id);
+    } else if (type === "sub") {
+      res = await userManualService.deleteManualEntity("subsection", id);
     } else if (type === "quiz") {
-      setQuizzes(prev => prev.filter(q => q.id !== id));
+      res = await userManualService.deleteQuiz(id);
     }
-    toast.success("ลบข้อมูลเรียบร้อย");
+    if (res?.status === "success") {
+      toast.success("ลบข้อมูลเรียบร้อย");
+      fetchAll();
+    } else {
+      toast.error("ลบไม่สำเร็จ");
+    }
     setDeleteDialogOpen(false);
     setDeleteTarget(null);
   };
+
+  const quizPassed = quizResult ? quizResult.passed : false;
+
+  if (loading) {
+    return (
+      <div className="flex h-[400px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="ml-2">กำลังโหลดข้อมูล...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -314,7 +399,9 @@ export default function UserManual() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setVideoDialogOpen(false)}>ยกเลิก</Button>
-            <Button onClick={saveVideo} className="gap-2"><Save className="w-4 h-4" />บันทึก</Button>
+            <Button onClick={saveVideo} className="gap-2" disabled={savingVideo}>
+              {savingVideo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}บันทึก
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -334,7 +421,9 @@ export default function UserManual() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setManualDialogOpen(false)}>ยกเลิก</Button>
-            <Button onClick={saveManual} className="gap-2"><Save className="w-4 h-4" />บันทึก</Button>
+            <Button onClick={saveManual} className="gap-2" disabled={savingManual}>
+              {savingManual ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}บันทึก
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -355,44 +444,93 @@ export default function UserManual() {
               <Label>เนื้อหา</Label>
               <Textarea value={editSub.content} onChange={e => setEditSub({ ...editSub, content: e.target.value })} placeholder="เนื้อหารายละเอียด..." rows={5} />
             </div>
+            <div className="space-y-2">
+              <Label>แนบไฟล์ (ถ้ามี)</Label>
+              <Input type="file" onChange={e => setEditSubFile(e.target.files?.[0] ?? null)} />
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSubDialogOpen(false)}>ยกเลิก</Button>
-            <Button onClick={saveSub} className="gap-2"><Save className="w-4 h-4" />บันทึก</Button>
+            <Button onClick={saveSub} className="gap-2" disabled={savingSub}>
+              {savingSub ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}บันทึก
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* Quiz Dialog */}
       <Dialog open={quizDialogOpen} onOpenChange={setQuizDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{isQuizAdd ? "สร้างแบบทดสอบใหม่" : "แก้ไขแบบทดสอบ"}</DialogTitle>
-            <DialogDescription>{isQuizAdd ? "กรอกข้อมูลแบบทดสอบที่ต้องการสร้าง" : "แก้ไขข้อมูลแบบทดสอบ"}</DialogDescription>
+            <DialogDescription>{isQuizAdd ? "กรอกข้อมูลแบบทดสอบและคำถามที่ต้องการสร้าง" : "แก้ไขข้อมูลแบบทดสอบและคำถาม"}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>ชื่อแบบทดสอบ</Label>
-              <Input value={editQuiz.title} onChange={e => setEditQuiz({ ...editQuiz, title: e.target.value })} placeholder="ชื่อแบบทดสอบ" />
-            </div>
-            <div className="space-y-2">
-              <Label>หมวดหมู่</Label>
-              <Input value={editQuiz.category} onChange={e => setEditQuiz({ ...editQuiz, category: e.target.value })} placeholder="เช่น พื้นฐาน, การจัดซื้อ" />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>จำนวนคำถาม</Label>
-                <Input type="number" min={1} value={editQuiz.questions} onChange={e => setEditQuiz({ ...editQuiz, questions: Number(e.target.value) })} />
+          {loadingQuizEdit ? (
+            <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin" /></div>
+          ) : (
+            <>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label>ชื่อแบบทดสอบ</Label>
+                  <Input value={editQuiz.title} onChange={e => setEditQuiz({ ...editQuiz, title: e.target.value })} placeholder="ชื่อแบบทดสอบ" />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>หมวดหมู่</Label>
+                    <Input value={editQuiz.category} onChange={e => setEditQuiz({ ...editQuiz, category: e.target.value })} placeholder="เช่น พื้นฐาน, การจัดซื้อ" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>คะแนนผ่าน (%)</Label>
+                    <Input type="number" min={0} max={100} value={editQuiz.passingScore} onChange={e => setEditQuiz({ ...editQuiz, passingScore: Number(e.target.value) })} />
+                  </div>
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label>คะแนนผ่าน (%)</Label>
-                <Input type="number" min={0} max={100} value={editQuiz.passingScore} onChange={e => setEditQuiz({ ...editQuiz, passingScore: Number(e.target.value) })} />
+              <Separator />
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label>คำถาม ({editQuizQuestions.length})</Label>
+                  <Button type="button" variant="outline" size="sm" onClick={addQuestionRow}>
+                    <Plus className="w-4 h-4 mr-1" />เพิ่มคำถาม
+                  </Button>
+                </div>
+                {editQuizQuestions.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-4">ยังไม่มีคำถาม กด "เพิ่มคำถาม" เพื่อเริ่มสร้าง</p>
+                )}
+                {editQuizQuestions.map((q, qi) => (
+                  <div key={qi} className="p-3 border rounded-lg space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs">คำถามที่ {qi + 1}</Label>
+                      <Button type="button" variant="ghost" size="sm" onClick={() => removeQuestionRow(qi)}><Trash2 className="w-3 h-3" /></Button>
+                    </div>
+                    <Input value={q.question} onChange={e => updateQuestionText(qi, e.target.value)} placeholder={`คำถามที่ ${qi + 1}`} />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {[0, 1, 2, 3].map((oi) => (
+                        <div key={oi} className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            name={`correct-${qi}`}
+                            checked={q.correctIndex === oi}
+                            onChange={() => updateQuestionCorrect(qi, oi)}
+                            className="accent-primary"
+                          />
+                          <Input
+                            value={q.options[oi]}
+                            onChange={e => updateQuestionOption(qi, oi, e.target.value)}
+                            placeholder={`ตัวเลือก ${String.fromCharCode(65 + oi)}`}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
-            </div>
-          </div>
+            </>
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setQuizDialogOpen(false)}>ยกเลิก</Button>
-            <Button onClick={saveQuiz} className="gap-2"><Save className="w-4 h-4" />บันทึก</Button>
+            <Button onClick={saveQuiz} className="gap-2" disabled={savingQuiz || loadingQuizEdit}>
+              {savingQuiz ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}บันทึก
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -448,6 +586,9 @@ export default function UserManual() {
                   </CardContent>
                 </Card>
               ))}
+              {filteredVideos.length === 0 && (
+                <p className="text-sm text-muted-foreground col-span-full text-center py-8">ยังไม่มีวิดีโอ</p>
+              )}
             </div>
           </div>
         </TabsContent>
@@ -466,7 +607,7 @@ export default function UserManual() {
             <CardContent>
               <Accordion type="single" collapsible className="w-full">
                 {filteredManuals.map((section) => (
-                  <AccordionItem key={section.id} value={section.id}>
+                  <AccordionItem key={section.id} value={String(section.id)}>
                     <AccordionTrigger className="text-lg font-semibold">
                       <div className="flex items-center gap-2 flex-1 text-left">
                         {section.category}
@@ -494,13 +635,17 @@ export default function UserManual() {
                               </div>
                             </CardHeader>
                             <CardContent>
-                              <p className="text-sm text-muted-foreground">{sub.content}</p>
+                              <p className="text-sm text-muted-foreground whitespace-pre-line">{sub.content}</p>
                               {sub.attachments && sub.attachments.length > 0 && (
                                 <div className="mt-4">
                                   <Label className="text-xs">ไฟล์แนบ:</Label>
-                                  <div className="flex gap-2 mt-2">
-                                    {sub.attachments.map((file, idx) => (
-                                      <Badge key={idx} variant="secondary" className="cursor-pointer">📄 {file}</Badge>
+                                  <div className="flex flex-wrap gap-2 mt-2">
+                                    {sub.attachments.map((file) => (
+                                      <a key={file.id} href={file.fileUrl} target="_blank" rel="noreferrer">
+                                        <Badge variant="secondary" className="cursor-pointer gap-1">
+                                          <Paperclip className="w-3 h-3" />{file.fileName}
+                                        </Badge>
+                                      </a>
                                     ))}
                                   </div>
                                 </div>
@@ -517,6 +662,9 @@ export default function UserManual() {
                     </AccordionContent>
                   </AccordionItem>
                 ))}
+                {filteredManuals.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-8">ยังไม่มีคู่มือ</p>
+                )}
               </Accordion>
             </CardContent>
           </Card>
@@ -546,7 +694,14 @@ export default function UserManual() {
                     <CardContent className="space-y-2">
                       <p className="text-sm text-muted-foreground">จำนวนคำถาม: {quiz.questions} ข้อ</p>
                       <p className="text-sm text-muted-foreground">คะแนนผ่าน: {quiz.passingScore}%</p>
-                      <Button className="w-full mt-4" onClick={() => startQuiz(quiz)}>เริ่มทำแบบทดสอบ</Button>
+                      <Button
+                        className="w-full mt-4"
+                        onClick={() => startQuiz(quiz)}
+                        disabled={loadingQuizTake || quiz.questions === 0}
+                      >
+                        {loadingQuizTake ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                        {quiz.questions === 0 ? "ยังไม่มีคำถาม" : "เริ่มทำแบบทดสอบ"}
+                      </Button>
                       {isAdmin && (
                         <div className="flex gap-2 mt-2">
                           <Button variant="outline" size="sm" className="flex-1" onClick={() => openEditQuiz(quiz)}>
@@ -560,6 +715,9 @@ export default function UserManual() {
                     </CardContent>
                   </Card>
                 ))}
+                {filteredQuizzes.length === 0 && (
+                  <p className="text-sm text-muted-foreground col-span-full text-center py-8">ยังไม่มีแบบทดสอบ</p>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -572,62 +730,66 @@ export default function UserManual() {
           <DialogHeader>
             <DialogTitle>{activeQuiz?.title}</DialogTitle>
             <DialogDescription>
-              {quizSubmitted
-                ? `ผลคะแนน: ${quizScore?.correct}/${quizScore?.total} (${quizScore?.percent}%)`
-                : `จำนวน ${activeQuiz?.questionList.length} ข้อ | คะแนนผ่าน ${activeQuiz?.passingScore}%`}
+              {quizSubmitted && quizResult
+                ? `ผลคะแนน: ${quizResult.correct}/${quizResult.total} (${quizResult.percent}%)`
+                : `จำนวน ${activeQuiz?.questionList.length} ข้อ`}
             </DialogDescription>
           </DialogHeader>
 
-          {quizSubmitted && quizScore && (
-            <div className={`p-4 rounded-lg text-center font-bold text-lg ${quizScore.percent >= (activeQuiz?.passingScore || 0) ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"}`}>
-              {quizScore.percent >= (activeQuiz?.passingScore || 0) ? "🎉 ผ่าน! ยินดีด้วย" : "❌ ไม่ผ่าน ลองใหม่อีกครั้ง"}
+          {quizSubmitted && quizResult && (
+            <div className={`p-4 rounded-lg text-center font-bold text-lg ${quizPassed ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"}`}>
+              {quizPassed ? "🎉 ผ่าน! ยินดีด้วย" : "❌ ไม่ผ่าน ลองใหม่อีกครั้ง"}
             </div>
           )}
 
           <div className="space-y-6">
-            {activeQuiz?.questionList.map((q, qi) => (
-              <div key={q.id} className="space-y-3">
-                <p className="font-medium">{qi + 1}. {q.question}</p>
-                <div className="space-y-2 pl-4">
-                  {q.options.map((opt, oi) => {
-                    const isSelected = quizAnswers[q.id] === oi;
-                    const isCorrect = q.correctIndex === oi;
-                    let optClass = "border rounded-lg p-3 cursor-pointer transition-colors ";
-                    if (quizSubmitted) {
-                      if (isCorrect) optClass += "border-green-500 bg-green-50 dark:bg-green-900/30";
-                      else if (isSelected && !isCorrect) optClass += "border-red-500 bg-red-50 dark:bg-red-900/30";
-                      else optClass += "border-border opacity-60";
-                    } else {
-                      optClass += isSelected ? "border-primary bg-primary/10" : "border-border hover:border-primary/50";
-                    }
-                    return (
-                      <div
-                        key={oi}
-                        className={optClass}
-                        onClick={() => { if (!quizSubmitted) setQuizAnswers(prev => ({ ...prev, [q.id]: oi })); }}
-                      >
-                        <span className="text-sm">{String.fromCharCode(65 + oi)}. {opt}</span>
-                      </div>
-                    );
-                  })}
+            {activeQuiz?.questionList.map((q, qi) => {
+              const reviewForQ = quizResult?.review.find(r => r.questionId === q.id);
+              return (
+                <div key={q.id} className="space-y-3">
+                  <p className="font-medium">{qi + 1}. {q.question}</p>
+                  <div className="space-y-2 pl-4">
+                    {q.options.map((opt, oi) => {
+                      const isSelected = quizAnswers[q.id!] === oi;
+                      const isCorrect = reviewForQ?.correctIndex === oi;
+                      let optClass = "border rounded-lg p-3 cursor-pointer transition-colors ";
+                      if (quizSubmitted) {
+                        if (isCorrect) optClass += "border-green-500 bg-green-50 dark:bg-green-900/30";
+                        else if (isSelected && !isCorrect) optClass += "border-red-500 bg-red-50 dark:bg-red-900/30";
+                        else optClass += "border-border opacity-60";
+                      } else {
+                        optClass += isSelected ? "border-primary bg-primary/10" : "border-border hover:border-primary/50";
+                      }
+                      return (
+                        <div
+                          key={oi}
+                          className={optClass}
+                          onClick={() => { if (!quizSubmitted) setQuizAnswers(prev => ({ ...prev, [q.id!]: oi })); }}
+                        >
+                          <span className="text-sm">{String.fromCharCode(65 + oi)}. {opt}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <DialogFooter>
             {quizSubmitted ? (
               <>
                 <Button variant="outline" onClick={() => setActiveQuiz(null)}>ปิด</Button>
-                <Button onClick={() => { setQuizAnswers({}); setQuizSubmitted(false); }}>ทำใหม่อีกครั้ง</Button>
+                <Button onClick={() => { setQuizAnswers({}); setQuizSubmitted(false); setQuizResult(null); }}>ทำใหม่อีกครั้ง</Button>
               </>
             ) : (
               <>
                 <Button variant="outline" onClick={() => setActiveQuiz(null)}>ยกเลิก</Button>
                 <Button
                   onClick={submitQuiz}
-                  disabled={activeQuiz ? Object.keys(quizAnswers).length < activeQuiz.questionList.length : true}
+                  disabled={submittingQuiz || (activeQuiz ? Object.keys(quizAnswers).length < activeQuiz.questionList.length : true)}
                 >
+                  {submittingQuiz ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
                   ส่งคำตอบ ({Object.keys(quizAnswers).length}/{activeQuiz?.questionList.length})
                 </Button>
               </>
