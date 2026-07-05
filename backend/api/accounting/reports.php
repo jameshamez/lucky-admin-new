@@ -162,31 +162,76 @@ if ($type === 'summary') {
     ]);
 } else if ($type === 'petty_cash') {
     // Petty Cash Report
-    $res = $conn->query("SELECT 
+    $res = $conn->query("SELECT
         SUM(amount) as total_spent,
         COUNT(*) as total_requests,
-        SUM(CASE WHEN status = 'PAID' THEN amount ELSE 0 END) as paid_amount,
-        SUM(CASE WHEN status != 'PAID' AND status != 'REJECTED' THEN amount ELSE 0 END) as pending_amount
-        FROM `accounting_petty_cash` 
-        WHERE MONTH(request_date) = MONTH(CURRENT_DATE())");
+        SUM(CASE WHEN status = 'จ่ายแล้ว' THEN amount ELSE 0 END) as paid_amount,
+        SUM(CASE WHEN status IN ('รออนุมัติ', 'รอเบิกจ่าย') THEN amount ELSE 0 END) as pending_amount,
+        SUM(CASE WHEN status IN ('รออนุมัติ', 'รอเบิกจ่าย') THEN 1 ELSE 0 END) as pending_count
+        FROM `accounting_petty_cash`
+        WHERE MONTH(request_date) = MONTH(CURRENT_DATE()) AND YEAR(request_date) = YEAR(CURRENT_DATE())");
     $stats = $res->fetch_assoc();
 
     $paidAmount = (float) ($stats['paid_amount'] ?? 0);
     $pendingAmount = (float) ($stats['pending_amount'] ?? 0);
+    $pendingCount = (int) ($stats['pending_count'] ?? 0);
 
     $history = [];
-    $res = $conn->query("SELECT * FROM `accounting_petty_cash` ORDER BY request_date DESC LIMIT 50");
+    $res = $conn->query("SELECT id, pc_code, request_date, employee, department, category, description, amount, status, approver, paid_date
+                        FROM `accounting_petty_cash` ORDER BY request_date DESC LIMIT 50");
     if ($res) {
         while ($row = $res->fetch_assoc()) {
             $history[] = [
                 "id" => $row['id'],
+                "code" => $row['pc_code'],
                 "date" => $row['request_date'],
-                "requester" => $row['requester_name'],
-                "purpose" => $row['purpose'],
+                "requester" => $row['employee'],
+                "department" => $row['department'],
+                "category" => $row['category'],
+                "purpose" => $row['description'],
                 "amount" => (float) $row['amount'],
-                "status" => $row['status']
+                "status" => $row['status'],
+                "approver" => $row['approver'] ?: '-',
+                "paidDate" => $row['paid_date'] ?: $row['request_date']
             ];
         }
+    }
+
+    // Map free-text categories into the 4 chart buckets
+    function mapPettyCashBucket($category) {
+        if (strpos($category, 'น้ำมัน') !== false) return 'fuel';
+        if (strpos($category, 'ส่งสินค้า') !== false || strpos($category, 'ขนส่ง') !== false) return 'delivery';
+        if (strpos($category, 'สวัสดิการ') !== false) return 'welfare';
+        return 'others';
+    }
+
+    $thMonths = ["Jan" => "ม.ค.", "Feb" => "ก.พ.", "Mar" => "มี.ค.", "Apr" => "เม.ย.", "May" => "พ.ค.", "Jun" => "มิ.ย.", "Jul" => "ก.ค.", "Aug" => "ส.ค.", "Sep" => "ก.ย.", "Oct" => "ต.ค.", "Nov" => "พ.ย.", "Dec" => "ธ.ค."];
+
+    $monthlyBuckets = [];
+    for ($i = 5; $i >= 0; $i--) {
+        $ym = date('Y-m', strtotime("-$i months"));
+        $monthlyBuckets[$ym] = ["fuel" => 0.0, "delivery" => 0.0, "welfare" => 0.0, "others" => 0.0];
+    }
+
+    $res = $conn->query("SELECT DATE_FORMAT(request_date, '%Y-%m') as ym, category, SUM(amount) as total
+                        FROM `accounting_petty_cash`
+                        WHERE status = 'จ่ายแล้ว' AND request_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 5 MONTH)
+                        GROUP BY ym, category");
+    if ($res) {
+        while ($row = $res->fetch_assoc()) {
+            $ym = $row['ym'];
+            if (!isset($monthlyBuckets[$ym])) continue;
+            $bucket = mapPettyCashBucket($row['category']);
+            $monthlyBuckets[$ym][$bucket] += (float) $row['total'];
+        }
+    }
+
+    $monthlyCategoryData = [];
+    $monthlyTrendData = [];
+    foreach ($monthlyBuckets as $ym => $buckets) {
+        $label = $thMonths[date('M', strtotime($ym . '-01'))] ?? $ym;
+        $monthlyCategoryData[] = array_merge(["month" => $label], $buckets);
+        $monthlyTrendData[] = ["month" => $label, "total" => array_sum($buckets)];
     }
 
     echo json_encode([
@@ -194,10 +239,12 @@ if ($type === 'summary') {
         "data" => [
             "summary" => [
                 ["label" => "ยอดใช้จ่ายเดือนนี้", "value" => "฿" . number_format($paidAmount), "change" => "+0%", "icon" => "Briefcase"],
-                ["label" => "รอการเบิกจ่าย", "value" => "฿" . number_format($pendingAmount), "change" => "0 รายการ", "icon" => "FileText"],
+                ["label" => "รอการเบิกจ่าย", "value" => "฿" . number_format($pendingAmount), "change" => "$pendingCount รายการ", "icon" => "FileText"],
                 ["label" => "จำนวนรายการ", "value" => (int) ($stats['total_requests'] ?? 0), "change" => "เดือนนี้", "icon" => "Search"],
             ],
-            "history" => $history
+            "history" => $history,
+            "monthlyCategoryData" => $monthlyCategoryData,
+            "monthlyTrendData" => $monthlyTrendData
         ]
     ]);
 } else if ($type === 'office_equipment') {

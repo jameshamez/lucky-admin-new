@@ -56,7 +56,7 @@ if ($res && $row = $res->fetch_assoc()) {
     $stats['unpaidAmount'] = (float) $row['unpaid'];
 }
 
-$res = safe_query($conn, "SELECT COUNT(*) as total FROM `accounting_petty_cash` WHERE status = 'PENDING'");
+$res = safe_query($conn, "SELECT COUNT(*) as total FROM `accounting_petty_cash` WHERE status = 'รออนุมัติ'");
 if ($res && $row = $res->fetch_assoc()) {
     $stats['pendingRequests'] = (int) $row['total'];
 }
@@ -115,7 +115,7 @@ $pettyCash = [
     "percent" => 100,
     "stats" => ["pending" => 0, "approved" => 0, "paid" => 0, "clearing" => 0, "all" => 0]
 ];
-$resPC = safe_query($conn, "SELECT SUM(amount) as total FROM `accounting_petty_cash` WHERE status = 'PAID' AND MONTH(request_date) = MONTH(CURRENT_DATE())");
+$resPC = safe_query($conn, "SELECT SUM(amount) as total FROM `accounting_petty_cash` WHERE status = 'จ่ายแล้ว' AND MONTH(request_date) = MONTH(CURRENT_DATE()) AND YEAR(request_date) = YEAR(CURRENT_DATE())");
 if ($resPC && $row = $resPC->fetch_assoc()) {
     $spent = (float) ($row['total'] ?? 0);
     $pettyCash['spent'] = $spent;
@@ -127,19 +127,23 @@ $resPCStats = safe_query($conn, "SELECT status, COUNT(*) as cnt FROM `accounting
 if ($resPCStats) {
     $totalAll = 0;
     while ($row = $resPCStats->fetch_assoc()) {
-        $s = strtolower($row['status']);
+        $s = $row['status'];
         $cnt = (int) $row['cnt'];
         $totalAll += $cnt;
-        if ($s == 'pending')
+        if ($s === 'รออนุมัติ')
             $pettyCash['stats']['pending'] = $cnt;
-        else if ($s == 'approved')
+        else if ($s === 'รอเบิกจ่าย')
             $pettyCash['stats']['approved'] = $cnt;
-        else if ($s == 'paid')
+        else if ($s === 'จ่ายแล้ว')
             $pettyCash['stats']['paid'] = $cnt;
-        else if ($s == 'clearing')
-            $pettyCash['stats']['clearing'] = $cnt;
     }
     $pettyCash['stats']['all'] = $totalAll;
+}
+
+// "Clearing" tracks reconciliation (clearance_status), not the request status enum
+$resPCClearing = safe_query($conn, "SELECT COUNT(*) as cnt FROM `accounting_petty_cash` WHERE clearance_status = 'รอเคลียร์'");
+if ($resPCClearing && $row = $resPCClearing->fetch_assoc()) {
+    $pettyCash['stats']['clearing'] = (int) $row['cnt'];
 }
 
 // --- 5. Sales by Person ---
@@ -208,9 +212,9 @@ if ($resAR) {
 
 // --- 8.1 Accounts Payable (เจ้าหนี้) ---
 $accountsPayable = [];
-$resAP = safe_query($conn, "SELECT requester_name as supplier, amount, request_date as dueDate, 'เบิกจ่าย' as type 
-                      FROM `accounting_petty_cash` 
-                      WHERE status IN ('PENDING', 'APPROVED') 
+$resAP = safe_query($conn, "SELECT employee as supplier, amount, request_date as dueDate, 'เบิกจ่าย' as type
+                      FROM `accounting_petty_cash`
+                      WHERE status IN ('รออนุมัติ', 'รอเบิกจ่าย')
                       ORDER BY request_date ASC LIMIT 5");
 if ($resAP) {
     while ($row = $resAP->fetch_assoc()) {

@@ -18,6 +18,8 @@ export default function PettyCashReport() {
   const [loading, setLoading] = useState(true);
   const [summaryData, setSummaryData] = useState<any[]>([]);
   const [history, setHistory] = useState<any[]>([]);
+  const [monthlyCategoryData, setMonthlyCategoryData] = useState<any[]>([]);
+  const [monthlyTrendData, setMonthlyTrendData] = useState<any[]>([]);
 
   useEffect(() => {
     const fetchPettyCashData = async () => {
@@ -27,6 +29,8 @@ export default function PettyCashReport() {
         if (res.status === 'success') {
           setSummaryData(res.data.summary);
           setHistory(res.data.history);
+          setMonthlyCategoryData(res.data.monthlyCategoryData);
+          setMonthlyTrendData(res.data.monthlyTrendData);
         }
       } catch (error) {
         toast.error("ไม่สามารถดึงข้อมูลรายงานเงินสดย่อยได้");
@@ -45,15 +49,6 @@ export default function PettyCashReport() {
       </div>
     );
   }
-
-  // Monthly category data (Mock for now as backend doesn't group yet)
-  const monthlyCategoryData = [
-    { month: "ปัจจุบัน", fuel: 0, delivery: 0, welfare: 0, others: 0 },
-  ];
-
-  const monthlyTrendData = [
-    { month: "ปัจจุบัน", total: history.reduce((sum, h) => sum + h.amount, 0) },
-  ];
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -231,16 +226,16 @@ export default function PettyCashReport() {
             <TableBody>
               {history.map((item) => (
                 <TableRow key={item.id}>
-                  <TableCell className="font-medium">PC-{item.id}</TableCell>
+                  <TableCell className="font-medium">{item.code ?? `PC-${item.id}`}</TableCell>
                   <TableCell>{item.date}</TableCell>
                   <TableCell>{item.requester}</TableCell>
-                  <TableCell>โฮมออฟฟิศ</TableCell>
-                  <TableCell>ทั่วไป</TableCell>
+                  <TableCell>{item.department}</TableCell>
+                  <TableCell>{item.category}</TableCell>
                   <TableCell>{item.purpose}</TableCell>
                   <TableCell className="text-right">฿{item.amount.toLocaleString()}</TableCell>
                   <TableCell>{getStatusBadge(item.status)}</TableCell>
-                  <TableCell>-</TableCell>
-                  <TableCell>{item.date}</TableCell>
+                  <TableCell>{item.approver}</TableCell>
+                  <TableCell>{item.paidDate}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
