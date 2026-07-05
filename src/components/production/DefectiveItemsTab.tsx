@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,29 +12,10 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import {
-  Search, LayoutGrid, List, Package, Eye, AlertTriangle, ShoppingCart, Trash2,
+  Search, LayoutGrid, List, Package, Eye, AlertTriangle, ShoppingCart, Trash2, Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
-
-// --- Data Types ---
-interface DefectiveItem {
-  id: string;
-  code: string;
-  name: string;
-  image: string;
-  category: string;
-  subcategory: string;
-  color: string;
-  size: string;
-  defectType: string;
-  quantity: number;
-  unit: string;
-  reportDate: string;
-  reportedBy: string;
-  orderRef: string;
-  note: string;
-  status: "รอดำเนินการ" | "ตัดขาย" | "ทำลาย" | "ซ่อมแล้ว";
-}
+import { productionStockService, DefectiveItem } from "@/services/productionStockService";
 
 // --- Category Config ---
 const categories = [
@@ -46,60 +27,33 @@ const categories = [
   { key: "ชิ้นส่วนถ้วยรางวัล", label: "ชิ้นส่วนถ้วยรางวัล" },
 ];
 
-// --- Mock Data ---
-const initialDefectiveData: DefectiveItem[] = [
-  {
-    id: "DEF-001", code: "TC-001", name: "ถ้วยรางวัลสีทอง", image: "/placeholder.svg",
-    category: "ถ้วยรางวัลสำเร็จ", subcategory: "ถ้วยรางวัลโลหะอิตาลี",
-    color: "ทอง", size: "A", defectType: "สีผิดเพี้ยน",
-    quantity: 5, unit: "ชิ้น", reportDate: "2025-02-10",
-    reportedBy: "ทีม QC", orderRef: "ORD-001", note: "สีเคลือบไม่สม่ำเสมอ",
-    status: "รอดำเนินการ",
-  },
-  {
-    id: "DEF-002", code: "TC-003", name: "ถ้วยรางวัลโลหะอิตาลี - สีเงิน", image: "/placeholder.svg",
-    category: "ถ้วยรางวัลสำเร็จ", subcategory: "ถ้วยรางวัลโลหะอิตาลี",
-    color: "เงิน", size: "B", defectType: "รอยขีดข่วน",
-    quantity: 3, unit: "ชิ้น", reportDate: "2025-02-08",
-    reportedBy: "ทีม A", orderRef: "ORD-005", note: "มีรอยขีดข่วนที่ฐาน",
-    status: "รอดำเนินการ",
-  },
-  {
-    id: "DEF-003", code: "MD-001", name: "เหรียญพลาสติกรู้แพ้รู้ชนะ", image: "/placeholder.svg",
-    category: "เหรียญรางวัล", subcategory: "เหรียญพลาสติก",
-    color: "ทอง", size: "มาตรฐาน", defectType: "พิมพ์ไม่ชัด",
-    quantity: 50, unit: "ชิ้น", reportDate: "2025-02-07",
-    reportedBy: "ทีม QC", orderRef: "ORD-010", note: "ตัวอักษรเลือนหาย",
-    status: "ตัดขาย",
-  },
-  {
-    id: "DEF-004", code: "PL-001", name: "โล่คริสตัลพรีเมียม", image: "/placeholder.svg",
-    category: "โล่รางวัล", subcategory: "โล่คริสตัล",
-    color: "ใส", size: "8 นิ้ว", defectType: "แตกร้าว",
-    quantity: 2, unit: "ชิ้น", reportDate: "2025-02-05",
-    reportedBy: "ทีม B", orderRef: "ORD-012", note: "แตกร้าวจากการขนส่ง",
-    status: "ทำลาย",
-  },
-  {
-    id: "DEF-005", code: "CP-003", name: "ฝาครอบพลาสติก", image: "/placeholder.svg",
-    category: "ชิ้นส่วนถ้วยรางวัล", subcategory: "ฝาครอบ",
-    color: "ใส", size: "มาตรฐาน", defectType: "บิดงอ",
-    quantity: 10, unit: "ชิ้น", reportDate: "2025-02-09",
-    reportedBy: "ทีม QC", orderRef: "ORD-018", note: "ฝาบิดงอจากความร้อน",
-    status: "รอดำเนินการ",
-  },
-];
-
 export default function DefectiveItemsTab() {
   const [searchTerm, setSearchTerm] = useState("");
   const [viewMode, setViewMode] = useState<"card" | "table">("card");
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [defectiveData, setDefectiveData] = useState<DefectiveItem[]>(initialDefectiveData);
+  const [loading, setLoading] = useState(true);
+  const [defectiveData, setDefectiveData] = useState<DefectiveItem[]>([]);
   const [detailItem, setDetailItem] = useState<DefectiveItem | null>(null);
   const [sellItem, setSellItem] = useState<DefectiveItem | null>(null);
   const [sellQty, setSellQty] = useState("");
   const [sellNote, setSellNote] = useState("");
+  const [sellSubmitting, setSellSubmitting] = useState(false);
+  const [destroying, setDestroying] = useState(false);
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const res = await productionStockService.getDefectiveItems();
+      if (res.status === "success") setDefectiveData(res.data);
+    } catch (error) {
+      toast.error("ไม่สามารถโหลดข้อมูลสินค้ามีตำหนิได้");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchData(); }, []);
 
   const filteredItems = useMemo(() => {
     return defectiveData.filter((item) => {
@@ -134,7 +88,7 @@ export default function DefectiveItemsTab() {
     </Badge>
   );
 
-  const handleSellSubmit = () => {
+  const handleSellSubmit = async () => {
     if (!sellItem) return;
     const qty = parseInt(sellQty);
     if (!qty || qty <= 0) {
@@ -146,28 +100,36 @@ export default function DefectiveItemsTab() {
       return;
     }
 
-    setDefectiveData(prev => prev.map(item => {
-      if (item.id !== sellItem.id) return item;
-      const remaining = item.quantity - qty;
-      return {
-        ...item,
-        quantity: remaining,
-        status: remaining <= 0 ? "ตัดขาย" : item.status,
-        note: item.note + (sellNote ? ` | ตัดขาย ${qty} ${item.unit}: ${sellNote}` : ` | ตัดขาย ${qty} ${item.unit}`),
-      };
-    }));
-
-    toast.success(`ตัดออกขาย ${qty} ${sellItem.unit} เรียบร้อย`);
-    setSellItem(null);
-    setSellQty("");
-    setSellNote("");
+    setSellSubmitting(true);
+    try {
+      const res = await productionStockService.sellDefectiveItem(sellItem.id, qty, sellNote);
+      if (res.status === "success") {
+        toast.success(`ตัดออกขาย ${qty} ${sellItem.unit} เรียบร้อย`);
+        setSellItem(null);
+        setSellQty("");
+        setSellNote("");
+        fetchData();
+      } else {
+        toast.error(res.message || "ตัดออกขายไม่สำเร็จ");
+      }
+    } finally {
+      setSellSubmitting(false);
+    }
   };
 
-  const handleDestroy = (item: DefectiveItem) => {
-    setDefectiveData(prev => prev.map(d =>
-      d.id === item.id ? { ...d, status: "ทำลาย" as const, quantity: 0 } : d
-    ));
-    toast.success(`ทำลายสินค้า ${item.name} เรียบร้อย`);
+  const handleDestroy = async (item: DefectiveItem) => {
+    setDestroying(true);
+    try {
+      const res = await productionStockService.destroyDefectiveItem(item.id);
+      if (res.status === "success") {
+        toast.success(`ทำลายสินค้า ${item.name} เรียบร้อย`);
+        fetchData();
+      } else {
+        toast.error(res.message || "ทำลายไม่สำเร็จ");
+      }
+    } finally {
+      setDestroying(false);
+    }
   };
 
   // --- Summary ---
@@ -313,6 +275,15 @@ export default function DefectiveItemsTab() {
       </CardContent>
     </Card>
   );
+
+  if (loading) {
+    return (
+      <div className="flex h-[300px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="ml-2">กำลังโหลดข้อมูล...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -467,8 +438,8 @@ export default function DefectiveItemsTab() {
 
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setSellItem(null)}>ยกเลิก</Button>
-            <Button className="bg-blue-600 hover:bg-blue-700" onClick={handleSellSubmit}>
-              <ShoppingCart className="w-4 h-4 mr-1.5" /> ยืนยันตัดขาย
+            <Button className="bg-blue-600 hover:bg-blue-700" onClick={handleSellSubmit} disabled={sellSubmitting}>
+              {sellSubmitting ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <ShoppingCart className="w-4 h-4 mr-1.5" />} ยืนยันตัดขาย
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -495,6 +495,7 @@ export function ProductionWorkspace({ order, onBack, onStatusChange, currentUser
                 return (
                   <div key={step.key}>
                     <ProductionStepBox
+                      orderId={String(order.dbId ?? order.id)}
                       stepKey={step.key}
                       stepNumber={displayNumber}
                       title={step.title}

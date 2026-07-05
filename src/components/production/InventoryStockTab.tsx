@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,45 +44,11 @@ import {
   RefreshCw,
   Clock,
   User,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
-
-// --- Data Types ---
-interface BOMComponent {
-  id: string;
-  name: string;
-  qty: number;
-  unit: string;
-}
-
-interface MovementLog {
-  id: string;
-  date: string;
-  type: "รับเข้า" | "จ่ายออก" | "เคลม" | "ชำรุด" | "เบิกภายใน";
-  qty: number;
-  by: string;
-  note: string;
-}
-
-interface InventoryItem {
-  id: string;
-  code: string;
-  name: string;
-  image: string;
-  category: string;
-  subcategory: string;
-  color: string;
-  size: string;
-  tags: string;
-  currentStock: number;
-  minimumStock: number;
-  unit: string;
-  model: string;
-  lastUpdated: string;
-  status: "in_stock" | "low_stock" | "out_of_stock";
-  bom?: BOMComponent[];
-  movementHistory?: MovementLog[];
-}
+import { productionStockService, StockItem as InventoryItem, MovementLog } from "@/services/productionStockService";
+import { useAuth } from "@/contexts/AuthContext";
 
 // --- Category & Subcategory Config ---
 const categories = [
@@ -128,124 +94,32 @@ const subcategoryMap: Record<string, { key: string; label: string }[]> = {
   ],
 };
 
-// --- Initial Mock Data ---
-const initialStockData: InventoryItem[] = [
-  {
-    id: "1", code: "TC-001", name: "ถ้วยรางวัลสีทอง", image: "/placeholder.svg",
-    category: "ถ้วยรางวัลสำเร็จ", subcategory: "ถ้วยรางวัลโลหะอิตาลี",
-    color: "ทอง", size: "A, B, C, N/A", tags: "ถ้วยรางวัล",
-    currentStock: 500, minimumStock: 100, unit: "ชิ้น", model: "911_S_W_D",
-    lastUpdated: "2025-02-10", status: "in_stock",
-    bom: [
-      { id: "CP-001", name: "ตัวถ้วยโลหะอิตาลี", qty: 1, unit: "ชิ้น" },
-      { id: "CP-002", name: "ฐานหินอ่อน", qty: 1, unit: "ชิ้น" },
-      { id: "CP-003", name: "ฝาครอบพลาสติก", qty: 1, unit: "ชิ้น" },
-      { id: "CP-004", name: "กล่องบรรจุ", qty: 1, unit: "ชิ้น" },
-    ],
-    movementHistory: [
-      { id: "M1", date: "2025-02-10 14:30", type: "รับเข้า", qty: 100, by: "สมชาย", note: "รับจากซัพพลายเออร์" },
-      { id: "M2", date: "2025-02-08 10:00", type: "จ่ายออก", qty: 20, by: "วิชัย", note: "เบิกใช้ ORD-015" },
-      { id: "M3", date: "2025-02-05 09:15", type: "รับเข้า", qty: 50, by: "สมชาย", note: "รับจาก PO-0055" },
-    ],
-  },
-  {
-    id: "2", code: "TC-002", name: "testPP", image: "/placeholder.svg",
-    category: "ถ้วยรางวัลสำเร็จ", subcategory: "ถ้วยรางวัลโลหะอิตาลี",
-    color: "ดำ", size: "", tags: "#ww",
-    currentStock: 0, minimumStock: 50, unit: "ชิ้น", model: "testPP",
-    lastUpdated: "2025-02-08", status: "out_of_stock",
-    movementHistory: [
-      { id: "M4", date: "2025-02-08 16:00", type: "จ่ายออก", qty: 10, by: "มานะ", note: "เบิกใช้ ORD-012" },
-    ],
-  },
-  {
-    id: "3", code: "TC-003", name: "ถ้วยรางวัลโลหะอิตาลี - สีเงิน", image: "/placeholder.svg",
-    category: "ถ้วยรางวัลสำเร็จ", subcategory: "ถ้วยรางวัลโลหะอิตาลี",
-    color: "เงิน", size: "A, B, C, D, N/A", tags: "[]",
-    currentStock: 30, minimumStock: 50, unit: "ชิ้น", model: "ถ้วยรางวัลโลหะอิตาลี-สีเงิน",
-    lastUpdated: "2025-02-05", status: "low_stock",
-    bom: [
-      { id: "CP-005", name: "ตัวถ้วยโลหะอิตาลี (เงิน)", qty: 1, unit: "ชิ้น" },
-      { id: "CP-002", name: "ฐานหินอ่อน", qty: 1, unit: "ชิ้น" },
-      { id: "CP-003", name: "ฝาครอบพลาสติก", qty: 1, unit: "ชิ้น" },
-    ],
-    movementHistory: [
-      { id: "M5", date: "2025-02-05 11:00", type: "จ่ายออก", qty: 15, by: "วิชัย", note: "เบิกใช้ ORD-010" },
-      { id: "M6", date: "2025-02-03 09:30", type: "รับเข้า", qty: 20, by: "สมชาย", note: "รับจาก PO-0050" },
-    ],
-  },
-  {
-    id: "4", code: "TC-004", name: "rr", image: "",
-    category: "ถ้วยรางวัลสำเร็จ", subcategory: "ถ้วยรางวัลโลหะอิตาลี",
-    color: "", size: "", tags: "[]",
-    currentStock: 0, minimumStock: 10, unit: "ชิ้น", model: "rrrr",
-    lastUpdated: "2025-02-01", status: "out_of_stock",
-  },
-  {
-    id: "5", code: "MD-001", name: "เหรียญพลาสติกรู้แพ้รู้ชนะ", image: "/placeholder.svg",
-    category: "เหรียญรางวัล", subcategory: "เหรียญพลาสติก",
-    color: "ทอง, เงิน, ทองแดง", size: "มาตรฐาน", tags: "เหรียญ",
-    currentStock: 1200, minimumStock: 200, unit: "ชิ้น", model: "Standard",
-    lastUpdated: "2025-02-10", status: "in_stock",
-    movementHistory: [
-      { id: "M7", date: "2025-02-10 08:00", type: "รับเข้า", qty: 500, by: "สมชาย", note: "รับล็อตใหม่" },
-      { id: "M8", date: "2025-02-09 15:00", type: "จ่ายออก", qty: 200, by: "มานะ", note: "เบิกใช้ ORD-018" },
-    ],
-  },
-  {
-    id: "6", code: "MD-002", name: "เหรียญโลหะซิงค์สำเร็จรูป", image: "/placeholder.svg",
-    category: "เหรียญรางวัล", subcategory: "เหรียญโลหะ",
-    color: "เงา, รมดำ", size: "5cm", tags: "เหรียญ, premium",
-    currentStock: 45, minimumStock: 50, unit: "ชิ้น", model: "Premium",
-    lastUpdated: "2025-02-09", status: "low_stock",
-    bom: [
-      { id: "CP-010", name: "ตัวเหรียญซิงค์", qty: 1, unit: "ชิ้น" },
-      { id: "CP-011", name: "สายคล้องคอ", qty: 1, unit: "เส้น" },
-      { id: "CP-012", name: "ซองใส่เหรียญ", qty: 1, unit: "ชิ้น" },
-    ],
-    movementHistory: [
-      { id: "M9", date: "2025-02-09 10:30", type: "จ่ายออก", qty: 5, by: "วิชัย", note: "เบิกใช้ ORD-020" },
-    ],
-  },
-  {
-    id: "7", code: "PL-001", name: "โล่คริสตัลพรีเมียม", image: "/placeholder.svg",
-    category: "โล่รางวัล", subcategory: "โล่คริสตัล",
-    color: "ใส", size: "8 นิ้ว", tags: "โล่, คริสตัล",
-    currentStock: 80, minimumStock: 30, unit: "ชิ้น", model: "Crystal-8",
-    lastUpdated: "2025-02-10", status: "in_stock",
-    movementHistory: [
-      { id: "M10", date: "2025-02-10 13:00", type: "รับเข้า", qty: 30, by: "สมชาย", note: "รับจากซัพพลายเออร์" },
-    ],
-  },
-  {
-    id: "8", code: "CP-002", name: "ฐานหินอ่อน", image: "/placeholder.svg",
-    category: "ชิ้นส่วนถ้วยรางวัล", subcategory: "ฐานถ้วย",
-    color: "ดำ, ขาว", size: "4x4 นิ้ว", tags: "ชิ้นส่วน, ฐาน",
-    currentStock: 350, minimumStock: 100, unit: "ชิ้น", model: "BASE-M01",
-    lastUpdated: "2025-02-10", status: "in_stock",
-  },
-  {
-    id: "9", code: "CP-003", name: "ฝาครอบพลาสติก", image: "/placeholder.svg",
-    category: "ชิ้นส่วนถ้วยรางวัล", subcategory: "ฝาครอบ",
-    color: "ใส", size: "มาตรฐาน", tags: "ชิ้นส่วน",
-    currentStock: 15, minimumStock: 50, unit: "ชิ้น", model: "LID-P01",
-    lastUpdated: "2025-02-08", status: "low_stock",
-    movementHistory: [
-      { id: "M11", date: "2025-02-08 11:00", type: "จ่ายออก", qty: 35, by: "มานะ", note: "เบิกใช้ ORD-014" },
-      { id: "M12", date: "2025-02-06 09:00", type: "รับเข้า", qty: 50, by: "สมชาย", note: "รับจาก PO-0048" },
-    ],
-  },
-];
-
 export default function InventoryStockTab() {
+  const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [viewMode, setViewMode] = useState<"card" | "table">("card");
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [selectedSubcategory, setSelectedSubcategory] = useState("all");
   const [bomDialogItem, setBomDialogItem] = useState<InventoryItem | null>(null);
 
-  // Mutable stock data
-  const [stockData, setStockData] = useState<InventoryItem[]>(initialStockData);
+  // Stock data (fetched from backend)
+  const [loading, setLoading] = useState(true);
+  const [stockData, setStockData] = useState<InventoryItem[]>([]);
+  const [adjustSubmitting, setAdjustSubmitting] = useState(false);
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const res = await productionStockService.getStockItems();
+      if (res.status === "success") setStockData(res.data);
+    } catch (error) {
+      toast.error("ไม่สามารถโหลดข้อมูลสต๊อกได้");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchData(); }, []);
 
   // Stock Adjustment Dialog state
   const [adjustItem, setAdjustItem] = useState<InventoryItem | null>(null);
@@ -295,14 +169,8 @@ export default function InventoryStockTab() {
     }
   };
 
-  const computeStatus = (stock: number, min: number): InventoryItem["status"] => {
-    if (stock <= 0) return "out_of_stock";
-    if (stock < min) return "low_stock";
-    return "in_stock";
-  };
-
   // --- Stock Adjustment Submit ---
-  const handleAdjustSubmit = () => {
+  const handleAdjustSubmit = async () => {
     if (!adjustItem) return;
     const qty = parseInt(adjustQty);
     if (!qty || qty <= 0) {
@@ -310,47 +178,32 @@ export default function InventoryStockTab() {
       return;
     }
 
-    const now = new Date();
-    const timestamp = now.toLocaleDateString("th-TH", {
-      day: "2-digit", month: "2-digit", year: "numeric",
-    }) + " " + now.toLocaleTimeString("th-TH", {
-      hour: "2-digit", minute: "2-digit",
-    });
-
-    const newLog: MovementLog = {
-      id: `M-${Date.now()}`,
-      date: timestamp,
-      type: adjustType,
-      qty,
-      by: "สมชาย ใจดี",
-      note: adjustNote || (adjustType === "รับเข้า" ? "รับเข้าสต๊อก" : "จ่ายออกสต๊อก"),
-    };
-
-    setStockData(prev => prev.map(item => {
-      if (item.id !== adjustItem.id) return item;
-      const newStock = adjustType === "รับเข้า"
-        ? item.currentStock + qty
-        : Math.max(0, item.currentStock - qty);
-      return {
-        ...item,
-        currentStock: newStock,
-        lastUpdated: timestamp,
-        status: computeStatus(newStock, item.minimumStock),
-        movementHistory: [newLog, ...(item.movementHistory || [])].slice(0, 50),
-      };
-    }));
-
-    toast.success(
-      adjustType === "รับเข้า"
-        ? `รับเข้า ${qty} ${adjustItem.unit} เรียบร้อย`
-        : `${adjustType} ${qty} ${adjustItem.unit} เรียบร้อย`
-    );
-
-    // Reset & close
-    setAdjustItem(null);
-    setAdjustQty("");
-    setAdjustNote("");
-    setAdjustType("รับเข้า");
+    setAdjustSubmitting(true);
+    try {
+      const res = await productionStockService.adjustStockItem({
+        id: adjustItem.id,
+        type: adjustType,
+        qty,
+        note: adjustNote || (adjustType === "รับเข้า" ? "รับเข้าสต๊อก" : "จ่ายออกสต๊อก"),
+        employeeName: user?.full_name,
+      });
+      if (res.status === "success") {
+        toast.success(
+          adjustType === "รับเข้า"
+            ? `รับเข้า ${qty} ${adjustItem.unit} เรียบร้อย`
+            : `${adjustType} ${qty} ${adjustItem.unit} เรียบร้อย`
+        );
+        setAdjustItem(null);
+        setAdjustQty("");
+        setAdjustNote("");
+        setAdjustType("รับเข้า");
+        fetchData();
+      } else {
+        toast.error(res.message || "ปรับปรุงสต๊อกไม่สำเร็จ");
+      }
+    } finally {
+      setAdjustSubmitting(false);
+    }
   };
 
   const openAdjustDialog = (item: InventoryItem) => {
@@ -538,6 +391,15 @@ export default function InventoryStockTab() {
       </CardContent>
     </Card>
   );
+
+  if (loading) {
+    return (
+      <div className="flex h-[300px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="ml-2">กำลังโหลดข้อมูล...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -770,9 +632,11 @@ export default function InventoryStockTab() {
             </Button>
             <Button
               onClick={handleAdjustSubmit}
+              disabled={adjustSubmitting}
               className={adjustType === "รับเข้า" ? "bg-green-600 hover:bg-green-700" : ""}
               variant={adjustType === "จ่ายออก" ? "destructive" : "default"}
             >
+              {adjustSubmitting ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : null}
               {adjustType === "รับเข้า" ? (
                 <><ArrowDownCircle className="w-4 h-4 mr-1.5" />ยืนยันรับเข้า</>
               ) : adjustType === "จ่ายออก" ? (

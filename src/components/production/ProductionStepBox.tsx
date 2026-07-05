@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +29,8 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { productionStockService, WithdrawalComponent, WithdrawalBatch } from "@/services/productionStockService";
+import { materialStockService } from "@/services/materialStockService";
 
 export interface LogEntry {
   action: string;
@@ -51,6 +53,7 @@ interface StepData {
 }
 
 interface ProductionStepBoxProps {
+  orderId?: string;
   stepKey: string;
   stepNumber: number;
   title: string;
@@ -71,6 +74,7 @@ interface ProductionStepBoxProps {
 }
 
 export function ProductionStepBox({
+  orderId,
   stepKey,
   stepNumber,
   title,
@@ -120,24 +124,32 @@ export function ProductionStepBox({
     return [...(logs || []), { action, timestamp, user, detail }];
   };
 
-  // Mock components data for stock withdrawal (procurement step)
-  const mockComponents = [
-    { id: "MAT-001", name: "ตัวเหรียญ", color: "ทอง", size: "5cm", requiredQty: 200, withdrawnQty: 0, image: "https://img.icons8.com/emoji/96/1st-place-medal.png" },
-    { id: "MAT-002", name: "ตัวเหรียญ", color: "เงิน", size: "5cm", requiredQty: 150, withdrawnQty: 0, image: "https://img.icons8.com/emoji/96/2nd-place-medal.png" },
-    { id: "MAT-003", name: "ตัวเหรียญ", color: "ทองแดง", size: "5cm", requiredQty: 150, withdrawnQty: 0, image: "https://img.icons8.com/emoji/96/3rd-place-medal.png" },
-    { id: "MAT-004", name: "สายคล้องคอ", color: "น้ำเงิน", size: "90cm", requiredQty: 500, withdrawnQty: 0, image: "https://img.icons8.com/fluency/96/ribbon.png" },
-    { id: "MAT-005", name: "กล่องใส่เหรียญ", color: "ดำ", size: "8x8cm", requiredQty: 500, withdrawnQty: 0, image: "https://img.icons8.com/fluency/96/box.png" },
-  ];
-
-  const [withdrawalItems, setWithdrawalItems] = useState(mockComponents);
+  const [withdrawalItems, setWithdrawalItems] = useState<(WithdrawalComponent & { withdrawnQty: number })[]>([]);
   const [withdrawalRequester, setWithdrawalRequester] = useState("");
-  const [withdrawalHistory, setWithdrawalHistory] = useState<Array<{
-    date: string;
-    requester: string;
-    items: typeof mockComponents;
-  }>>([]);
+  const [withdrawalHistory, setWithdrawalHistory] = useState<WithdrawalBatch[]>([]);
+  const [employeeNames, setEmployeeNames] = useState<string[]>([]);
+  const [withdrawSubmitting, setWithdrawSubmitting] = useState(false);
 
-  const mockEmployees = ["สมชาย ใจดี", "วิชัย ขยัน", "นภา สวยงาม", "สมหญิง รักงาน", "มานะ ทำงาน"];
+  const fetchWithdrawalHistory = async () => {
+    if (!orderId) return;
+    const res = await productionStockService.getWithdrawals(orderId, stepKey);
+    if (res.status === "success") setWithdrawalHistory(res.data);
+  };
+
+  useEffect(() => {
+    productionStockService.getWithdrawalComponents().then((res) => {
+      if (res.status === "success") {
+        setWithdrawalItems(res.data.map((c: WithdrawalComponent) => ({ ...c, withdrawnQty: 0 })));
+      }
+    });
+    materialStockService.getEmployees().then((res) => {
+      if (res.status === "success") {
+        setEmployeeNames((res.data || []).map((e: any) => e.full_name).filter(Boolean));
+      }
+    });
+    fetchWithdrawalHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderId, stepKey]);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -264,13 +276,17 @@ export function ProductionStepBox({
     onUpdate(stepKey, updatedData);
   };
 
-  const handleWithdrawStock = () => {
+  const handleWithdrawStock = async () => {
+    if (!orderId) {
+      toast.error("ไม่พบเลขที่ order สำหรับบันทึกการเบิก");
+      return;
+    }
     if (!withdrawalRequester) {
       toast.error("กรุณาเลือกผู้เบิก");
       return;
     }
-    const hasQty = withdrawalItems.some(item => item.withdrawnQty > 0);
-    if (!hasQty) {
+    const itemsToWithdraw = withdrawalItems.filter(item => item.withdrawnQty > 0);
+    if (itemsToWithdraw.length === 0) {
       toast.error("กรุณากรอกจำนวนที่เบิกอย่างน้อย 1 รายการ");
       return;
     }
@@ -280,24 +296,26 @@ export function ProductionStepBox({
       return;
     }
 
-    const now = new Date();
-    const timestamp = now.toLocaleDateString("th-TH", {
-      day: "2-digit", month: "2-digit", year: "numeric",
-    }) + " " + now.toLocaleTimeString("th-TH", {
-      hour: "2-digit", minute: "2-digit",
-    });
-
-    setWithdrawalHistory(prev => [...prev, {
-      date: timestamp,
-      requester: withdrawalRequester,
-      items: withdrawalItems.filter(i => i.withdrawnQty > 0),
-    }]);
-
-    toast.success(`เบิกสินค้าสำเร็จ! ตัดสต๊อกแล้ว โดย ${withdrawalRequester}`);
-    setWithdrawalDialogOpen(false);
-    // Reset quantities
-    setWithdrawalItems(prev => prev.map(item => ({ ...item, withdrawnQty: 0 })));
-    setWithdrawalRequester("");
+    setWithdrawSubmitting(true);
+    try {
+      const res = await productionStockService.submitWithdrawal({
+        orderId,
+        stepKey,
+        requester: withdrawalRequester,
+        items: itemsToWithdraw.map(i => ({ componentId: i.id, withdrawnQty: i.withdrawnQty })),
+      });
+      if (res.status === "success") {
+        toast.success(`เบิกสินค้าสำเร็จ! ตัดสต๊อกแล้ว โดย ${withdrawalRequester}`);
+        setWithdrawalDialogOpen(false);
+        setWithdrawalItems(prev => prev.map(item => ({ ...item, withdrawnQty: 0 })));
+        setWithdrawalRequester("");
+        fetchWithdrawalHistory();
+      } else {
+        toast.error(res.message || "เบิกสินค้าไม่สำเร็จ");
+      }
+    } finally {
+      setWithdrawSubmitting(false);
+    }
   };
 
   const openLightbox = (index: number) => {
@@ -1090,7 +1108,7 @@ export function ProductionStepBox({
                 <SelectValue placeholder="เลือกผู้เบิก..." />
               </SelectTrigger>
               <SelectContent className="bg-background z-50">
-                {mockEmployees.map(emp => (
+                {employeeNames.map(emp => (
                   <SelectItem key={emp} value={emp}>{emp}</SelectItem>
                 ))}
               </SelectContent>
@@ -1170,8 +1188,9 @@ export function ProductionStepBox({
             <Button variant="outline" onClick={() => setWithdrawalDialogOpen(false)}>
               ยกเลิก
             </Button>
-            <Button 
+            <Button
               onClick={handleWithdrawStock}
+              disabled={withdrawSubmitting}
               className="bg-amber-500 hover:bg-amber-600 text-white"
             >
               <PackageMinus className="w-4 h-4 mr-1.5" />
