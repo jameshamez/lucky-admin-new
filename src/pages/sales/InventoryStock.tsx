@@ -1,92 +1,29 @@
-import { useState } from "react";
-import { Search, Filter, AlertTriangle, Package, XCircle, CheckCircle } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Search, Filter, AlertTriangle, Package, XCircle, CheckCircle, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { toast } from "sonner";
+import { productionStockService } from "@/services/productionStockService";
 
-// Mock data for inventory
-const inventoryData = [
-  {
-    id: "1",
-    image: "/placeholder.svg",
-    name: "ถ้วยรางวัล",
-    sku: "CUP001",
-    category: "รางวัล",
-    color: "ทอง",
-    size: "15 cm",
-    description: "ถ้วยรางวัลทองขนาดกลาง",
-    quantity: 25,
-    unit: "ชิ้น",
-    minQty: 10,
-    status: "มีในสต็อก",
-    hasDefect: false
-  },
-  {
-    id: "2", 
-    image: "/placeholder.svg",
-    name: "เหรียญรางวัล",
-    sku: "MEDAL001",
-    category: "รางวัล",
-    color: "เงิน",
-    size: "8 cm",
-    description: "เหรียญรางวัลเงินขนาดมาตรฐาน",
-    quantity: 5,
-    unit: "ชิ้น",
-    minQty: 15,
-    status: "ใกล้หมด",
-    hasDefect: false
-  },
-  {
-    id: "3",
-    image: "/placeholder.svg", 
-    name: "โล่รางวัล",
-    sku: "SHIELD001",
-    category: "รางวัล",
-    color: "คริสตัล",
-    size: "20 cm",
-    description: "โล่รางวัลคริสตัลพรีเมียม",
-    quantity: 0,
-    unit: "ชิ้น",
-    minQty: 5,
-    status: "หมด",
-    hasDefect: false
-  },
-  {
-    id: "4",
-    image: "/placeholder.svg",
-    name: "ป้ายไวนิล",
-    sku: "VINYL001", 
-    category: "สื่อสิ่งพิมพ์",
-    color: "หลากสี",
-    size: "150x100 cm",
-    description: "ป้ายไวนิลงานอีเว้นท์",
-    quantity: 3,
-    unit: "แผ่น",
-    minQty: 10,
-    status: "มีตำหนิ",
-    hasDefect: true
-  },
-  {
-    id: "5",
-    image: "/placeholder.svg",
-    name: "สติกเกอร์",
-    sku: "STICK001",
-    category: "สื่อสิ่งพิมพ์", 
-    color: "ขาว",
-    size: "10x10 cm",
-    description: "สติกเกอร์วินิลกันน้ำ",
-    quantity: 8,
-    unit: "แผ่น",
-    minQty: 20,
-    status: "ใกล้หมด",
-    hasDefect: false
-  }
-];
+interface InventoryRow {
+  id: string;
+  image: string;
+  name: string;
+  sku: string;
+  category: string;
+  color: string;
+  size: string;
+  description: string;
+  quantity: number;
+  unit: string;
+  minQty: number;
+  hasDefect: boolean;
+}
 
-const getStatusBadge = (item: any) => {
+const getStatusBadge = (item: InventoryRow) => {
   if (item.hasDefect) {
     return <Badge className="flex items-center gap-1 bg-warning text-warning-foreground hover:bg-warning/80"><AlertTriangle className="w-3 h-3" />มีตำหนิ</Badge>;
   }
@@ -99,9 +36,9 @@ const getStatusBadge = (item: any) => {
   return <Badge className="flex items-center gap-1 bg-success text-success-foreground hover:bg-success/80"><CheckCircle className="w-3 h-3" />มีในสต็อก</Badge>;
 };
 
-const getStatusColor = (item: any) => {
+const getStatusColor = (item: InventoryRow) => {
   if (item.hasDefect) return "text-destructive";
-  if (item.quantity === 0) return "text-muted-foreground";  
+  if (item.quantity === 0) return "text-muted-foreground";
   if (item.quantity < item.minQty) return "text-destructive";
   return "text-primary";
 };
@@ -109,13 +46,53 @@ const getStatusColor = (item: any) => {
 export default function InventoryStock() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
+  const [loading, setLoading] = useState(true);
+  const [inventoryData, setInventoryData] = useState<InventoryRow[]>([]);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        const [stockRes, defectiveRes] = await Promise.all([
+          productionStockService.getStockItems(),
+          productionStockService.getDefectiveItems(),
+        ]);
+        if (stockRes.status === "success") {
+          const defectiveCodes = new Set(
+            (defectiveRes.status === "success" ? defectiveRes.data : [])
+              .filter((d: any) => d.status === "รอดำเนินการ" && d.quantity > 0)
+              .map((d: any) => d.code)
+          );
+          setInventoryData(stockRes.data.map((item: any) => ({
+            id: item.id,
+            image: item.image,
+            name: item.name,
+            sku: item.code,
+            category: item.category,
+            color: item.color,
+            size: item.size,
+            description: item.model || "-",
+            quantity: item.currentStock,
+            unit: item.unit,
+            minQty: item.minimumStock,
+            hasDefect: defectiveCodes.has(item.code),
+          })));
+        }
+      } catch (error) {
+        toast.error("ไม่สามารถโหลดข้อมูลสต็อกสินค้าได้");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
 
   const filteredData = inventoryData.filter(item => {
     const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          item.sku.toLowerCase().includes(searchTerm.toLowerCase());
-    
+
     if (!matchesSearch) return false;
-    
+
     switch (filterStatus) {
       case "in-stock":
         return item.quantity >= 1 && !item.hasDefect && item.quantity >= item.minQty;
@@ -137,6 +114,15 @@ export default function InventoryStock() {
     defective: inventoryData.filter(item => item.hasDefect).length,
     lowStock: inventoryData.filter(item => item.quantity < item.minQty && item.quantity > 0 && !item.hasDefect).length
   };
+
+  if (loading) {
+    return (
+      <div className="flex h-[400px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="ml-2">กำลังโหลดข้อมูล...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -287,8 +273,8 @@ export default function InventoryStock() {
                   filteredData.map((item) => (
                     <TableRow key={item.id} className={item.quantity < item.minQty && item.quantity > 0 ? "bg-red-50" : ""}>
                       <TableCell>
-                        <img 
-                          src={item.image} 
+                        <img
+                          src={item.image}
                           alt={item.name}
                           className="w-12 h-12 object-cover rounded-md"
                         />

@@ -3,8 +3,9 @@ import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Textarea } from "@/components/ui/textarea";
 import {
   ArrowLeft,
   AlertTriangle,
@@ -44,6 +45,7 @@ import { mapThaiDepartmentToKey } from "@/lib/departments";
 import ProductionProgressBar from "@/components/sales/ProductionProgressBar";
 import { ProductionOrderInfoReadOnly, OrderShippingData } from "@/components/procurement/ProductionOrderInfo";
 import { designJobService, DesignJob } from "@/services/designJobService";
+import { qcApprovalService, QCApproval } from "@/services/qcApprovalService";
 
 const API_BASE_URL = "https://nacres.co.th/api-lucky/admin";
 
@@ -418,6 +420,62 @@ export default function OrderDetail() {
   const [isLoading, setIsLoading] = useState(true);
   const [rejectionReason, setRejectionReason] = useState("");
   const [labelRejectionReason, setLabelRejectionReason] = useState("");
+
+  // Multi-department QC approval for the "ตรวจสอบ CNC" production step (made-to-order jobs)
+  const [cncApprovals, setCncApprovals] = useState<QCApproval[]>([]);
+  const [showCncFailModal, setShowCncFailModal] = useState(false);
+  const [cncFailComment, setCncFailComment] = useState("");
+  const [cncFailDept, setCncFailDept] = useState<"เซลล์" | "จัดซื้อ" | null>(null);
+  const [cncSubmitting, setCncSubmitting] = useState(false);
+
+  const fetchCncApprovals = async (targetOrderId: string) => {
+    const res = await qcApprovalService.getApprovals(targetOrderId, ["cnc"]);
+    if (res.status === "success") setCncApprovals(res.data["cnc"] || []);
+  };
+
+  useEffect(() => {
+    if (order?.id) fetchCncApprovals(order.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order?.id]);
+
+  const handleCncPass = async (dept: "เซลล์" | "จัดซื้อ") => {
+    if (!order?.id) return;
+    const res = await qcApprovalService.updateApproval({
+      orderId: order.id, stepKey: "cnc", department: dept, status: "passed", approvedBy: user?.full_name,
+    });
+    if (res.status === "success") {
+      fetchCncApprovals(order.id);
+    } else {
+      toast.error(res.message || "บันทึกไม่สำเร็จ");
+    }
+  };
+
+  const handleCncFail = (dept: "เซลล์" | "จัดซื้อ") => {
+    setCncFailDept(dept);
+    setCncFailComment("");
+    setShowCncFailModal(true);
+  };
+
+  const confirmCncFail = async () => {
+    if (!order?.id || !cncFailDept) return;
+    setCncSubmitting(true);
+    try {
+      const res = await qcApprovalService.updateApproval({
+        orderId: order.id, stepKey: "cnc", department: cncFailDept, status: "failed",
+        comment: cncFailComment, approvedBy: user?.full_name,
+      });
+      if (res.status === "success") {
+        setShowCncFailModal(false);
+        setCncFailDept(null);
+        setCncFailComment("");
+        fetchCncApprovals(order.id);
+      } else {
+        toast.error(res.message || "บันทึกไม่สำเร็จ");
+      }
+    } finally {
+      setCncSubmitting(false);
+    }
+  };
 
   const fetchOrderDetail = async () => {
     if (!orderId) return;
@@ -1515,12 +1573,10 @@ export default function OrderDetail() {
               { key: "งานเสร็จสมบูรณ์", label: "ผลิตเสร็จจากโรงงาน" },
             ];
 
-            // Mock data for multi-department approvals (ตรวจสอบ CNC requires both เซลล์ and จัดซื้อ)
-            const multiApprovalData: Record<string, { department: string; approved: boolean; approvedBy?: string; approvedAt?: string }[]> = {
-              "ตรวจสอบ CNC": [
-                { department: "จัดซื้อ", approved: true, approvedBy: "วิชัย", approvedAt: "2025-01-05 14:30" },
-                { department: "เซลล์", approved: false },
-              ]
+            // Multi-department approvals for "ตรวจสอบ CNC" (real data, fetched from qc_approvals
+            // via the "cnc" step key — shared with QCVerificationCards.tsx's step vocabulary)
+            const multiApprovalData: Record<string, QCApproval[]> = {
+              "ตรวจสอบ CNC": cncApprovals,
             };
 
             // Get current item's status
@@ -1680,51 +1736,60 @@ export default function OrderDetail() {
                               {/* Multi-department approval section */}
                               {isCurrentStep && hasMultiApproval && approvalList.length > 0 && (
                                 <div className="ml-14 mt-2 space-y-2">
-                                  {approvalList.map((approval, aIdx) => (
-                                    <div
-                                      key={aIdx}
-                                      className={`flex items-center gap-3 p-2 rounded-lg ${approval.approved ? 'bg-green-50 border border-green-200' : 'bg-amber-50 border border-amber-200'}`}
-                                    >
-                                      {approval.approved ? (
-                                        <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
-                                      ) : (
-                                        <Circle className="w-4 h-4 text-amber-500 flex-shrink-0" />
-                                      )}
-
-                                      <div className="flex-1 min-w-0">
-                                        <p className="text-sm font-medium">
-                                          แผนก{approval.department}
-                                        </p>
-                                        {approval.approved ? (
-                                          <p className="text-xs text-green-600">
-                                            {approval.approvedAt} • {approval.approvedBy}
-                                          </p>
+                                  {approvalList.map((approval, aIdx) => {
+                                    const passed = approval.status === "passed";
+                                    const failed = approval.status === "failed";
+                                    const canAct = qcUserRole === approval.department && approval.status === "pending";
+                                    return (
+                                      <div
+                                        key={aIdx}
+                                        className={`flex items-center gap-3 p-2 rounded-lg ${passed ? 'bg-green-50 border border-green-200' : failed ? 'bg-red-50 border border-red-200' : 'bg-amber-50 border border-amber-200'}`}
+                                      >
+                                        {passed ? (
+                                          <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
+                                        ) : failed ? (
+                                          <XCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
                                         ) : (
-                                          <p className="text-xs text-amber-600">รอตรวจสอบ</p>
+                                          <Circle className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                                        )}
+
+                                        <div className="flex-1 min-w-0">
+                                          <p className="text-sm font-medium">
+                                            แผนก{approval.department}
+                                          </p>
+                                          {(passed || failed) && approval.approvedBy ? (
+                                            <p className={`text-xs ${passed ? 'text-green-600' : 'text-red-600'}`}>
+                                              {approval.approvedAt} • {approval.approvedBy}
+                                            </p>
+                                          ) : (
+                                            <p className="text-xs text-amber-600">รอตรวจสอบ</p>
+                                          )}
+                                          {failed && approval.comment && (
+                                            <p className="text-xs text-red-600 mt-0.5">หมายเหตุ: {approval.comment}</p>
+                                          )}
+                                        </div>
+
+                                        {canAct ? (
+                                          <div className="flex items-center gap-2">
+                                            <Button size="sm" variant="outline" className="h-6 px-2 text-xs text-green-600 border-green-300 hover:bg-green-50"
+                                              onClick={() => handleCncPass(approval.department)}>
+                                              <CheckCircle2 className="w-3 h-3 mr-1" />
+                                              ผ่าน
+                                            </Button>
+                                            <Button size="sm" variant="outline" className="h-6 px-2 text-xs text-red-600 border-red-300 hover:bg-red-50"
+                                              onClick={() => handleCncFail(approval.department)}>
+                                              <XCircle className="w-3 h-3 mr-1" />
+                                              ไม่ผ่าน
+                                            </Button>
+                                          </div>
+                                        ) : (
+                                          <Badge className={`${passed ? 'bg-green-100 text-green-700 hover:bg-green-100' : failed ? 'bg-red-100 text-red-700 hover:bg-red-100' : 'bg-amber-100 text-amber-700 hover:bg-amber-100'} text-xs h-5`}>
+                                            {passed ? 'ผ่าน' : failed ? 'ไม่ผ่าน' : 'รอตรวจสอบ'}
+                                          </Badge>
                                         )}
                                       </div>
-
-                                      {approval.approved ? (
-                                        <Badge className="bg-green-100 text-green-700 hover:bg-green-100 text-xs h-5">
-                                          ผ่าน
-                                        </Badge>
-                                      ) : (
-                                        <div className="flex items-center gap-2">
-                                          <Button size="sm" variant="outline" className="h-6 px-2 text-xs text-green-600 border-green-300 hover:bg-green-50">
-                                            <CheckCircle2 className="w-3 h-3 mr-1" />
-                                            ผ่าน
-                                          </Button>
-                                          <Button size="sm" variant="outline" className="h-6 px-2 text-xs text-red-600 border-red-300 hover:bg-red-50">
-                                            <XCircle className="w-3 h-3 mr-1" />
-                                            ไม่ผ่าน
-                                          </Button>
-                                          <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100 text-xs h-5">
-                                            รอตรวจสอบ
-                                          </Badge>
-                                        </div>
-                                      )}
-                                    </div>
-                                  ))}
+                                    );
+                                  })}
                                 </div>
                               )}
                             </div>
@@ -2072,6 +2137,36 @@ export default function OrderDetail() {
           </div>
         </div>
       </div>
+
+      {/* CNC QC Fail Comment Modal */}
+      <Dialog open={showCncFailModal} onOpenChange={setShowCncFailModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <XCircle className="w-5 h-5" />
+              ระบุจุดที่ต้องแก้ไข
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              กรุณาระบุรายละเอียดจุดที่ต้องให้โรงงานแก้ไข เพื่อแจ้งให้อีกแผนกและโรงงานทราบ
+            </p>
+            <Textarea
+              placeholder="เช่น: สีไม่ตรงตามตัวอย่าง, ขนาดไม่ถูกต้อง, มีรอยขีดข่วน..."
+              value={cncFailComment}
+              onChange={(e) => setCncFailComment(e.target.value)}
+              rows={4}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCncFailModal(false)}>ยกเลิก</Button>
+            <Button variant="destructive" onClick={confirmCncFail} disabled={!cncFailComment.trim() || cncSubmitting}>
+              <XCircle className="w-4 h-4 mr-2" />
+              ยืนยันไม่ผ่าน
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Image Lightbox Dialog */}
       <Dialog open={!!enlargedImage} onOpenChange={() => setEnlargedImage(null)}>

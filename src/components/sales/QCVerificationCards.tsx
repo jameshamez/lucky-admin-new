@@ -1,35 +1,31 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { 
-  CheckCircle2, 
-  XCircle, 
-  Lock, 
-  ChevronDown, 
+import {
+  CheckCircle2,
+  XCircle,
+  Lock,
+  ChevronDown,
   ChevronUp,
   Image as ImageIcon,
   Clock,
   AlertTriangle,
-  MessageSquare
+  MessageSquare,
+  Loader2
 } from "lucide-react";
 import artworkSample from "@/assets/artwork-sample.png";
-
-interface DepartmentApproval {
-  department: "เซลล์" | "จัดซื้อ";
-  status: "pending" | "passed" | "failed";
-  approvedBy?: string;
-  approvedAt?: string;
-  comment?: string;
-}
+import { toast } from "sonner";
+import { qcApprovalService, QCApproval, QCApprovalsByStep, QCDepartment } from "@/services/qcApprovalService";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface QCStep {
   key: string;
   label: string;
   factoryPhoto: string;
-  approvals: DepartmentApproval[];
+  approvals: QCApproval[];
   isCompleted: boolean;
   isActive: boolean;
   isLocked: boolean;
@@ -41,86 +37,59 @@ interface QCVerificationCardsProps {
   userRole: "เซลล์" | "จัดซื้อ";
 }
 
-export default function QCVerificationCards({ orderId, userRole }: QCVerificationCardsProps) {
-  // Mock QC steps data
-  const [qcSteps, setQcSteps] = useState<QCStep[]>([
-    {
-      key: "artwork",
-      label: "ตรวจสอบ Artwork",
-      factoryPhoto: artworkSample,
-      approvals: [
-        { department: "จัดซื้อ", status: "passed", approvedBy: "วิชัย", approvedAt: "2025-01-05 10:30" },
-        { department: "เซลล์", status: "passed", approvedBy: "สมชาย", approvedAt: "2025-01-05 14:15" },
-      ],
-      isCompleted: true,
-      isActive: false,
-      isLocked: false,
-      hasFailed: false,
-    },
-    {
-      key: "cnc",
-      label: "ตรวจสอบงาน CNC",
-      factoryPhoto: artworkSample,
-      approvals: [
-        { department: "จัดซื้อ", status: "passed", approvedBy: "วิชัย", approvedAt: "2025-01-07 09:00" },
-        { department: "เซลล์", status: "passed", approvedBy: "สมชาย", approvedAt: "2025-01-07 11:30" },
-      ],
-      isCompleted: true,
-      isActive: false,
-      isLocked: false,
-      hasFailed: false,
-    },
-    {
-      key: "stamping",
-      label: "ปั้มชิ้นงาน",
-      factoryPhoto: artworkSample,
-      approvals: [
-        { department: "จัดซื้อ", status: "passed", approvedBy: "วิชัย", approvedAt: "2025-01-08 09:00" },
-        { department: "เซลล์", status: "passed", approvedBy: "สมชาย", approvedAt: "2025-01-08 11:30" },
-      ],
-      isCompleted: true,
-      isActive: false,
-      isLocked: false,
-      hasFailed: false,
-    },
-    {
-      key: "lanyard",
-      label: "ตรวจสอบสายคล้อง",
-      factoryPhoto: artworkSample,
-      approvals: [
-        { department: "จัดซื้อ", status: "passed", approvedBy: "วิชัย", approvedAt: "2025-01-09 10:00" },
-        { department: "เซลล์", status: "passed", approvedBy: "สมชาย", approvedAt: "2025-01-09 14:00" },
-      ],
-      isCompleted: true,
-      isActive: false,
-      isLocked: false,
-      hasFailed: false,
-    },
-    {
-      key: "final",
-      label: "ตรวจสอบชิ้นงานก่อนจัดส่ง",
-      factoryPhoto: artworkSample,
-      approvals: [
-        { department: "จัดซื้อ", status: "passed", approvedBy: "วิชัย", approvedAt: "2025-01-10 09:00" },
-        { department: "เซลล์", status: "passed", approvedBy: "สมชาย", approvedAt: "2025-01-10 11:00" },
-      ],
-      isCompleted: true,
-      isActive: false,
-      isLocked: false,
-      hasFailed: false,
-    },
-  ]);
+const STEP_DEFINITIONS = [
+  { key: "artwork", label: "ตรวจสอบ Artwork" },
+  { key: "cnc", label: "ตรวจสอบงาน CNC" },
+  { key: "stamping", label: "ปั้มชิ้นงาน" },
+  { key: "lanyard", label: "ตรวจสอบสายคล้อง" },
+  { key: "final", label: "ตรวจสอบชิ้นงานก่อนจัดส่ง" },
+];
+const STEP_KEYS = STEP_DEFINITIONS.map(s => s.key);
 
-  const [expandedCards, setExpandedCards] = useState<string[]>(["artwork", "cnc", "stamping", "lanyard", "final"]);
+export default function QCVerificationCards({ orderId, userRole }: QCVerificationCardsProps) {
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [approvalsByStep, setApprovalsByStep] = useState<QCApprovalsByStep>({});
+
+  const fetchApprovals = async () => {
+    setLoading(true);
+    try {
+      const res = await qcApprovalService.getApprovals(orderId, STEP_KEYS);
+      if (res.status === "success") setApprovalsByStep(res.data);
+    } catch (error) {
+      toast.error("ไม่สามารถโหลดข้อมูลการตรวจสอบคุณภาพได้");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchApprovals(); }, [orderId]);
+
+  // Sequential unlock: a step only unlocks once the previous step is fully passed by both departments
+  const qcSteps: QCStep[] = useMemo(() => {
+    let previousPassed = true;
+    return STEP_DEFINITIONS.map((def) => {
+      const approvals = approvalsByStep[def.key] || [];
+      const hasFailed = approvals.some(a => a.status === "failed");
+      const isCompleted = approvals.length > 0 && approvals.every(a => a.status === "passed");
+      const isLocked = !previousPassed;
+      const isActive = !isLocked && !isCompleted;
+      previousPassed = isCompleted;
+      return { key: def.key, label: def.label, factoryPhoto: artworkSample, approvals, isCompleted, isActive, isLocked, hasFailed };
+    });
+  }, [approvalsByStep]);
+
+  const [expandedCards, setExpandedCards] = useState<string[]>(STEP_KEYS);
   const [showLightbox, setShowLightbox] = useState(false);
   const [lightboxImage, setLightboxImage] = useState("");
   const [showFailModal, setShowFailModal] = useState(false);
   const [failComment, setFailComment] = useState("");
   const [currentFailStep, setCurrentFailStep] = useState<string | null>(null);
-  const [currentFailDept, setCurrentFailDept] = useState<"เซลล์" | "จัดซื้อ" | null>(null);
+  const [currentFailDept, setCurrentFailDept] = useState<QCDepartment | null>(null);
+  const [submittingFail, setSubmittingFail] = useState(false);
 
   const toggleCard = (key: string) => {
-    setExpandedCards(prev => 
+    setExpandedCards(prev =>
       prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
     );
   };
@@ -130,75 +99,42 @@ export default function QCVerificationCards({ orderId, userRole }: QCVerificatio
     setShowLightbox(true);
   };
 
-  const handlePass = (stepKey: string, dept: "เซลล์" | "จัดซื้อ") => {
-    setQcSteps(prev => prev.map(step => {
-      if (step.key === stepKey) {
-        const newApprovals = step.approvals.map(a => 
-          a.department === dept 
-            ? { ...a, status: "passed" as const, approvedBy: userRole === "เซลล์" ? "สมชาย" : "วิชัย", approvedAt: new Date().toLocaleString("th-TH") }
-            : a
-        );
-        const allPassed = newApprovals.every(a => a.status === "passed");
-        return { 
-          ...step, 
-          approvals: newApprovals, 
-          isCompleted: allPassed,
-          isActive: !allPassed,
-        };
-      }
-      return step;
-    }));
-    
-    // Unlock next step if current is completed
-    unlockNextStep(stepKey);
+  const handlePass = async (stepKey: string, dept: QCDepartment) => {
+    const res = await qcApprovalService.updateApproval({
+      orderId, stepKey, department: dept, status: "passed", approvedBy: user?.full_name,
+    });
+    if (res.status === "success") {
+      fetchApprovals();
+    } else {
+      toast.error(res.message || "บันทึกไม่สำเร็จ");
+    }
   };
 
-  const handleFail = (stepKey: string, dept: "เซลล์" | "จัดซื้อ") => {
+  const handleFail = (stepKey: string, dept: QCDepartment) => {
     setCurrentFailStep(stepKey);
     setCurrentFailDept(dept);
     setShowFailModal(true);
   };
 
-  const confirmFail = () => {
+  const confirmFail = async () => {
     if (!currentFailStep || !currentFailDept) return;
-    
-    setQcSteps(prev => prev.map(step => {
-      if (step.key === currentFailStep) {
-        const newApprovals = step.approvals.map(a => 
-          a.department === currentFailDept 
-            ? { ...a, status: "failed" as const, comment: failComment, approvedBy: userRole === "เซลล์" ? "สมชาย" : "วิชัย", approvedAt: new Date().toLocaleString("th-TH") }
-            : a
-        );
-        return { 
-          ...step, 
-          approvals: newApprovals, 
-          hasFailed: true,
-          isCompleted: false,
-        };
+    setSubmittingFail(true);
+    try {
+      const res = await qcApprovalService.updateApproval({
+        orderId, stepKey: currentFailStep, department: currentFailDept, status: "failed",
+        comment: failComment, approvedBy: user?.full_name,
+      });
+      if (res.status === "success") {
+        setShowFailModal(false);
+        setFailComment("");
+        setCurrentFailStep(null);
+        setCurrentFailDept(null);
+        fetchApprovals();
+      } else {
+        toast.error(res.message || "บันทึกไม่สำเร็จ");
       }
-      return step;
-    }));
-    
-    setShowFailModal(false);
-    setFailComment("");
-    setCurrentFailStep(null);
-    setCurrentFailDept(null);
-  };
-
-  const unlockNextStep = (currentStepKey: string) => {
-    const currentIndex = qcSteps.findIndex(s => s.key === currentStepKey);
-    if (currentIndex < qcSteps.length - 1) {
-      const currentStep = qcSteps[currentIndex];
-      const allPassed = currentStep.approvals.every(a => a.status === "passed");
-      
-      if (allPassed) {
-        setQcSteps(prev => prev.map((step, idx) => {
-          if (idx === currentIndex + 1) {
-            return { ...step, isLocked: false, isActive: true };
-          }
-          return step;
-        }));
-      }
+    } finally {
+      setSubmittingFail(false);
     }
   };
 
@@ -242,7 +178,7 @@ export default function QCVerificationCards({ orderId, userRole }: QCVerificatio
     }
   };
 
-  const getApprovalStatusBadge = (approval: DepartmentApproval) => {
+  const getApprovalStatusBadge = (approval: QCApproval) => {
     switch (approval.status) {
       case "passed":
         return <Badge className="bg-green-100 text-green-700">ผ่าน</Badge>;
@@ -253,9 +189,18 @@ export default function QCVerificationCards({ orderId, userRole }: QCVerificatio
     }
   };
 
-  const canUserAction = (dept: "เซลล์" | "จัดซื้อ") => {
+  const canUserAction = (dept: QCDepartment) => {
     return userRole === dept;
   };
+
+  if (loading) {
+    return (
+      <div className="bg-white rounded-lg shadow-sm border p-6 flex items-center justify-center h-40">
+        <Loader2 className="w-6 h-6 animate-spin text-primary" />
+        <span className="ml-2 text-muted-foreground">กำลังโหลดข้อมูล...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white rounded-lg shadow-sm border p-6">
@@ -284,24 +229,24 @@ export default function QCVerificationCards({ orderId, userRole }: QCVerificatio
           const isCompleted = status === "completed";
 
           return (
-            <Card 
-              key={step.key} 
+            <Card
+              key={step.key}
               className={`transition-all duration-300 ${getCardStyles(step)}`}
             >
-              <CardHeader 
+              <CardHeader
                 className={`pb-2 cursor-pointer select-none ${isLocked ? 'cursor-not-allowed' : ''}`}
                 onClick={() => !isLocked && toggleCard(step.key)}
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
-                      isCompleted ? 'bg-green-500 text-white' : 
+                      isCompleted ? 'bg-green-500 text-white' :
                       status === "failed" ? 'bg-red-500 text-white' :
                       status === "active" ? 'bg-primary text-primary-foreground' :
                       'bg-muted text-muted-foreground'
                     }`}>
-                      {isCompleted ? <CheckCircle2 className="w-4 h-4" /> : 
-                       status === "failed" ? <XCircle className="w-4 h-4" /> : 
+                      {isCompleted ? <CheckCircle2 className="w-4 h-4" /> :
+                       status === "failed" ? <XCircle className="w-4 h-4" /> :
                        idx + 1}
                     </div>
                     <CardTitle className={`text-base ${isLocked ? 'text-muted-foreground' : ''}`}>
@@ -333,12 +278,12 @@ export default function QCVerificationCards({ orderId, userRole }: QCVerificatio
                   {/* Factory Photo */}
                   <div>
                     <p className="text-sm text-muted-foreground mb-2">รูปภาพจากโรงงาน</p>
-                    <div 
+                    <div
                       className="relative w-full max-w-xs h-32 bg-muted rounded-lg overflow-hidden cursor-pointer group"
                       onClick={() => handleOpenLightbox(step.factoryPhoto)}
                     >
-                      <img 
-                        src={step.factoryPhoto} 
+                      <img
+                        src={step.factoryPhoto}
                         alt={`${step.label} photo`}
                         className="w-full h-full object-cover"
                       />
@@ -352,9 +297,9 @@ export default function QCVerificationCards({ orderId, userRole }: QCVerificatio
                   {/* Department Approvals */}
                   <div className="space-y-3">
                     <p className="text-sm text-muted-foreground font-medium">สถานะการตรวจสอบ</p>
-                    
+
                     {step.approvals.map((approval, aIdx) => (
-                      <div 
+                      <div
                         key={aIdx}
                         className={`p-3 rounded-lg border ${
                           approval.status === "passed" ? 'bg-green-50 border-green-200' :
@@ -389,16 +334,16 @@ export default function QCVerificationCards({ orderId, userRole }: QCVerificatio
                             {/* Show action buttons only for user's own department and when pending */}
                             {canUserAction(approval.department) && approval.status === "pending" && !step.isLocked ? (
                               <>
-                                <Button 
-                                  size="sm" 
+                                <Button
+                                  size="sm"
                                   className="bg-green-500 hover:bg-green-600 text-white h-8"
                                   onClick={(e) => { e.stopPropagation(); handlePass(step.key, approval.department); }}
                                 >
                                   <CheckCircle2 className="w-3 h-3 mr-1" />
                                   ผ่าน
                                 </Button>
-                                <Button 
-                                  size="sm" 
+                                <Button
+                                  size="sm"
                                   variant="destructive"
                                   className="h-8"
                                   onClick={(e) => { e.stopPropagation(); handleFail(step.key, approval.department); }}
@@ -462,9 +407,9 @@ export default function QCVerificationCards({ orderId, userRole }: QCVerificatio
           <DialogHeader className="sr-only">
             <DialogTitle>ขยายรูปภาพจากโรงงาน</DialogTitle>
           </DialogHeader>
-          <img 
-            src={lightboxImage} 
-            alt="รูปภาพขยาย" 
+          <img
+            src={lightboxImage}
+            alt="รูปภาพขยาย"
             className="w-full h-auto max-h-[80vh] object-contain rounded-lg"
           />
         </DialogContent>
@@ -483,7 +428,7 @@ export default function QCVerificationCards({ orderId, userRole }: QCVerificatio
             <p className="text-sm text-muted-foreground">
               กรุณาระบุรายละเอียดจุดที่ต้องให้โรงงานแก้ไข เพื่อแจ้งให้อีกแผนกและโรงงานทราบ
             </p>
-            <Textarea 
+            <Textarea
               placeholder="เช่น: สีไม่ตรงตามตัวอย่าง, ขนาดไม่ถูกต้อง, มีรอยขีดข่วน..."
               value={failComment}
               onChange={(e) => setFailComment(e.target.value)}
@@ -494,12 +439,12 @@ export default function QCVerificationCards({ orderId, userRole }: QCVerificatio
             <Button variant="outline" onClick={() => setShowFailModal(false)}>
               ยกเลิก
             </Button>
-            <Button 
-              variant="destructive" 
+            <Button
+              variant="destructive"
               onClick={confirmFail}
-              disabled={!failComment.trim()}
+              disabled={!failComment.trim() || submittingFail}
             >
-              <XCircle className="w-4 h-4 mr-2" />
+              {submittingFail ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <XCircle className="w-4 h-4 mr-2" />}
               ยืนยันไม่ผ่าน
             </Button>
           </DialogFooter>
