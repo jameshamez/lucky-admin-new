@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,39 +9,38 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { CalendarIcon, Upload, History, Trash2, Edit, Eye } from "lucide-react";
+import { CalendarIcon, Upload, Eye, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { th } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { inventoryService, InventoryProduct, Warehouse, InventoryTransaction, StockStatus } from "@/services/inventoryService";
+import { useAuth } from "@/contexts/AuthContext";
 
-interface ReceiveRecord {
-  id: string;
-  date: string;
-  docNo: string;
-  product: string;
-  warehouse: string;
-  location?: string;
-  status: string;
-  quantity: number;
-  unit: string;
-  receiver: string;
-  notes: string;
-  type: string;
-  price: number;
-  batchNo?: string;
-  expireDate?: string;
-  supplier?: string;
-}
+const statusOptions: { value: StockStatus; label: string }[] = [
+  { value: "ready", label: "พร้อมผลิต" },
+  { value: "defective", label: "ตำหนิ" },
+  { value: "damaged", label: "ชำรุด" },
+];
+
+const typeOptions = [
+  { value: "production", label: "จากฝ่ายผลิต" },
+  { value: "purchase", label: "จากจัดซื้อ" },
+  { value: "transfer", label: "จากโอนคลัง" },
+  { value: "other", label: "อื่นๆ" },
+];
+
+const statusLabelToValue: Record<string, StockStatus> = { "พร้อมผลิต": "ready", "ตำหนิ": "defective", "ชำรุด": "damaged" };
 
 export default function InventoryReceive() {
+  const { user } = useAuth();
   const [receiveDate, setReceiveDate] = useState<Date>(new Date());
   const [expireDate, setExpireDate] = useState<Date>();
   const [selectedProduct, setSelectedProduct] = useState("");
   const [selectedWarehouse, setSelectedWarehouse] = useState("");
   const [selectedLocation, setSelectedLocation] = useState("");
-  const [selectedStatus, setSelectedStatus] = useState("");
+  const [selectedStatus, setSelectedStatus] = useState<StockStatus | "">("");
   const [selectedType, setSelectedType] = useState("");
   const [quantity, setQuantity] = useState("");
   const [price, setPrice] = useState("");
@@ -49,92 +48,40 @@ export default function InventoryReceive() {
   const [batchNo, setBatchNo] = useState("");
   const [supplier, setSupplier] = useState("");
   const [notes, setNotes] = useState("");
-  const [selectedDetail, setSelectedDetail] = useState<ReceiveRecord | null>(null);
+  const [selectedDetail, setSelectedDetail] = useState<InventoryTransaction | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  // Mock data
-  const products = [
-    { id: "1", name: "บรรจุภัณฑ์กล่อง A4", unit: "กล่อง" },
-    { id: "2", name: "กระดาษอาร์ตการ์ด 300 แกรม", unit: "รีม" },
-    { id: "3", name: "หมึกพิมพ์ CMYK", unit: "ลิตร" },
-    { id: "4", name: "ฟิล์มเคลือบ", unit: "ม้วน" },
-    { id: "5", name: "กาวติดกล่อง", unit: "แกลลอน" },
-  ];
+  const [loading, setLoading] = useState(true);
+  const [products, setProducts] = useState<InventoryProduct[]>([]);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [records, setRecords] = useState<InventoryTransaction[]>([]);
 
-  const warehouses = [
-    { id: "TEG", name: "คลัง TEG" },
-    { id: "LUCKY", name: "คลัง Lucky" },
-  ];
+  const fetchAll = async () => {
+    setLoading(true);
+    try {
+      const [productsRes, warehousesRes, txnRes] = await Promise.all([
+        inventoryService.getProducts(),
+        inventoryService.getWarehouses(),
+        inventoryService.getTransactions({ type: "รับเข้า" }),
+      ]);
+      if (productsRes.status === "success") setProducts(productsRes.data);
+      if (warehousesRes.status === "success") setWarehouses(warehousesRes.data);
+      if (txnRes.status === "success") setRecords(txnRes.data);
+    } catch (error) {
+      toast.error("ไม่สามารถโหลดข้อมูลได้");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const locationOptions = [
-    { id: "A1-1", name: "A1-ชั้น1" },
-    { id: "A2-1", name: "A2-ชั้น1" },
-    { id: "A1-2", name: "A1-ชั้น2" },
-    { id: "A2-2", name: "A2-ชั้น2" },
-    { id: "B1-1", name: "B1-ชั้น1" },
-    { id: "B2-1", name: "B2-ชั้น1" },
-    { id: "B1-2", name: "B1-ชั้น2" },
-    { id: "B2-2", name: "B2-ชั้น2" },
-  ];
-
-  const statusOptions = [
-    { value: "ready", label: "พร้อมผลิต" },
-    { value: "defective", label: "ตำหนิ" },
-    { value: "damaged", label: "ชำรุด" },
-  ];
-
-  const typeOptions = [
-    { value: "production", label: "จากฝ่ายผลิต" },
-    { value: "purchase", label: "จากจัดซื้อ" },
-    { value: "transfer", label: "จากโอนคลัง" },
-    { value: "other", label: "อื่นๆ" },
-  ];
-
-  const [records, setRecords] = useState<ReceiveRecord[]>([
-    {
-      id: "1",
-      date: "2025-01-15 14:30",
-      docNo: "RCV-2025-001",
-      product: "บรรจุภัณฑ์กล่อง A4",
-      warehouse: "คลัง TEG",
-      location: "A1-ชั้น1",
-      status: "พร้อมผลิต",
-      quantity: 500,
-      unit: "กล่อง",
-      receiver: "สมชาย ใจดี",
-      notes: "รับเข้าจากฝ่ายผลิต",
-      type: "จากฝ่ายผลิต",
-      price: 15,
-      batchNo: "BATCH-001",
-      supplier: "ฝ่ายผลิต",
-    },
-    {
-      id: "2",
-      date: "2025-01-14 10:15",
-      docNo: "RCV-2025-002",
-      product: "กระดาษอาร์ตการ์ด 300 แกรม",
-      warehouse: "คลัง Lucky",
-      location: "B2-ชั้น2",
-      status: "พร้อมผลิต",
-      quantity: 200,
-      unit: "รีม",
-      receiver: "สมหญิง รักงาน",
-      notes: "รับจากซัพพลายเออร์",
-      type: "จากจัดซื้อ",
-      price: 450,
-      supplier: "บริษัท กระดาษไทย จำกัด",
-    },
-  ]);
+  useEffect(() => { fetchAll(); }, []);
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "พร้อมผลิต":
-        return "bg-green-500";
-      case "ตำหนิ":
-        return "bg-yellow-500";
-      case "ชำรุด":
-        return "bg-red-500";
-      default:
-        return "bg-gray-500";
+      case "พร้อมผลิต": return "bg-green-500";
+      case "ตำหนิ": return "bg-yellow-500";
+      case "ชำรุด": return "bg-red-500";
+      default: return "bg-gray-500";
     }
   };
 
@@ -144,68 +91,51 @@ export default function InventoryReceive() {
     return (qty * unitPrice).toFixed(2);
   };
 
-  const selectedProductData = products.find(p => p.id === selectedProduct);
+  const selectedProductData = products.find(p => p.code === selectedProduct);
+  const currentWarehouse = warehouses.find(w => w.code === selectedWarehouse);
+  const availableLocations = currentWarehouse ? currentWarehouse.locations : warehouses.flatMap(w => w.locations);
 
-  const handleSubmit = () => {
-    // Validation
-    if (!selectedType) {
-      toast.error("กรุณาเลือกประเภทการรับเข้า");
-      return;
-    }
-    if (!docNo) {
-      toast.error("กรุณากรอกเลขที่เอกสารอ้างอิง");
-      return;
-    }
-    if (!selectedProduct) {
-      toast.error("กรุณาเลือกสินค้า");
-      return;
-    }
-    if (!selectedWarehouse) {
-      toast.error("กรุณาเลือกคลังปลายทาง");
-      return;
-    }
-    if (!selectedStatus) {
-      toast.error("กรุณาเลือกสถานะสินค้า");
-      return;
-    }
-    if (!quantity || parseFloat(quantity) <= 0) {
-      toast.error("กรุณากรอกจำนวนที่ถูกต้อง");
-      return;
-    }
-
-    // Check conditions
-    if (parseFloat(quantity) > 500) {
-      toast.warning("จำนวนมากกว่า 500 หน่วย ต้องรออนุมัติก่อนบันทึก");
-      return;
-    }
-
+  const handleSubmit = async () => {
+    if (!selectedType) { toast.error("กรุณาเลือกประเภทการรับเข้า"); return; }
+    if (!docNo) { toast.error("กรุณากรอกเลขที่เอกสารอ้างอิง"); return; }
+    if (!selectedProductData) { toast.error("กรุณาเลือกสินค้า"); return; }
+    if (!selectedWarehouse) { toast.error("กรุณาเลือกคลังปลายทาง"); return; }
+    if (!selectedStatus) { toast.error("กรุณาเลือกสถานะสินค้า"); return; }
+    if (!quantity || parseFloat(quantity) <= 0) { toast.error("กรุณากรอกจำนวนที่ถูกต้อง"); return; }
+    if (parseFloat(quantity) > 500) { toast.warning("จำนวนมากกว่า 500 หน่วย ต้องรออนุมัติก่อนบันทึก"); return; }
     if (selectedStatus === "damaged" && !notes.includes("รูปภาพ")) {
       toast.error("สถานะชำรุดต้องแนบรูปภาพบังคับ");
       return;
     }
 
-    // Create new record
-    const newRecord: ReceiveRecord = {
-      id: (records.length + 1).toString(),
-      date: format(receiveDate, "yyyy-MM-dd HH:mm", { locale: th }),
-      docNo,
-      product: selectedProductData?.name || "",
-      warehouse: warehouses.find(w => w.id === selectedWarehouse)?.name || "",
-      location: locationOptions.find(l => l.id === selectedLocation)?.name || "",
-      status: statusOptions.find(s => s.value === selectedStatus)?.label || "",
-      quantity: parseFloat(quantity),
-      unit: selectedProductData?.unit || "",
-      receiver: "ผู้ใช้งานปัจจุบัน",
-      notes,
-      type: typeOptions.find(t => t.value === selectedType)?.label || "",
-      price: parseFloat(price) || 0,
-      batchNo,
-      supplier,
-    };
-
-    setRecords([newRecord, ...records]);
-    toast.success("บันทึกรับเข้าสินค้าสำเร็จ");
-    handleClear();
+    setSubmitting(true);
+    try {
+      const res = await inventoryService.createTransaction({
+        type: "รับเข้า",
+        productId: selectedProductData.id,
+        warehouseCode: selectedWarehouse,
+        status: selectedStatus,
+        quantity: parseFloat(quantity),
+        refDoc: docNo,
+        employeeName: user?.full_name,
+        note: notes,
+        receiveType: selectedType,
+        price: parseFloat(price) || undefined,
+        batchNo: batchNo || undefined,
+        expireDate: expireDate ? format(expireDate, "yyyy-MM-dd") : undefined,
+        supplier: supplier || undefined,
+        locationId: selectedLocation ? Number(selectedLocation) : undefined,
+      });
+      if (res.status === "success") {
+        toast.success("บันทึกรับเข้าสินค้าสำเร็จ");
+        handleClear();
+        fetchAll();
+      } else {
+        toast.error(res.message || "บันทึกไม่สำเร็จ");
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleClear = () => {
@@ -223,6 +153,15 @@ export default function InventoryReceive() {
     setSupplier("");
     setNotes("");
   };
+
+  if (loading) {
+    return (
+      <div className="flex h-[400px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="ml-2">กำลังโหลดข้อมูล...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -306,8 +245,8 @@ export default function InventoryReceive() {
                 </SelectTrigger>
                 <SelectContent>
                   {products.map((product) => (
-                    <SelectItem key={product.id} value={product.id}>
-                      {product.name}
+                    <SelectItem key={product.id} value={product.code}>
+                      {product.code} - {product.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -317,14 +256,14 @@ export default function InventoryReceive() {
             {/* คลังปลายทาง */}
             <div className="space-y-2">
               <Label htmlFor="warehouse">คลังปลายทาง *</Label>
-              <Select value={selectedWarehouse} onValueChange={setSelectedWarehouse}>
+              <Select value={selectedWarehouse} onValueChange={(v) => { setSelectedWarehouse(v); setSelectedLocation(""); }}>
                 <SelectTrigger id="warehouse">
                   <SelectValue placeholder="เลือกคลัง" />
                 </SelectTrigger>
                 <SelectContent>
-                  {warehouses.map((warehouse) => (
-                    <SelectItem key={warehouse.id} value={warehouse.id}>
-                      {warehouse.name}
+                  {warehouses.map((w) => (
+                    <SelectItem key={w.id} value={w.code}>
+                      {w.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -339,9 +278,9 @@ export default function InventoryReceive() {
                   <SelectValue placeholder="เลือกตำแหน่ง" />
                 </SelectTrigger>
                 <SelectContent>
-                  {locationOptions.map((location) => (
-                    <SelectItem key={location.id} value={location.id}>
-                      {location.name}
+                  {availableLocations.map((loc) => (
+                    <SelectItem key={loc.id} value={String(loc.id)}>
+                      {loc.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -351,7 +290,7 @@ export default function InventoryReceive() {
             {/* สถานะสินค้า */}
             <div className="space-y-2">
               <Label htmlFor="status">สถานะสินค้า *</Label>
-              <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+              <Select value={selectedStatus} onValueChange={(v) => setSelectedStatus(v as StockStatus)}>
                 <SelectTrigger id="status">
                   <SelectValue placeholder="เลือกสถานะ" />
                 </SelectTrigger>
@@ -469,7 +408,7 @@ export default function InventoryReceive() {
               <Label htmlFor="receiver">ผู้รับเข้า</Label>
               <Input
                 id="receiver"
-                value="ผู้ใช้งานปัจจุบัน"
+                value={user?.full_name || "ไม่ระบุชื่อ"}
                 disabled
                 className="bg-muted"
               />
@@ -493,7 +432,7 @@ export default function InventoryReceive() {
             <Label htmlFor="file">แนบไฟล์ / รูปภาพ</Label>
             <div className="flex items-center gap-2">
               <Input id="file" type="file" multiple accept="image/*,.pdf" />
-              <Button variant="outline" size="icon">
+              <Button variant="outline" size="icon" type="button">
                 <Upload className="h-4 w-4" />
               </Button>
             </div>
@@ -504,15 +443,11 @@ export default function InventoryReceive() {
 
           {/* ปุ่มดำเนินการ */}
           <div className="flex flex-wrap gap-3">
-            <Button onClick={handleSubmit} size="lg">
-              บันทึกรับเข้า
+            <Button onClick={handleSubmit} size="lg" disabled={submitting}>
+              {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}บันทึกรับเข้า
             </Button>
             <Button variant="outline" onClick={handleClear} size="lg">
               ล้างฟอร์ม
-            </Button>
-            <Button variant="secondary" size="lg">
-              <History className="mr-2 h-4 w-4" />
-              ดูประวัติรับเข้า
             </Button>
           </div>
 
@@ -522,7 +457,6 @@ export default function InventoryReceive() {
             <ul className="list-disc list-inside space-y-1 text-muted-foreground">
               <li>รับเข้ามากกว่า 500 หน่วย → ต้องรออนุมัติ</li>
               <li>สถานะชำรุด → ต้องแนบรูปบังคับ</li>
-              <li>จากโอนคลัง → ดึงข้อมูลจาก TXN โอนอัตโนมัติ</li>
             </ul>
           </div>
         </CardContent>
@@ -543,7 +477,6 @@ export default function InventoryReceive() {
                   <TableHead>เลขที่เอกสาร</TableHead>
                   <TableHead>สินค้า</TableHead>
                   <TableHead>คลัง</TableHead>
-                  <TableHead>ตำแหน่ง</TableHead>
                   <TableHead>สถานะ</TableHead>
                   <TableHead className="text-right">จำนวน</TableHead>
                   <TableHead>ผู้รับ</TableHead>
@@ -555,25 +488,22 @@ export default function InventoryReceive() {
                 {records.map((record) => (
                   <TableRow key={record.id}>
                     <TableCell className="font-medium">{record.date}</TableCell>
-                    <TableCell>{record.docNo}</TableCell>
+                    <TableCell>{record.refDoc}</TableCell>
                     <TableCell>{record.product}</TableCell>
-                    <TableCell>{record.warehouse}</TableCell>
                     <TableCell>
-                      {record.location && (
-                        <Badge variant="outline">{record.location}</Badge>
-                      )}
+                      <Badge variant="outline">{record.warehouse}</Badge>
                     </TableCell>
                     <TableCell>
-                      <Badge className={getStatusColor(record.status)}>
-                        {record.status}
+                      <Badge className={getStatusColor(record.statusTo)}>
+                        {record.statusTo}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right">
-                      {record.quantity.toLocaleString()} {record.unit}
+                      {record.quantity.toLocaleString()}
                     </TableCell>
-                    <TableCell>{record.receiver}</TableCell>
+                    <TableCell>{record.by}</TableCell>
                     <TableCell className="max-w-[200px] truncate">
-                      {record.notes}
+                      {record.note}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center justify-center gap-2">
@@ -584,16 +514,15 @@ export default function InventoryReceive() {
                         >
                           <Eye className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="icon">
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon">
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
                 ))}
+                {records.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center text-muted-foreground py-8">ยังไม่มีประวัติการรับเข้า</TableCell>
+                  </TableRow>
+                )}
               </TableBody>
             </Table>
           </div>
@@ -605,7 +534,7 @@ export default function InventoryReceive() {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>รายละเอียดการรับเข้า</DialogTitle>
-            <DialogDescription>เลขที่เอกสาร: {selectedDetail?.docNo}</DialogDescription>
+            <DialogDescription>เลขที่เอกสาร: {selectedDetail?.refDoc}</DialogDescription>
           </DialogHeader>
           {selectedDetail && (
             <div className="space-y-4">
@@ -616,7 +545,7 @@ export default function InventoryReceive() {
                 </div>
                 <div>
                   <Label className="text-muted-foreground">ประเภท</Label>
-                  <p className="font-medium">{selectedDetail.type}</p>
+                  <p className="font-medium">{typeOptions.find(t => t.value === selectedDetail.receiveType)?.label || "-"}</p>
                 </div>
                 <div>
                   <Label className="text-muted-foreground">สินค้า</Label>
@@ -626,34 +555,22 @@ export default function InventoryReceive() {
                   <Label className="text-muted-foreground">คลัง</Label>
                   <p className="font-medium">{selectedDetail.warehouse}</p>
                 </div>
-                {selectedDetail.location && (
-                  <div>
-                    <Label className="text-muted-foreground">ตำแหน่งจัดเก็บ</Label>
-                    <p className="font-medium">{selectedDetail.location}</p>
-                  </div>
-                )}
                 <div>
                   <Label className="text-muted-foreground">สถานะ</Label>
-                  <Badge className={getStatusColor(selectedDetail.status)}>
-                    {selectedDetail.status}
+                  <Badge className={getStatusColor(selectedDetail.statusTo)}>
+                    {selectedDetail.statusTo}
                   </Badge>
                 </div>
                 <div>
                   <Label className="text-muted-foreground">จำนวน</Label>
-                  <p className="font-medium">
-                    {selectedDetail.quantity.toLocaleString()} {selectedDetail.unit}
-                  </p>
+                  <p className="font-medium">{selectedDetail.quantity.toLocaleString()}</p>
                 </div>
-                <div>
-                  <Label className="text-muted-foreground">ราคาต่อหน่วย</Label>
-                  <p className="font-medium">{selectedDetail.price.toLocaleString()} บาท</p>
-                </div>
-                <div>
-                  <Label className="text-muted-foreground">มูลค่ารวม</Label>
-                  <p className="font-medium">
-                    {(selectedDetail.price * selectedDetail.quantity).toLocaleString()} บาท
-                  </p>
-                </div>
+                {selectedDetail.price !== null && (
+                  <div>
+                    <Label className="text-muted-foreground">ราคาต่อหน่วย</Label>
+                    <p className="font-medium">{selectedDetail.price.toLocaleString()} บาท</p>
+                  </div>
+                )}
                 {selectedDetail.batchNo && (
                   <div>
                     <Label className="text-muted-foreground">Batch No.</Label>
@@ -668,13 +585,13 @@ export default function InventoryReceive() {
                 )}
                 <div>
                   <Label className="text-muted-foreground">ผู้รับเข้า</Label>
-                  <p className="font-medium">{selectedDetail.receiver}</p>
+                  <p className="font-medium">{selectedDetail.by}</p>
                 </div>
               </div>
-              {selectedDetail.notes && (
+              {selectedDetail.note && (
                 <div>
                   <Label className="text-muted-foreground">หมายเหตุ</Label>
-                  <p className="font-medium">{selectedDetail.notes}</p>
+                  <p className="font-medium">{selectedDetail.note}</p>
                 </div>
               )}
             </div>

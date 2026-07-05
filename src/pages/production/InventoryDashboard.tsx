@@ -1,35 +1,53 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { Package, AlertTriangle, XCircle, CheckCircle } from "lucide-react";
+import { Package, AlertTriangle, XCircle, CheckCircle, Loader2 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import { useState } from "react";
-
-const mockWarehouseData = [
-  { name: "รวมทุกคลัง", total: 12450, ready: 10800, defective: 980, damaged: 670 },
-  { name: "TEG", total: 7200, ready: 6300, defective: 550, damaged: 350 },
-  { name: "Lucky", total: 5250, ready: 4500, defective: 430, damaged: 320 },
-];
-
-const mockTopLowStock = [
-  { code: "P001", name: "ถังขยะพลาสติก 120L", stock: 15, min: 50, warehouse: "TEG" },
-  { code: "P002", name: "ถังขยะพลาสติก 240L", stock: 22, min: 50, warehouse: "Lucky" },
-  { code: "P003", name: "ถังขยะสแตนเลส 80L", stock: 8, min: 30, warehouse: "TEG" },
-  { code: "P004", name: "ถังขยะอเนกประสงค์", stock: 18, min: 40, warehouse: "Lucky" },
-  { code: "P005", name: "รถเข็นขยะ", stock: 5, min: 20, warehouse: "TEG" },
-];
-
-const chartData = [
-  { month: "ม.ค.", พร้อมผลิต: 10200, ตำหนิ: 850, ชำรุด: 600 },
-  { month: "ก.พ.", พร้อมผลิต: 10500, ตำหนิ: 920, ชำรุด: 580 },
-  { month: "มี.ค.", พร้อมผลิต: 10800, ตำหนิ: 980, ชำรุด: 670 },
-];
+import { useState, useEffect } from "react";
+import { inventoryService, StockSummary, Warehouse } from "@/services/inventoryService";
+import { toast } from "sonner";
 
 export default function InventoryDashboard() {
   const [selectedWarehouse, setSelectedWarehouse] = useState("รวมทุกคลัง");
   const [searchKeyword, setSearchKeyword] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [summary, setSummary] = useState<StockSummary>({ warehouseData: [], topLowStock: [], chartData: [] });
 
-  const currentData = mockWarehouseData.find(w => w.name === selectedWarehouse) || mockWarehouseData[0];
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        const [warehousesRes, summaryRes] = await Promise.all([
+          inventoryService.getWarehouses(),
+          inventoryService.getStockSummary(),
+        ]);
+        if (warehousesRes.status === "success") setWarehouses(warehousesRes.data);
+        if (summaryRes.status === "success") setSummary(summaryRes.data);
+      } catch (error) {
+        toast.error("ไม่สามารถโหลดข้อมูลภาพรวมสต็อกได้");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
+
+  const currentData = summary.warehouseData.find(w => w.name === selectedWarehouse) || summary.warehouseData[0] || { total: 0, ready: 0, defective: 0, damaged: 0 };
+  const filteredLowStock = summary.topLowStock.filter(item =>
+    item.name.toLowerCase().includes(searchKeyword.toLowerCase()) || item.code.toLowerCase().includes(searchKeyword.toLowerCase())
+  );
+
+  const pct = (value: number, total: number) => total > 0 ? ((value / total) * 100).toFixed(1) : "0.0";
+
+  if (loading) {
+    return (
+      <div className="flex h-[400px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="ml-2">กำลังโหลดข้อมูล...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -46,8 +64,9 @@ export default function InventoryDashboard() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="รวมทุกคลัง">รวมทุกคลัง</SelectItem>
-            <SelectItem value="TEG">TEG</SelectItem>
-            <SelectItem value="Lucky">Lucky</SelectItem>
+            {warehouses.map((w) => (
+              <SelectItem key={w.id} value={w.code}>{w.name}</SelectItem>
+            ))}
           </SelectContent>
         </Select>
 
@@ -80,7 +99,7 @@ export default function InventoryDashboard() {
           <CardContent>
             <div className="text-2xl font-bold text-green-600">{currentData.ready.toLocaleString()}</div>
             <p className="text-xs text-muted-foreground">
-              {((currentData.ready / currentData.total) * 100).toFixed(1)}% ของทั้งหมด
+              {pct(currentData.ready, currentData.total)}% ของทั้งหมด
             </p>
           </CardContent>
         </Card>
@@ -93,7 +112,7 @@ export default function InventoryDashboard() {
           <CardContent>
             <div className="text-2xl font-bold text-yellow-600">{currentData.defective.toLocaleString()}</div>
             <p className="text-xs text-muted-foreground">
-              {((currentData.defective / currentData.total) * 100).toFixed(1)}% ของทั้งหมด
+              {pct(currentData.defective, currentData.total)}% ของทั้งหมด
             </p>
           </CardContent>
         </Card>
@@ -106,7 +125,7 @@ export default function InventoryDashboard() {
           <CardContent>
             <div className="text-2xl font-bold text-red-600">{currentData.damaged.toLocaleString()}</div>
             <p className="text-xs text-muted-foreground">
-              {((currentData.damaged / currentData.total) * 100).toFixed(1)}% ของทั้งหมด
+              {pct(currentData.damaged, currentData.total)}% ของทั้งหมด
             </p>
           </CardContent>
         </Card>
@@ -117,11 +136,11 @@ export default function InventoryDashboard() {
         <Card>
           <CardHeader>
             <CardTitle>Breakdown ตามสถานะ</CardTitle>
-            <CardDescription>แสดงจำนวนสินค้าแต่ละสถานะ 3 เดือนย้อนหลัง</CardDescription>
+            <CardDescription>ปริมาณสินค้าที่เคลื่อนไหวแต่ละสถานะ 6 เดือนย้อนหลัง</CardDescription>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={chartData}>
+              <BarChart data={summary.chartData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="month" />
                 <YAxis />
@@ -137,12 +156,12 @@ export default function InventoryDashboard() {
 
         <Card>
           <CardHeader>
-            <CardTitle>สินค้าใกล้หมด (Top 5)</CardTitle>
+            <CardTitle>สินค้าใกล้หมด (Top 10)</CardTitle>
             <CardDescription>สินค้าที่พร้อมผลิตต่ำกว่าจุดสั่งซื้อขั้นต่ำ</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {mockTopLowStock.map((item) => (
+              {filteredLowStock.map((item) => (
                 <div key={item.code} className="flex items-center justify-between pb-3 border-b last:border-0">
                   <div className="flex-1">
                     <p className="font-medium text-sm">{item.name}</p>
@@ -156,6 +175,9 @@ export default function InventoryDashboard() {
                   </div>
                 </div>
               ))}
+              {filteredLowStock.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-4">ไม่มีสินค้าใกล้หมด</p>
+              )}
             </div>
           </CardContent>
         </Card>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -7,93 +7,48 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { CalendarIcon, Download } from "lucide-react";
+import { CalendarIcon, Download, Loader2 } from "lucide-react";
 import { format, parse, isWithinInterval, startOfDay, endOfDay } from "date-fns";
 import { th } from "date-fns/locale";
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
-
-const mockTransactions = [
-  {
-    id: "TXN001",
-    date: "2025-01-15 14:30:22",
-    refDoc: "PO-2025-001",
-    type: "รับเข้า",
-    product: "ถังขยะพลาสติก 120L",
-    warehouse: "TEG",
-    statusFrom: "-",
-    statusTo: "พร้อมผลิต",
-    quantity: 100,
-    by: "สมชาย ใจดี",
-    note: "รับเข้าจากซัพพลายเออร์"
-  },
-  {
-    id: "TXN002",
-    date: "2025-01-15 13:15:08",
-    refDoc: "T-001",
-    type: "โอนคลัง",
-    product: "ถังขยะพลาสติก 120L",
-    warehouse: "TEG → Lucky",
-    statusFrom: "พร้อมผลิต",
-    statusTo: "พร้อมผลิต",
-    quantity: 50,
-    by: "สมชาย ใจดี",
-    note: "โอนไปสาขา Lucky"
-  },
-  {
-    id: "TXN003",
-    date: "2025-01-15 11:45:33",
-    refDoc: "SO-2025-045",
-    type: "ตัดออก",
-    product: "ถังขยะพลาสติก 240L",
-    warehouse: "Lucky",
-    statusFrom: "พร้อมผลิต",
-    statusTo: "-",
-    quantity: 25,
-    by: "สมหญิง รักงาน",
-    note: "จัดส่งตามคำสั่งซื้อ"
-  },
-  {
-    id: "TXN004",
-    date: "2025-01-15 10:20:15",
-    refDoc: "ADJ-001",
-    type: "ปรับยอด",
-    product: "ถังขยะสแตนเลส 80L",
-    warehouse: "TEG",
-    statusFrom: "พร้อมผลิต",
-    statusTo: "พร้อมผลิต",
-    quantity: -5,
-    by: "สมศักดิ์ ซื่อสัตย์",
-    note: "สินค้าสูญหายจากการนับสต็อก"
-  },
-  {
-    id: "TXN005",
-    date: "2025-01-14 16:30:44",
-    refDoc: "QC-2025-012",
-    type: "เปลี่ยนสถานะ",
-    product: "ถังขยะพลาสติก 120L",
-    warehouse: "TEG",
-    statusFrom: "พร้อมผลิต",
-    statusTo: "ตำหนิ",
-    quantity: 10,
-    by: "สมปอง คุณภาพ",
-    note: "พบรอยขีดข่วนเล็กน้อย"
-  },
-];
+import { inventoryService, InventoryTransaction, Warehouse } from "@/services/inventoryService";
 
 export default function InventoryHistory() {
+  const [loading, setLoading] = useState(true);
+  const [transactions, setTransactions] = useState<InventoryTransaction[]>([]);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [warehouseFilter, setWarehouseFilter] = useState("all");
   const [dateFrom, setDateFrom] = useState<Date>();
   const [dateTo, setDateTo] = useState<Date>();
 
-  const filteredTransactions = mockTransactions.filter(txn => {
-    const matchSearch = 
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        const [txnRes, whRes] = await Promise.all([
+          inventoryService.getTransactions(),
+          inventoryService.getWarehouses(),
+        ]);
+        if (txnRes.status === "success") setTransactions(txnRes.data);
+        if (whRes.status === "success") setWarehouses(whRes.data);
+      } catch (error) {
+        toast.error("ไม่สามารถโหลดประวัติการเคลื่อนไหวได้");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
+
+  const filteredTransactions = transactions.filter(txn => {
+    const matchSearch =
       txn.product.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      txn.refDoc.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (txn.refDoc || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
       txn.id.toLowerCase().includes(searchTerm.toLowerCase());
-    
+
     const matchType = typeFilter === "all" || txn.type === typeFilter;
     const matchWarehouse = warehouseFilter === "all" || txn.warehouse.includes(warehouseFilter);
 
@@ -108,7 +63,7 @@ export default function InventoryHistory() {
         matchDate = txnDate <= endOfDay(dateTo);
       }
     }
-    
+
     return matchSearch && matchType && matchWarehouse && matchDate;
   });
 
@@ -143,7 +98,6 @@ export default function InventoryHistory() {
       "ตัดออก": { color: "bg-red-500", text: "ตัดออก" },
       "โอนคลัง": { color: "bg-blue-500", text: "โอนคลัง" },
       "ปรับยอด": { color: "bg-purple-500", text: "ปรับยอด" },
-      "เปลี่ยนสถานะ": { color: "bg-orange-500", text: "เปลี่ยนสถานะ" },
     };
     const badge = badges[type] || { color: "bg-gray-500", text: type };
     return <Badge className={badge.color}>{badge.text}</Badge>;
@@ -156,6 +110,23 @@ export default function InventoryHistory() {
     if (status === "ชำรุด") return <Badge className="bg-red-500">ชำรุด</Badge>;
     return <Badge variant="outline">{status}</Badge>;
   };
+
+  // Ledger stores an always-positive magnitude; direction is derived from the transaction type
+  // since ปรับยอด/โอนคลัง don't have a single fixed sign.
+  const getQuantityDisplay = (txn: InventoryTransaction) => {
+    if (txn.type === "ตัดออก") return { text: `-${txn.quantity}`, color: "text-red-600" };
+    if (txn.type === "รับเข้า") return { text: `+${txn.quantity}`, color: "text-green-600" };
+    return { text: `${txn.quantity}`, color: "text-muted-foreground" };
+  };
+
+  if (loading) {
+    return (
+      <div className="flex h-[400px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="ml-2">กำลังโหลดข้อมูล...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -194,7 +165,6 @@ export default function InventoryHistory() {
                 <SelectItem value="ตัดออก">ตัดออก</SelectItem>
                 <SelectItem value="โอนคลัง">โอนคลัง</SelectItem>
                 <SelectItem value="ปรับยอด">ปรับยอด</SelectItem>
-                <SelectItem value="เปลี่ยนสถานะ">เปลี่ยนสถานะ</SelectItem>
               </SelectContent>
             </Select>
 
@@ -204,8 +174,9 @@ export default function InventoryHistory() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">ทุกคลัง</SelectItem>
-                <SelectItem value="TEG">TEG</SelectItem>
-                <SelectItem value="Lucky">Lucky</SelectItem>
+                {warehouses.map((w) => (
+                  <SelectItem key={w.id} value={w.code}>{w.name}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -264,25 +235,33 @@ export default function InventoryHistory() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredTransactions.map((txn) => (
-                <TableRow key={txn.id}>
-                  <TableCell className="font-medium">{txn.id}</TableCell>
-                  <TableCell className="text-sm whitespace-nowrap">{txn.date}</TableCell>
-                  <TableCell className="font-mono text-sm">{txn.refDoc}</TableCell>
-                  <TableCell>{getTypeBadge(txn.type)}</TableCell>
-                  <TableCell>{txn.product}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{txn.warehouse}</Badge>
-                  </TableCell>
-                  <TableCell>{getStatusBadge(txn.statusFrom)}</TableCell>
-                  <TableCell>{getStatusBadge(txn.statusTo)}</TableCell>
-                  <TableCell className={`text-right font-semibold ${txn.quantity > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {txn.quantity > 0 ? '+' : ''}{txn.quantity}
-                  </TableCell>
-                  <TableCell className="text-sm">{txn.by}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground max-w-xs truncate">{txn.note}</TableCell>
+              {filteredTransactions.map((txn) => {
+                const qtyDisplay = getQuantityDisplay(txn);
+                return (
+                  <TableRow key={txn.id}>
+                    <TableCell className="font-medium">{txn.id}</TableCell>
+                    <TableCell className="text-sm whitespace-nowrap">{txn.date}</TableCell>
+                    <TableCell className="font-mono text-sm">{txn.refDoc}</TableCell>
+                    <TableCell>{getTypeBadge(txn.type)}</TableCell>
+                    <TableCell>{txn.product}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{txn.warehouse}</Badge>
+                    </TableCell>
+                    <TableCell>{getStatusBadge(txn.statusFrom)}</TableCell>
+                    <TableCell>{getStatusBadge(txn.statusTo)}</TableCell>
+                    <TableCell className={`text-right font-semibold ${qtyDisplay.color}`}>
+                      {qtyDisplay.text}
+                    </TableCell>
+                    <TableCell className="text-sm">{txn.by}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground max-w-xs truncate">{txn.note}</TableCell>
+                  </TableRow>
+                );
+              })}
+              {filteredTransactions.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={11} className="text-center text-muted-foreground py-8">ไม่มีรายการ</TableCell>
                 </TableRow>
-              ))}
+              )}
             </TableBody>
           </Table>
         </CardContent>

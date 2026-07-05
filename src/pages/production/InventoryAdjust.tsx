@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,96 +9,187 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { FileEdit, Package, PlayCircle, StopCircle, CheckCircle2 } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
-
-const mockProducts = [
-  { code: "P001", name: "ถังขยะพลาสติก 120L", warehouse: "TEG", ready: 200, defective: 30, damaged: 20 },
-  { code: "P002", name: "ถังขยะพลาสติก 240L", warehouse: "Lucky", ready: 150, defective: 20, damaged: 10 },
-];
-
-const mockStockCountSessions = [
-  {
-    id: "SC001",
-    name: "นับสต็อกประจำเดือน ม.ค. 2568",
-    warehouse: "TEG",
-    status: "กำลังนับ",
-    startDate: "2025-01-15 08:00",
-    by: "สมชาย ใจดี",
-    items: 15,
-    counted: 8
-  },
-  {
-    id: "SC002",
-    name: "นับสต็อกสิ้นปี 2567",
-    warehouse: "Lucky",
-    status: "เสร็จสิ้น",
-    startDate: "2024-12-31 08:00",
-    endDate: "2024-12-31 16:30",
-    by: "สมหญิง รักงาน",
-    items: 25,
-    counted: 25
-  },
-];
+import { FileEdit, Package, PlayCircle, StopCircle, CheckCircle2, Loader2 } from "lucide-react";
+import { toast } from "sonner";
+import { inventoryService, InventoryProduct, StockRow, Warehouse, StockCountSession, StockCountItem } from "@/services/inventoryService";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function InventoryAdjust() {
-  const { toast } = useToast();
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [products, setProducts] = useState<InventoryProduct[]>([]);
+  const [stock, setStock] = useState<StockRow[]>([]);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [sessions, setSessions] = useState<StockCountSession[]>([]);
+
+  const fetchAll = async () => {
+    setLoading(true);
+    try {
+      const [productsRes, stockRes, warehousesRes, sessionsRes] = await Promise.all([
+        inventoryService.getProducts(),
+        inventoryService.getStock(),
+        inventoryService.getWarehouses(),
+        inventoryService.getStockCountSessions(),
+      ]);
+      if (productsRes.status === "success") setProducts(productsRes.data);
+      if (stockRes.status === "success") setStock(stockRes.data);
+      if (warehousesRes.status === "success") setWarehouses(warehousesRes.data);
+      if (sessionsRes.status === "success") setSessions(sessionsRes.data);
+    } catch (error) {
+      toast.error("ไม่สามารถโหลดข้อมูลได้");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchAll(); }, []);
+
+  // --- Quick Adjust ---
   const [selectedProduct, setSelectedProduct] = useState("");
   const [warehouse, setWarehouse] = useState("");
   const [readyCount, setReadyCount] = useState("");
   const [defectiveCount, setDefectiveCount] = useState("");
   const [damagedCount, setDamagedCount] = useState("");
   const [reason, setReason] = useState("");
+  const [adjustSubmitting, setAdjustSubmitting] = useState(false);
 
+  const currentStockRow = stock.find(s => s.code === selectedProduct && s.warehouse === warehouse);
+
+  const handleAdjust = async () => {
+    if (!selectedProduct || !warehouse) {
+      toast.error("โปรดระบุสินค้าและคลัง");
+      return;
+    }
+    if (!reason.trim()) {
+      toast.error("โปรดระบุเหตุผลการปรับยอด");
+      return;
+    }
+    const product = products.find(p => p.code === selectedProduct);
+    if (!product) return;
+
+    setAdjustSubmitting(true);
+    try {
+      const res = await inventoryService.createTransaction({
+        type: "ปรับยอด",
+        productId: product.id,
+        warehouseCode: warehouse,
+        readyQty: Number(readyCount || 0),
+        defectiveQty: Number(defectiveCount || 0),
+        damagedQty: Number(damagedCount || 0),
+        note: reason,
+        employeeName: user?.full_name,
+      });
+      if (res.status === "success") {
+        toast.success("อัปเดตจำนวนสินค้าเรียบร้อยแล้ว");
+        setSelectedProduct(""); setWarehouse(""); setReadyCount(""); setDefectiveCount(""); setDamagedCount(""); setReason("");
+        fetchAll();
+      } else {
+        toast.error(res.message || "ปรับยอดไม่สำเร็จ");
+      }
+    } finally {
+      setAdjustSubmitting(false);
+    }
+  };
+
+  // --- Stock Count Sessions ---
   const [sessionName, setSessionName] = useState("");
   const [sessionWarehouse, setSessionWarehouse] = useState("");
+  const [startingSession, setStartingSession] = useState(false);
 
-  const [selectedSession, setSelectedSession] = useState<typeof mockStockCountSessions[0] | null>(null);
+  const handleStartSession = async () => {
+    if (!sessionName || !sessionWarehouse) {
+      toast.error("โปรดระบุชื่อรอบนับและคลัง");
+      return;
+    }
+    setStartingSession(true);
+    try {
+      const res = await inventoryService.createStockCountSession({
+        name: sessionName,
+        warehouseCode: sessionWarehouse,
+        startedBy: user?.full_name,
+      });
+      if (res.status === "success") {
+        toast.success(`เริ่มนับสต็อกรอบ: ${sessionName}`);
+        setSessionName(""); setSessionWarehouse("");
+        fetchAll();
+      } else {
+        toast.error(res.message || "เปิดรอบนับไม่สำเร็จ");
+      }
+    } finally {
+      setStartingSession(false);
+    }
+  };
+
+  const [selectedSession, setSelectedSession] = useState<StockCountSession | null>(null);
+  const [sessionItems, setSessionItems] = useState<StockCountItem[]>([]);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
   const [showReportDialog, setShowReportDialog] = useState(false);
+  const [loadingSessionDetail, setLoadingSessionDetail] = useState(false);
+  const [savingCount, setSavingCount] = useState(false);
+  const [completingSession, setCompletingSession] = useState(false);
 
-  const handleAdjust = () => {
-    if (!selectedProduct || !warehouse) {
-      toast({
-        title: "กรุณากรอกข้อมูลให้ครบ",
-        description: "โปรดระบุสินค้าและคลัง",
-        variant: "destructive"
-      });
-      return;
+  const openSessionDetail = async (session: StockCountSession, mode: "detail" | "report") => {
+    setSelectedSession(session);
+    setLoadingSessionDetail(true);
+    if (mode === "detail") setShowDetailDialog(true); else setShowReportDialog(true);
+    try {
+      const res = await inventoryService.getStockCountSession(session.id);
+      if (res.status === "success") setSessionItems(res.data.items);
+    } finally {
+      setLoadingSessionDetail(false);
     }
-
-    toast({
-      title: "ปรับยอดสำเร็จ",
-      description: "อัปเดตจำนวนสินค้าเรียบร้อยแล้ว",
-    });
-
-    // Reset
-    setSelectedProduct("");
-    setWarehouse("");
-    setReadyCount("");
-    setDefectiveCount("");
-    setDamagedCount("");
-    setReason("");
   };
 
-  const handleStartSession = () => {
-    if (!sessionName || !sessionWarehouse) {
-      toast({
-        title: "กรุณากรอกข้อมูลให้ครบ",
-        description: "โปรดระบุชื่อรอบนับและคลัง",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    toast({
-      title: "เปิดรอบนับสำเร็จ",
-      description: `เริ่มนับสต็อกรอบ: ${sessionName}`,
-    });
-
-    setSessionName("");
-    setSessionWarehouse("");
+  const updateCountedQty = (productId: number, value: string) => {
+    setSessionItems(prev => prev.map(item => item.productId === productId ? { ...item, countedQty: value === "" ? null : Number(value) } : item));
   };
+
+  const handleSaveCount = async () => {
+    if (!selectedSession) return;
+    setSavingCount(true);
+    try {
+      const items = sessionItems.filter(i => i.countedQty !== null).map(i => ({ productId: i.productId, countedQty: i.countedQty as number }));
+      const res = await inventoryService.saveStockCount(selectedSession.id, items);
+      if (res.status === "success") {
+        toast.success("บันทึกข้อมูลการนับเรียบร้อยแล้ว");
+        setShowDetailDialog(false);
+        fetchAll();
+      } else {
+        toast.error(res.message || "บันทึกไม่สำเร็จ");
+      }
+    } finally {
+      setSavingCount(false);
+    }
+  };
+
+  const handleCompleteSession = async () => {
+    if (!selectedSession) return;
+    setCompletingSession(true);
+    try {
+      const res = await inventoryService.completeStockCount(selectedSession.id);
+      if (res.status === "success") {
+        toast.success("ปิดรอบนับสต็อกและปรับยอดเรียบร้อยแล้ว");
+        setShowDetailDialog(false);
+        fetchAll();
+      } else {
+        toast.error(res.message || "ปิดรอบนับไม่สำเร็จ");
+      }
+    } finally {
+      setCompletingSession(false);
+    }
+  };
+
+  const matchedCount = sessionItems.filter(i => i.countedQty !== null && i.countedQty === i.systemQty).length;
+  const diffItems = sessionItems.filter(i => i.countedQty !== null && i.countedQty !== i.systemQty);
+
+  if (loading) {
+    return (
+      <div className="flex h-[400px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="ml-2">กำลังโหลดข้อมูล...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -135,8 +226,8 @@ export default function InventoryAdjust() {
                       <SelectValue placeholder="เลือกสินค้า" />
                     </SelectTrigger>
                     <SelectContent>
-                      {mockProducts.map((product) => (
-                        <SelectItem key={product.code} value={product.code}>
+                      {products.map((product) => (
+                        <SelectItem key={product.id} value={product.code}>
                           {product.code} - {product.name}
                         </SelectItem>
                       ))}
@@ -151,8 +242,9 @@ export default function InventoryAdjust() {
                       <SelectValue placeholder="เลือกคลัง" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="TEG">TEG</SelectItem>
-                      <SelectItem value="Lucky">Lucky</SelectItem>
+                      {warehouses.map((w) => (
+                        <SelectItem key={w.id} value={w.code}>{w.name}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -167,15 +259,15 @@ export default function InventoryAdjust() {
                     <div className="grid grid-cols-3 gap-4 text-center">
                       <div>
                         <p className="text-sm text-muted-foreground">พร้อมผลิต</p>
-                        <p className="text-2xl font-bold text-green-600">200</p>
+                        <p className="text-2xl font-bold text-green-600">{currentStockRow?.ready ?? 0}</p>
                       </div>
                       <div>
                         <p className="text-sm text-muted-foreground">ตำหนิ</p>
-                        <p className="text-2xl font-bold text-yellow-600">30</p>
+                        <p className="text-2xl font-bold text-yellow-600">{currentStockRow?.defective ?? 0}</p>
                       </div>
                       <div>
                         <p className="text-sm text-muted-foreground">ชำรุด</p>
-                        <p className="text-2xl font-bold text-red-600">20</p>
+                        <p className="text-2xl font-bold text-red-600">{currentStockRow?.damaged ?? 0}</p>
                       </div>
                     </div>
                   </CardContent>
@@ -224,8 +316,8 @@ export default function InventoryAdjust() {
                 />
               </div>
 
-              <Button onClick={handleAdjust} className="w-full" size="lg">
-                <FileEdit className="mr-2 h-4 w-4" />
+              <Button onClick={handleAdjust} className="w-full" size="lg" disabled={adjustSubmitting}>
+                {adjustSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileEdit className="mr-2 h-4 w-4" />}
                 ยืนยันการปรับยอด
               </Button>
             </CardContent>
@@ -257,16 +349,17 @@ export default function InventoryAdjust() {
                       <SelectValue placeholder="เลือกคลัง" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="TEG">TEG</SelectItem>
-                      <SelectItem value="Lucky">Lucky</SelectItem>
+                      {warehouses.map((w) => (
+                        <SelectItem key={w.id} value={w.code}>{w.name}</SelectItem>
+                      ))}
                       <SelectItem value="all">ทุกคลัง</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
               </div>
 
-              <Button onClick={handleStartSession} className="w-full">
-                <PlayCircle className="mr-2 h-4 w-4" />
+              <Button onClick={handleStartSession} className="w-full" disabled={startingSession}>
+                {startingSession ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlayCircle className="mr-2 h-4 w-4" />}
                 เริ่มรอบนับ
               </Button>
             </CardContent>
@@ -291,9 +384,9 @@ export default function InventoryAdjust() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {mockStockCountSessions.map((session) => (
+                  {sessions.map((session) => (
                     <TableRow key={session.id}>
-                      <TableCell className="font-medium">{session.id}</TableCell>
+                      <TableCell className="font-medium">SC{String(session.id).padStart(3, "0")}</TableCell>
                       <TableCell>{session.name}</TableCell>
                       <TableCell>
                         <Badge variant="outline">{session.warehouse}</Badge>
@@ -306,7 +399,7 @@ export default function InventoryAdjust() {
                         )}
                       </TableCell>
                       <TableCell className="text-sm">{session.startDate}</TableCell>
-                      <TableCell className="text-sm">{session.by}</TableCell>
+                      <TableCell className="text-sm">{session.startedBy}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <div className="text-sm">
@@ -315,32 +408,26 @@ export default function InventoryAdjust() {
                           <div className="w-20 bg-muted rounded-full h-2">
                             <div
                               className="bg-primary h-2 rounded-full"
-                              style={{ width: `${(session.counted / session.items) * 100}%` }}
+                              style={{ width: `${session.items > 0 ? (session.counted / session.items) * 100 : 0}%` }}
                             />
                           </div>
                         </div>
                       </TableCell>
                       <TableCell>
                         {session.status === "กำลังนับ" ? (
-                          <Button 
-                            size="sm" 
+                          <Button
+                            size="sm"
                             variant="outline"
-                            onClick={() => {
-                              setSelectedSession(session);
-                              setShowDetailDialog(true);
-                            }}
+                            onClick={() => openSessionDetail(session, "detail")}
                           >
                             <StopCircle className="mr-2 h-4 w-4" />
                             ดูรายละเอียด
                           </Button>
                         ) : (
-                          <Button 
-                            size="sm" 
+                          <Button
+                            size="sm"
                             variant="ghost"
-                            onClick={() => {
-                              setSelectedSession(session);
-                              setShowReportDialog(true);
-                            }}
+                            onClick={() => openSessionDetail(session, "report")}
                           >
                             ดูรายงาน
                           </Button>
@@ -348,6 +435,11 @@ export default function InventoryAdjust() {
                       </TableCell>
                     </TableRow>
                   ))}
+                  {sessions.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center text-muted-foreground py-8">ยังไม่มีรอบนับสต็อก</TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
             </CardContent>
@@ -372,11 +464,11 @@ export default function InventoryAdjust() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">ผู้นับ</p>
-                <p className="font-medium">{selectedSession?.by}</p>
+                <p className="font-medium">{selectedSession?.startedBy}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">ความคืบหน้า</p>
-                <p className="font-medium">{selectedSession?.counted} / {selectedSession?.items} รายการ</p>
+                <p className="font-medium">{sessionItems.filter(i => i.countedQty !== null).length} / {sessionItems.length} รายการ</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">สถานะ</p>
@@ -389,42 +481,48 @@ export default function InventoryAdjust() {
                 <CardTitle className="text-lg">รายการสินค้าที่กำลังนับ</CardTitle>
               </CardHeader>
               <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>รหัส</TableHead>
-                      <TableHead>ชื่อสินค้า</TableHead>
-                      <TableHead>สถานะการนับ</TableHead>
-                      <TableHead>ยอดในระบบ</TableHead>
-                      <TableHead>ยอดนับได้</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {mockProducts.map((product, idx) => (
-                      <TableRow key={product.code}>
-                        <TableCell className="font-medium">{product.code}</TableCell>
-                        <TableCell>{product.name}</TableCell>
-                        <TableCell>
-                          {idx < (selectedSession?.counted || 0) ? (
-                            <Badge className="bg-green-500">
-                              <CheckCircle2 className="mr-1 h-3 w-3" />
-                              นับแล้ว
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline">รอนับ</Badge>
-                          )}
-                        </TableCell>
-                        <TableCell>{product.ready + product.defective + product.damaged}</TableCell>
-                        <TableCell>
-                          {idx < (selectedSession?.counted || 0) ? 
-                            product.ready + product.defective + product.damaged + (Math.random() > 0.5 ? 5 : -3) : 
-                            "-"
-                          }
-                        </TableCell>
+                {loadingSessionDetail ? (
+                  <div className="flex justify-center py-6"><Loader2 className="w-6 h-6 animate-spin" /></div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>รหัส</TableHead>
+                        <TableHead>ชื่อสินค้า</TableHead>
+                        <TableHead>สถานะการนับ</TableHead>
+                        <TableHead>ยอดในระบบ</TableHead>
+                        <TableHead>ยอดนับได้</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {sessionItems.map((item) => (
+                        <TableRow key={item.productId}>
+                          <TableCell className="font-medium">{item.code}</TableCell>
+                          <TableCell>{item.name}</TableCell>
+                          <TableCell>
+                            {item.countedQty !== null ? (
+                              <Badge className="bg-green-500">
+                                <CheckCircle2 className="mr-1 h-3 w-3" />
+                                นับแล้ว
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline">รอนับ</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell>{item.systemQty}</TableCell>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              className="w-24"
+                              value={item.countedQty ?? ""}
+                              onChange={(e) => updateCountedQty(item.productId, e.target.value)}
+                            />
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
               </CardContent>
             </Card>
 
@@ -432,14 +530,11 @@ export default function InventoryAdjust() {
               <Button variant="outline" onClick={() => setShowDetailDialog(false)}>
                 ปิด
               </Button>
-              <Button onClick={() => {
-                toast({
-                  title: "บันทึกความคืบหน้า",
-                  description: "บันทึกข้อมูลการนับเรียบร้อยแล้ว",
-                });
-                setShowDetailDialog(false);
-              }}>
-                บันทึก
+              <Button onClick={handleSaveCount} disabled={savingCount}>
+                {savingCount ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}บันทึก
+              </Button>
+              <Button variant="default" className="bg-green-600 hover:bg-green-700" onClick={handleCompleteSession} disabled={completingSession}>
+                {completingSession ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}เสร็จสิ้นการนับ
               </Button>
             </div>
           </div>
@@ -467,7 +562,7 @@ export default function InventoryAdjust() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">ผู้นับ</p>
-                <p className="font-medium">{selectedSession?.by}</p>
+                <p className="font-medium">{selectedSession?.startedBy}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">สถานะ</p>
@@ -475,87 +570,84 @@ export default function InventoryAdjust() {
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="text-center">
-                    <p className="text-sm text-muted-foreground">รายการทั้งหมด</p>
-                    <p className="text-3xl font-bold">{selectedSession?.items}</p>
-                  </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="text-center">
-                    <p className="text-sm text-muted-foreground">ตรงกัน</p>
-                    <p className="text-3xl font-bold text-green-600">
-                      {Math.floor((selectedSession?.items || 0) * 0.8)}
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="text-center">
-                    <p className="text-sm text-muted-foreground">ต่างกัน</p>
-                    <p className="text-3xl font-bold text-orange-600">
-                      {Math.ceil((selectedSession?.items || 0) * 0.2)}
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+            {loadingSessionDetail ? (
+              <div className="flex justify-center py-6"><Loader2 className="w-6 h-6 animate-spin" /></div>
+            ) : (
+              <>
+                <div className="grid grid-cols-3 gap-4">
+                  <Card>
+                    <CardContent className="pt-6">
+                      <div className="text-center">
+                        <p className="text-sm text-muted-foreground">รายการทั้งหมด</p>
+                        <p className="text-3xl font-bold">{sessionItems.length}</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="pt-6">
+                      <div className="text-center">
+                        <p className="text-sm text-muted-foreground">ตรงกัน</p>
+                        <p className="text-3xl font-bold text-green-600">{matchedCount}</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="pt-6">
+                      <div className="text-center">
+                        <p className="text-sm text-muted-foreground">ต่างกัน</p>
+                        <p className="text-3xl font-bold text-orange-600">{diffItems.length}</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">รายการที่มีส่วนต่าง</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>รหัส</TableHead>
-                      <TableHead>ชื่อสินค้า</TableHead>
-                      <TableHead>ยอดในระบบ</TableHead>
-                      <TableHead>ยอดนับได้</TableHead>
-                      <TableHead>ส่วนต่าง</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {mockProducts.slice(0, 2).map((product) => {
-                      const systemStock = product.ready + product.defective + product.damaged;
-                      const countedStock = systemStock + (Math.random() > 0.5 ? 5 : -3);
-                      const diff = countedStock - systemStock;
-                      return (
-                        <TableRow key={product.code}>
-                          <TableCell className="font-medium">{product.code}</TableCell>
-                          <TableCell>{product.name}</TableCell>
-                          <TableCell>{systemStock}</TableCell>
-                          <TableCell>{countedStock}</TableCell>
-                          <TableCell>
-                            <span className={diff > 0 ? "text-green-600" : "text-red-600"}>
-                              {diff > 0 ? "+" : ""}{diff}
-                            </span>
-                          </TableCell>
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">รายการที่มีส่วนต่าง</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>รหัส</TableHead>
+                          <TableHead>ชื่อสินค้า</TableHead>
+                          <TableHead>ยอดในระบบ</TableHead>
+                          <TableHead>ยอดนับได้</TableHead>
+                          <TableHead>ส่วนต่าง</TableHead>
                         </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
+                      </TableHeader>
+                      <TableBody>
+                        {diffItems.map((item) => {
+                          const diff = (item.countedQty as number) - item.systemQty;
+                          return (
+                            <TableRow key={item.productId}>
+                              <TableCell className="font-medium">{item.code}</TableCell>
+                              <TableCell>{item.name}</TableCell>
+                              <TableCell>{item.systemQty}</TableCell>
+                              <TableCell>{item.countedQty}</TableCell>
+                              <TableCell>
+                                <span className={diff > 0 ? "text-green-600" : "text-red-600"}>
+                                  {diff > 0 ? "+" : ""}{diff}
+                                </span>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                        {diffItems.length === 0 && (
+                          <TableRow>
+                            <TableCell colSpan={5} className="text-center text-muted-foreground py-6">ไม่มีส่วนต่าง</TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              </>
+            )}
 
             <div className="flex gap-2 justify-end">
               <Button variant="outline" onClick={() => setShowReportDialog(false)}>
                 ปิด
-              </Button>
-              <Button onClick={() => {
-                toast({
-                  title: "ส่งออกรายงาน",
-                  description: "กำลังดาวน์โหลดรายงาน PDF...",
-                });
-              }}>
-                ส่งออก PDF
               </Button>
             </div>
           </div>

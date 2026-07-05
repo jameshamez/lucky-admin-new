@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,94 +7,103 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { ArrowRight, Search } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
-
-const mockProducts = [
-  { code: "P001", name: "ถังขยะพลาสติก 120L", unit: "ชิ้น" },
-  { code: "P002", name: "ถังขยะพลาสติก 240L", unit: "ชิ้น" },
-  { code: "P003", name: "ถังขยะสแตนเลส 80L", unit: "ชิ้น" },
-];
-
-const mockTransferHistory = [
-  {
-    id: "T001",
-    date: "2025-01-15 14:30",
-    product: "ถังขยะพลาสติก 120L",
-    quantity: 50,
-    from: "TEG",
-    to: "Lucky",
-    status: "พร้อมผลิต",
-    by: "สมชาย ใจดี",
-    note: "โอนไปสาขา Lucky ตามคำสั่งซื้อ"
-  },
-  {
-    id: "T002",
-    date: "2025-01-14 10:15",
-    product: "ถังขยะพลาสติก 240L",
-    quantity: 30,
-    from: "Lucky",
-    to: "TEG",
-    status: "พร้อมผลิต",
-    by: "สมหญิง รักงาน",
-    note: "โอนคืนสต็อกส่วนเกิน"
-  },
-];
+import { ArrowRight, Loader2 } from "lucide-react";
+import { toast } from "sonner";
+import { inventoryService, InventoryProduct, Warehouse, InventoryTransaction, StockStatus } from "@/services/inventoryService";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function InventoryTransfer() {
-  const { toast } = useToast();
+  const { user } = useAuth();
   const [selectedProduct, setSelectedProduct] = useState("");
   const [quantity, setQuantity] = useState("");
   const [fromWarehouse, setFromWarehouse] = useState("");
   const [toWarehouse, setToWarehouse] = useState("");
-  const [status, setStatus] = useState("ready");
+  const [status, setStatus] = useState<StockStatus>("ready");
   const [note, setNote] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = () => {
+  const [loading, setLoading] = useState(true);
+  const [products, setProducts] = useState<InventoryProduct[]>([]);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [history, setHistory] = useState<InventoryTransaction[]>([]);
+
+  const fetchAll = async () => {
+    setLoading(true);
+    try {
+      const [productsRes, warehousesRes, txnRes] = await Promise.all([
+        inventoryService.getProducts(),
+        inventoryService.getWarehouses(),
+        inventoryService.getTransactions({ type: "โอนคลัง" }),
+      ]);
+      if (productsRes.status === "success") setProducts(productsRes.data);
+      if (warehousesRes.status === "success") setWarehouses(warehousesRes.data);
+      if (txnRes.status === "success") setHistory(txnRes.data);
+    } catch (error) {
+      toast.error("ไม่สามารถโหลดข้อมูลได้");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchAll(); }, []);
+
+  const handleSubmit = async () => {
     if (!selectedProduct || !quantity || !fromWarehouse || !toWarehouse) {
-      toast({
-        title: "กรุณากรอกข้อมูลให้ครบ",
-        description: "โปรดระบุสินค้า จำนวน และคลังต้นทาง-ปลายทาง",
-        variant: "destructive"
-      });
+      toast.error("โปรดระบุสินค้า จำนวน และคลังต้นทาง-ปลายทาง");
       return;
     }
-
     if (fromWarehouse === toWarehouse) {
-      toast({
-        title: "ไม่สามารถโอนได้",
-        description: "คลังต้นทางและปลายทางต้องไม่เหมือนกัน",
-        variant: "destructive"
-      });
+      toast.error("คลังต้นทางและปลายทางต้องไม่เหมือนกัน");
       return;
     }
+    const product = products.find(p => p.code === selectedProduct);
+    if (!product) return;
 
-    toast({
-      title: "โอนย้ายสำเร็จ",
-      description: `โอน ${quantity} หน่วย จาก ${fromWarehouse} ไป ${toWarehouse} เรียบร้อยแล้ว`,
-    });
-
-    // Reset form
-    setSelectedProduct("");
-    setQuantity("");
-    setFromWarehouse("");
-    setToWarehouse("");
-    setStatus("ready");
-    setNote("");
+    setSubmitting(true);
+    try {
+      const res = await inventoryService.createTransaction({
+        type: "โอนคลัง",
+        productId: product.id,
+        warehouseCode: fromWarehouse,
+        toWarehouseCode: toWarehouse,
+        status,
+        quantity: Number(quantity),
+        note,
+        employeeName: user?.full_name,
+      });
+      if (res.status === "success") {
+        toast.success(`โอน ${quantity} หน่วย จาก ${fromWarehouse} ไป ${toWarehouse} เรียบร้อยแล้ว`);
+        setSelectedProduct(""); setQuantity(""); setFromWarehouse(""); setToWarehouse(""); setStatus("ready"); setNote("");
+        fetchAll();
+      } else {
+        toast.error(res.message || "โอนย้ายไม่สำเร็จ");
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const getStatusBadge = (status: string) => {
-    if (status === "พร้อมผลิต") return <Badge className="bg-green-500">พร้อมผลิต</Badge>;
-    if (status === "ตำหนิ") return <Badge className="bg-yellow-500">ตำหนิ</Badge>;
-    if (status === "ชำรุด") return <Badge className="bg-red-500">ชำรุด</Badge>;
-    return <Badge variant="outline">{status}</Badge>;
+  const getStatusBadge = (statusLabel: string) => {
+    if (statusLabel === "พร้อมผลิต") return <Badge className="bg-green-500">พร้อมผลิต</Badge>;
+    if (statusLabel === "ตำหนิ") return <Badge className="bg-yellow-500">ตำหนิ</Badge>;
+    if (statusLabel === "ชำรุด") return <Badge className="bg-red-500">ชำรุด</Badge>;
+    return <Badge variant="outline">{statusLabel}</Badge>;
   };
+
+  if (loading) {
+    return (
+      <div className="flex h-[400px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="ml-2">กำลังโหลดข้อมูล...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">โอนย้ายคลัง</h1>
-        <p className="text-muted-foreground">โอนสินค้าระหว่างคลัง TEG และ Lucky</p>
+        <p className="text-muted-foreground">โอนสินค้าระหว่างคลังในระบบ</p>
       </div>
 
       {/* Transfer Form */}
@@ -112,8 +121,8 @@ export default function InventoryTransfer() {
                   <SelectValue placeholder="เลือกสินค้า" />
                 </SelectTrigger>
                 <SelectContent>
-                  {mockProducts.map((product) => (
-                    <SelectItem key={product.code} value={product.code}>
+                  {products.map((product) => (
+                    <SelectItem key={product.id} value={product.code}>
                       {product.code} - {product.name}
                     </SelectItem>
                   ))}
@@ -140,8 +149,9 @@ export default function InventoryTransfer() {
                   <SelectValue placeholder="เลือกคลังต้นทาง" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="TEG">TEG</SelectItem>
-                  <SelectItem value="Lucky">Lucky</SelectItem>
+                  {warehouses.map((w) => (
+                    <SelectItem key={w.id} value={w.code}>{w.name}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -157,8 +167,9 @@ export default function InventoryTransfer() {
                   <SelectValue placeholder="เลือกคลังปลายทาง" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="TEG">TEG</SelectItem>
-                  <SelectItem value="Lucky">Lucky</SelectItem>
+                  {warehouses.filter(w => w.code !== fromWarehouse).map((w) => (
+                    <SelectItem key={w.id} value={w.code}>{w.name}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -166,7 +177,7 @@ export default function InventoryTransfer() {
 
           <div className="space-y-2">
             <Label>สถานะสินค้า</Label>
-            <Select value={status} onValueChange={setStatus}>
+            <Select value={status} onValueChange={(v) => setStatus(v as StockStatus)}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -188,8 +199,8 @@ export default function InventoryTransfer() {
             />
           </div>
 
-          <Button onClick={handleSubmit} className="w-full" size="lg">
-            <ArrowRight className="mr-2 h-4 w-4" />
+          <Button onClick={handleSubmit} className="w-full" size="lg" disabled={submitting}>
+            {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ArrowRight className="mr-2 h-4 w-4" />}
             ยืนยันการโอนย้าย
           </Button>
         </CardContent>
@@ -217,23 +228,31 @@ export default function InventoryTransfer() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {mockTransferHistory.map((item) => (
-                <TableRow key={item.id}>
-                  <TableCell className="font-medium">{item.id}</TableCell>
-                  <TableCell className="text-sm">{item.date}</TableCell>
-                  <TableCell>{item.product}</TableCell>
-                  <TableCell className="font-semibold">{item.quantity}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{item.from}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{item.to}</Badge>
-                  </TableCell>
-                  <TableCell>{getStatusBadge(item.status)}</TableCell>
-                  <TableCell className="text-sm">{item.by}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{item.note}</TableCell>
+              {history.map((item) => {
+                const [from, to] = item.warehouse.split(" → ");
+                return (
+                  <TableRow key={item.id}>
+                    <TableCell className="font-medium">{item.id}</TableCell>
+                    <TableCell className="text-sm">{item.date}</TableCell>
+                    <TableCell>{item.product}</TableCell>
+                    <TableCell className="font-semibold">{item.quantity}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{from}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{to}</Badge>
+                    </TableCell>
+                    <TableCell>{getStatusBadge(item.statusTo)}</TableCell>
+                    <TableCell className="text-sm">{item.by}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{item.note}</TableCell>
+                  </TableRow>
+                );
+              })}
+              {history.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={9} className="text-center text-muted-foreground py-8">ยังไม่มีประวัติการโอนย้าย</TableCell>
                 </TableRow>
-              ))}
+              )}
             </TableBody>
           </Table>
         </CardContent>
