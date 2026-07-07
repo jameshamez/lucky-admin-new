@@ -78,6 +78,28 @@ export const accountingService = {
         return await res.json();
     },
 
+    // Employee expense reimbursement claims
+    getEmployeeExpenses: async () => {
+        const res = await fetch(`${API_BASE_URL}/accounting/employee_expenses.php`);
+        return await res.json();
+    },
+    createEmployeeExpense: async (data: any) => {
+        const res = await fetch(`${API_BASE_URL}/accounting/employee_expenses.php`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        });
+        return await res.json();
+    },
+    updateEmployeeExpenseStatus: async (id: string, status: string) => {
+        const res = await fetch(`${API_BASE_URL}/accounting/employee_expenses.php?id=${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status }),
+        });
+        return await res.json();
+    },
+
     getExpenses: async () => {
         const res = await fetch(`${API_BASE_URL}/accounting/expenses.php`);
         return await res.json();
@@ -202,7 +224,7 @@ export const accountingService = {
         return await res.json();
     },
 
-    getReportsData: async (type: 'summary' | 'sales' | 'inventory' | 'petty_cash' | 'office_equipment') => {
+    getReportsData: async (type: 'summary' | 'sales' | 'inventory' | 'petty_cash' | 'office_equipment' | 'office_supplies') => {
         const res = await fetch(`${API_BASE_URL}/accounting/reports.php?type=${type}`);
         return await res.json();
     }

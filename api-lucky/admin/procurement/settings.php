@@ -73,6 +73,36 @@ if ($method === 'POST') {
     exit();
 }
 
+if ($method === 'PUT') {
+    $id = intval($_GET['id'] ?? 0);
+    if (!$id) {
+        echo json_encode(["status" => "error", "message" => "ID required"]);
+        exit();
+    }
+    $input = json_decode(file_get_contents("php://input"), true);
+
+    if ($type === 'materials') {
+        $stmt = $conn->prepare("UPDATE procurement_materials SET category = ?, material_name = ? WHERE id = ?");
+        $stmt->bind_param("ssi", $input['category'], $input['material_name'], $id);
+    } else if ($type === 'colors') {
+        $stmt = $conn->prepare("UPDATE procurement_colors SET name_en = ?, name_th = ? WHERE id = ?");
+        $stmt->bind_param("ssi", $input['name_en'], $input['name_th'], $id);
+    } else if ($type === 'shipping') {
+        $stmt = $conn->prepare("UPDATE procurement_shipping_methods SET name = ? WHERE id = ?");
+        $stmt->bind_param("si", $input['name'], $id);
+    } else {
+        echo json_encode(["status" => "error", "message" => "Invalid type"]);
+        exit();
+    }
+
+    if ($stmt->execute()) {
+        echo json_encode(["status" => "success", "message" => "Updated"]);
+    } else {
+        echo json_encode(["status" => "error", "message" => $conn->error]);
+    }
+    exit();
+}
+
 if ($method === 'DELETE') {
     $id = intval($_GET['id'] ?? 0);
     if (!$id) {

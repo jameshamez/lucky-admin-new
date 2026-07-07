@@ -1,4 +1,5 @@
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { purchaseRequisitionService } from "@/services/purchaseRequisitionService";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -57,9 +58,15 @@ interface PRPayment {
 
 interface PRAttachment {
   id: string;
-  file: File;
+  file: File | null;
   preview: string;
+  name?: string;
+  size?: number;
+  url?: string;
 }
+
+const attName = (att: PRAttachment) => att.file?.name ?? att.name ?? "";
+const attSize = (att: PRAttachment) => att.file?.size ?? att.size ?? 0;
 
 interface PRItem {
   id: string;
@@ -123,92 +130,6 @@ const createEmptyLineItem = (): PRLineItem => ({
   exchangeRate: 1,
 });
 
-// ========== Sample Data ==========
-const initialData: PRItem[] = [
-  {
-    id: "1",
-    prNumber: "PR-2026-0001",
-    issueDate: new Date(2026, 1, 10),
-    usageDate: new Date(2026, 1, 15),
-    requester: "นายสมชาย ใจดี",
-    purposeType: "new",
-    purposeText: "ใช้ในแผนกบัญชี",
-    jobIds: [],
-    channel: "Online",
-    items: [
-      { id: "i1", description: "กระดาษ A4 80 แกรม", link: "https://shopee.co.th/example", qty: 10, unitPrice: 120, currency: "THB", exchangeRate: 1 },
-    ],
-    shipping: 50,
-    includeVat: false,
-    payments: [],
-    attachments: [],
-    receiveAttachments: [],
-    status: "pending",
-  },
-  {
-    id: "2",
-    prNumber: "PR-2026-0002",
-    issueDate: new Date(2026, 1, 8),
-    usageDate: new Date(2026, 1, 12),
-    requester: "นางสาวสมหญิง รักงาน",
-    purposeType: "new",
-    purposeText: "เปลี่ยนหมึกเครื่องปริ้นชั้น 2",
-    jobIds: [],
-    channel: "Local",
-    items: [
-      { id: "i2", description: "หมึกปริ้นเตอร์ HP 680 สีดำ", link: "", qty: 3, unitPrice: 350, currency: "THB", exchangeRate: 1 },
-    ],
-    shipping: 0,
-    includeVat: true,
-    payments: [{ id: "p1", date: new Date(2026, 1, 9), amount: 1050, method: "โอนเงิน" }],
-    attachments: [],
-    receiveAttachments: [],
-    status: "ordered",
-    poNumber: "PO-2026-0010",
-  },
-  {
-    id: "3",
-    prNumber: "PR-2026-0003",
-    issueDate: new Date(2026, 1, 5),
-    usageDate: new Date(2026, 1, 7),
-    requester: "นายวิชัย สุขใจ",
-    purposeType: "job",
-    purposeText: "",
-    jobIds: ["JOB-2026-001"],
-    channel: "Import",
-    items: [
-      { id: "i3", description: "ถ้วยรางวัลคริสตัล 12 นิ้ว", link: "", qty: 50, unitPrice: 1200, currency: "THB", exchangeRate: 1 },
-      { id: "i4", description: "ฐานไม้สัก", link: "", qty: 50, unitPrice: 350, currency: "THB", exchangeRate: 1 },
-    ],
-    shipping: 500,
-    includeVat: true,
-    payments: [],
-    attachments: [],
-    receiveAttachments: [],
-    status: "received",
-  },
-  {
-    id: "4",
-    prNumber: "PR-2026-0004",
-    issueDate: new Date(2026, 1, 3),
-    usageDate: new Date(2026, 1, 10),
-    requester: "นางสาวพิมพ์ใจ ดีมาก",
-    purposeType: "new",
-    purposeText: "ทดแทนเก้าอี้ที่ชำรุด",
-    jobIds: [],
-    channel: "Lazada",
-    items: [
-      { id: "i5", description: "เก้าอี้สำนักงาน สีดำ", link: "https://lazada.co.th/example", qty: 1, unitPrice: 4500, currency: "THB", exchangeRate: 1 },
-    ],
-    shipping: 200,
-    includeVat: false,
-    payments: [],
-    attachments: [],
-    receiveAttachments: [],
-    status: "rejected",
-  },
-];
-
 // ========== Helpers ==========
 const deepSearchObject = (obj: Record<string, any>, term: string): boolean => {
   const lowerTerm = term.toLowerCase();
@@ -257,9 +178,75 @@ const calcPRTotalPaid = (pr: PRItem) => pr.payments.reduce((s, p) => s + p.amoun
 const getPaymentStatus = (total: number, paid: number) =>
   total > 0 && paid >= total ? "paid" : "unpaid";
 
+// ========== API <-> Client mapping ==========
+const apiAttachmentToClient = (a: any): PRAttachment => ({
+  id: String(a.id),
+  file: null,
+  preview: a.url || "",
+  name: a.name,
+  size: a.size,
+  url: a.url,
+});
+
+const mapApiToPR = (api: any): PRItem => ({
+  id: String(api.id),
+  prNumber: api.prNumber,
+  issueDate: api.issueDate ? new Date(api.issueDate) : new Date(),
+  usageDate: api.usageDate ? new Date(api.usageDate) : new Date(),
+  requester: api.requester,
+  purposeType: api.purposeType,
+  purposeText: api.purposeText || "",
+  jobIds: api.jobIds || [],
+  channel: api.channel || "",
+  items: (api.items || []).map((i: any) => ({
+    id: String(i.id),
+    description: i.description,
+    link: i.link || "",
+    qty: i.qty,
+    unitPrice: i.unitPrice,
+    currency: i.currency,
+    exchangeRate: i.exchangeRate,
+  })),
+  shipping: api.shipping || 0,
+  includeVat: !!api.includeVat,
+  payments: (api.payments || []).map((p: any) => ({
+    id: String(p.id),
+    date: p.date ? new Date(p.date) : new Date(),
+    amount: p.amount,
+    method: p.method,
+    evidence: p.evidenceUrl ? { id: `ev-${p.id}`, file: null, preview: p.evidenceUrl, name: p.evidenceName, url: p.evidenceUrl } : null,
+  })),
+  attachments: (api.attachments || []).map(apiAttachmentToClient),
+  receiveAttachments: (api.receiveAttachments || []).map(apiAttachmentToClient),
+  status: api.status,
+  poNumber: api.poNumber || "",
+});
+
 // ========== Main Component ==========
 export default function PurchaseRequisition() {
-  const [requests, setRequests] = useState<PRItem[]>(initialData);
+  const [requests, setRequests] = useState<PRItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const fetchRequests = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await purchaseRequisitionService.getAll();
+      if (res.status === "success") {
+        setRequests((res.data || []).map(mapApiToPR));
+      } else {
+        toast.error("ไม่สามารถโหลดข้อมูลใบขอซื้อได้");
+      }
+    } catch {
+      toast.error("เกิดข้อผิดพลาดในการเชื่อมต่อ API");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchRequests();
+  }, [fetchRequests]);
 
   // Drawer state
   const [drawerMode, setDrawerMode] = useState<"create" | "edit" | "view" | null>(null);
@@ -326,11 +313,6 @@ export default function PurchaseRequisition() {
     setFilterStatus("all");
   };
 
-  const generatePRNumber = () => {
-    const year = new Date().getFullYear();
-    const seq = String(requests.length + 1).padStart(4, "0");
-    return `PR-${year}-${seq}`;
-  };
 
   // Calculations for form
   const formSubtotal = useMemo(() => form.items.reduce((s, i) => s + calcLineTotal(i), 0), [form.items]);
@@ -438,7 +420,19 @@ export default function PurchaseRequisition() {
     setActivePR(null);
   };
 
-  const handleSave = () => {
+  // Uploads any attachment that still only has a local File (not yet persisted) and
+  // returns a plain {url, name, size} record ready for the API payload.
+  const ensureUploaded = async (att: PRAttachment): Promise<{ url: string; name: string; size: number } | null> => {
+    if (att.url) return { url: att.url, name: att.name || attName(att), size: att.size ?? attSize(att) };
+    if (!att.file) return null;
+    const res = await purchaseRequisitionService.uploadFile(att.file);
+    if (res.status === "success" && res.url) {
+      return { url: res.url, name: res.file?.name || att.file.name, size: res.file?.size ?? att.file.size };
+    }
+    throw new Error("อัปโหลดไฟล์ไม่สำเร็จ: " + attName(att));
+  };
+
+  const handleSave = async () => {
     if (!form.requester) {
       toast.error("กรุณาเลือกชื่อผู้ขอซื้อ");
       return;
@@ -448,25 +442,74 @@ export default function PurchaseRequisition() {
       return;
     }
 
-    if (drawerMode === "create") {
-      const newPR: PRItem = {
-        id: String(Date.now()),
-        prNumber: generatePRNumber(),
-        status: "pending",
-        ...form,
+    setIsSaving(true);
+    try {
+      const [attachments, receiveAttachments, payments] = await Promise.all([
+        Promise.all(form.attachments.map(ensureUploaded)),
+        Promise.all(form.receiveAttachments.map(ensureUploaded)),
+        Promise.all(form.payments.map(async (p) => ({
+          date: format(p.date, "yyyy-MM-dd"),
+          amount: p.amount,
+          method: p.method,
+          ...(p.evidence ? await ensureUploaded(p.evidence).then(e => ({ evidenceUrl: e?.url, evidenceName: e?.name })) : { evidenceUrl: null, evidenceName: null }),
+        }))),
+      ]);
+
+      const payload = {
+        issueDate: format(form.issueDate, "yyyy-MM-dd"),
+        usageDate: format(form.usageDate, "yyyy-MM-dd"),
+        requester: form.requester,
+        purposeType: form.purposeType,
+        purposeText: form.purposeText,
+        jobIds: form.jobIds,
+        channel: form.channel,
+        shipping: form.shipping,
+        includeVat: form.includeVat,
+        poNumber: form.poNumber || null,
+        items: form.items.filter(i => i.description).map(i => ({
+          description: i.description, link: i.link, qty: i.qty, unitPrice: i.unitPrice, currency: i.currency, exchangeRate: i.exchangeRate,
+        })),
+        payments,
+        attachments: attachments.filter(Boolean),
+        receiveAttachments: receiveAttachments.filter(Boolean),
       };
-      setRequests(prev => [newPR, ...prev]);
-      toast.success("สร้าง PR เรียบร้อย: " + newPR.prNumber);
-    } else if (drawerMode === "edit" && activePR) {
-      setRequests(prev => prev.map(r => r.id === activePR.id ? { ...r, ...form } : r));
-      toast.success("แก้ไข PR เรียบร้อย");
+
+      if (drawerMode === "create") {
+        const res = await purchaseRequisitionService.create(payload);
+        if (res.status === "success") {
+          toast.success("สร้าง PR เรียบร้อย: " + res.data.prNumber);
+          await fetchRequests();
+          closeDrawer();
+        } else {
+          toast.error(res.message || "บันทึกไม่สำเร็จ");
+        }
+      } else if (drawerMode === "edit" && activePR) {
+        const res = await purchaseRequisitionService.update(activePR.id, payload);
+        if (res.status === "success") {
+          toast.success("แก้ไข PR เรียบร้อย");
+          await fetchRequests();
+          closeDrawer();
+        } else {
+          toast.error(res.message || "บันทึกไม่สำเร็จ");
+        }
+      }
+    } catch (e: any) {
+      toast.error(e?.message || "เกิดข้อผิดพลาดในการบันทึก");
+    } finally {
+      setIsSaving(false);
     }
-    closeDrawer();
   };
 
-  const handleStatusChange = (id: string, newStatus: PRItem["status"]) => {
+  const handleStatusChange = async (id: string, newStatus: PRItem["status"]) => {
     const item = requests.find(r => r.id === id);
+    // Optimistic update, reverted on failure
     setRequests(prev => prev.map(r => r.id === id ? { ...r, status: newStatus } : r));
+    const res = await purchaseRequisitionService.updateStatus(id, newStatus);
+    if (res.status !== "success") {
+      toast.error(res.message || "เปลี่ยนสถานะไม่สำเร็จ");
+      fetchRequests();
+      return;
+    }
     if (newStatus === "rejected" && item) {
       toast.error(`🔔 แจ้งเตือน: ใบขอซื้อ ${item.prNumber} ไม่อนุมัติ — แจ้ง "${item.requester}" ให้ตรวจสอบและแก้ไข`, { duration: 6000, icon: <Bell className="w-4 h-4" /> });
     } else {
@@ -601,7 +644,7 @@ export default function PurchaseRequisition() {
 
   const openAttachmentPreview = (att: PRAttachment) => {
     if (!att.preview) return;
-    setImagePreview({ src: att.preview, title: att.file.name });
+    setImagePreview({ src: att.preview, title: attName(att) });
   };
 
   const renderAttachmentImageButton = (att: PRAttachment, className = "w-full h-full object-cover rounded") => (
@@ -609,9 +652,9 @@ export default function PurchaseRequisition() {
       type="button"
       className="group relative h-full w-full overflow-hidden rounded cursor-zoom-in"
       onClick={() => openAttachmentPreview(att)}
-      aria-label={`ดูรูป ${att.file.name}`}
+      aria-label={`ดูรูป ${attName(att)}`}
     >
-      <img src={att.preview} alt={att.file.name} className={className} />
+      <img src={att.preview} alt={attName(att)} className={className} />
       <span className="absolute inset-0 flex items-center justify-center bg-black/45 opacity-0 transition-opacity group-hover:opacity-100">
         <Eye className="h-5 w-5 text-white" />
       </span>
@@ -807,7 +850,11 @@ export default function PurchaseRequisition() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredRequests.length === 0 ? (
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={9} className="text-center text-muted-foreground py-8">กำลังโหลดข้อมูล...</TableCell>
+                </TableRow>
+              ) : filteredRequests.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={9} className="text-center text-muted-foreground py-8">ไม่พบรายการ</TableCell>
                 </TableRow>
@@ -892,7 +939,7 @@ export default function PurchaseRequisition() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label className="text-xs font-semibold">เลขที่ PR</Label>
-                    <Input value={isReadonly && activePR ? activePR.prNumber : generatePRNumber()} disabled className="h-9 text-sm bg-muted" />
+                    <Input value={activePR ? activePR.prNumber : "จะออกเลขที่อัตโนมัติเมื่อบันทึก"} disabled className="h-9 text-sm bg-muted" />
                   </div>
                   <div>
                     <Label className="text-xs font-semibold">เลขที่ PO (อ้างอิง)</Label>
@@ -1284,8 +1331,8 @@ export default function PurchaseRequisition() {
                                   </div>
                                 )}
                                 <div className="min-w-0 flex-1">
-                                  <p className="truncate text-sm font-medium">{pay.evidence.file.name}</p>
-                                  <p className="text-xs text-muted-foreground">{(pay.evidence.file.size / 1024).toFixed(1)} KB</p>
+                                  <p className="truncate text-sm font-medium">{attName(pay.evidence)}</p>
+                                  <p className="text-xs text-muted-foreground">{(attSize(pay.evidence) / 1024).toFixed(1)} KB</p>
                                 </div>
                                 {!isReadonly && (
                                   <Button
@@ -1349,7 +1396,7 @@ export default function PurchaseRequisition() {
                           ) : (
                             <div className="text-center">
                               <FileText className="w-6 h-6 mx-auto text-muted-foreground" />
-                              <p className="text-[10px] mt-1 truncate w-20">{att.file.name}</p>
+                              <p className="text-[10px] mt-1 truncate w-20">{attName(att)}</p>
                             </div>
                           )}
                           <Button
@@ -1381,7 +1428,7 @@ export default function PurchaseRequisition() {
                         ) : (
                           <div className="text-center">
                             <FileText className="w-6 h-6 mx-auto text-muted-foreground" />
-                            <p className="text-[10px] mt-1 truncate w-20">{att.file.name}</p>
+                            <p className="text-[10px] mt-1 truncate w-20">{attName(att)}</p>
                           </div>
                         )}
                       </div>
@@ -1420,7 +1467,7 @@ export default function PurchaseRequisition() {
                               ) : (
                                 <div className="text-center text-green-700">
                                   <ImageIcon className="w-6 h-6 mx-auto mb-1 opacity-70" />
-                                  <p className="text-[10px] mt-1 truncate w-20 px-1">{att.file.name}</p>
+                                  <p className="text-[10px] mt-1 truncate w-20 px-1">{attName(att)}</p>
                                 </div>
                               )}
                               <Button
@@ -1447,7 +1494,7 @@ export default function PurchaseRequisition() {
                               ) : (
                                 <div className="text-center text-green-700">
                                   <ImageIcon className="w-6 h-6 mx-auto mb-1 opacity-70" />
-                                  <p className="text-[10px] mt-1 truncate w-24 px-1">{att.file.name}</p>
+                                  <p className="text-[10px] mt-1 truncate w-24 px-1">{attName(att)}</p>
                                 </div>
                               )}
                             </div>
@@ -1467,9 +1514,9 @@ export default function PurchaseRequisition() {
           {/* Sticky Footer */}
           {!isReadonly && (
             <div className="absolute bottom-0 left-0 right-0 border-t bg-background p-4 flex justify-end gap-3 z-10">
-              <Button variant="outline" onClick={closeDrawer}>ยกเลิก</Button>
-              <Button onClick={handleSave} style={{ backgroundColor: CI_PRIMARY }} className="text-white hover:opacity-90">
-                บันทึก
+              <Button variant="outline" onClick={closeDrawer} disabled={isSaving}>ยกเลิก</Button>
+              <Button onClick={handleSave} disabled={isSaving} style={{ backgroundColor: CI_PRIMARY }} className="text-white hover:opacity-90">
+                {isSaving ? "กำลังบันทึก..." : "บันทึก"}
               </Button>
             </div>
           )}

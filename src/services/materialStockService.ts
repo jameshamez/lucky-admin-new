@@ -101,6 +101,10 @@ class MaterialStockService {
 // Fixed instances for common departments
 export const designStockService = new MaterialStockService('design');
 export const salesStockService = new MaterialStockService('sales');
+// 'all' tells the backend to skip its department filter — used by Accounting's
+// cross-department approval view (InternalRequests.tsx), which needs to see and
+// approve/reject requests from every department, not just one.
+export const accountingStockService = new MaterialStockService('all');
 
 // Default export if needed (will default to design for backward compatibility)
 export const materialStockService = designStockService;

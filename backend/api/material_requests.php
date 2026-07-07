@@ -370,6 +370,11 @@ switch ($method) {
                 $params[] = $data->remark;
                 $types .= 's';
             }
+            if (isset($data->status)) {
+                $update_fields[] = "status = ?";
+                $params[] = $data->status;
+                $types .= 's';
+            }
 
             if (!empty($update_fields)) {
                 $params[] = $id;

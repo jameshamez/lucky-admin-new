@@ -40,10 +40,10 @@ $stats = [
     "unpaidAmount" => 0
 ];
 
-$res = safe_query($conn, "SELECT 
+$res = safe_query($conn, "SELECT
     SUM(CASE WHEN type='INCOME' THEN amount ELSE 0 END) as income,
-    SUM(CASE WHEN type='EXPENSE' THEN amount ELSE 0 END) as expense 
-    FROM `accounting_transactions` 
+    SUM(CASE WHEN type='EXPENSE' THEN amount ELSE 0 END) as expense
+    FROM `accounting_transactions`
     WHERE MONTH(transaction_date) = MONTH(CURRENT_DATE()) AND YEAR(transaction_date) = YEAR(CURRENT_DATE())");
 if ($res && $row = $res->fetch_assoc()) {
     $stats['monthlyIncome'] = (float) $row['income'];
@@ -77,10 +77,10 @@ for ($i = 5; $i >= 0; $i--) {
     $m = date('m', strtotime($date));
     $y = date('Y', strtotime($date));
 
-    $q = "SELECT 
+    $q = "SELECT
             SUM(CASE WHEN type='INCOME' THEN amount ELSE 0 END) as inc,
-            SUM(CASE WHEN type='EXPENSE' THEN amount ELSE 0 END) as exp 
-          FROM `accounting_transactions` 
+            SUM(CASE WHEN type='EXPENSE' THEN amount ELSE 0 END) as exp
+          FROM `accounting_transactions`
           WHERE MONTH(transaction_date) = '$m' AND YEAR(transaction_date) = '$y'";
     $resM = safe_query($conn, $q);
     $inc = 0;
@@ -108,10 +108,16 @@ if ($resTasks) {
 }
 
 // --- 4. Petty Cash Summary ---
+$pettyCashFund = 0.0;
+$resFund = safe_query($conn, "SELECT setting_value FROM system_settings WHERE setting_key = 'petty_cash_fund'");
+if ($resFund && $rowFund = $resFund->fetch_assoc()) {
+    $decodedFund = json_decode($rowFund['setting_value'], true);
+    $pettyCashFund = isset($decodedFund['amount']) ? (float) $decodedFund['amount'] : 0.0;
+}
 $pettyCash = [
-    "total" => 50000,
+    "total" => $pettyCashFund,
     "spent" => 0,
-    "remaining" => 50000,
+    "remaining" => $pettyCashFund,
     "percent" => 100,
     "stats" => ["pending" => 0, "approved" => 0, "paid" => 0, "clearing" => 0, "all" => 0]
 ];
@@ -178,9 +184,9 @@ if ($resCat) {
 
 // --- 7. Top 5 Products ---
 $topProducts = [];
-$resTop = safe_query($conn, "SELECT product_name as name, MAX(item_type) as category, SUM(total_price_item) as sales, SUM(quantity) as orders 
-                        FROM `order_items` 
-                        GROUP BY product_name 
+$resTop = safe_query($conn, "SELECT product_name as name, MAX(item_type) as category, SUM(total_price_item) as sales, SUM(quantity) as orders
+                        FROM `order_items`
+                        GROUP BY product_name
                         ORDER BY sales DESC LIMIT 5");
 if ($resTop) {
     while ($row = $resTop->fetch_assoc()) {
@@ -195,9 +201,9 @@ if ($resTop) {
 
 // --- 8. Accounts Receivable (ลูกหนี้) ---
 $accountsReceivable = [];
-$resAR = safe_query($conn, "SELECT customer_name as company, remaining_amount as amount, due_date as dueDate, days_overdue as aging 
-                      FROM `accounting_customer_accounts` 
-                      WHERE status != 'ชำระเสร็จสิ้น' 
+$resAR = safe_query($conn, "SELECT customer_name as company, remaining_amount as amount, due_date as dueDate, days_overdue as aging
+                      FROM `accounting_customer_accounts`
+                      WHERE status != 'ชำระเสร็จสิ้น'
                       ORDER BY days_overdue DESC LIMIT 5");
 if ($resAR) {
     while ($row = $resAR->fetch_assoc()) {
@@ -229,10 +235,10 @@ if ($resAP) {
 
 // --- 8.2 Recent Activities (Union of transactions and follow-ups) ---
 $recentActivities = [];
-$resAct = safe_query($conn, "(SELECT type as action, description as detail, 'System' as user, transaction_date as date_sort, DATE_FORMAT(transaction_date, '%H:%i %d/%m/%Y') as time 
+$resAct = safe_query($conn, "(SELECT type as action, description as detail, 'System' as user, transaction_date as date_sort, DATE_FORMAT(transaction_date, '%H:%i %d/%m/%Y') as time
                         FROM `accounting_transactions`)
                        UNION
-                       (SELECT 'AR Follow-up' as action, detail, user_name as user, created_at as date_sort, DATE_FORMAT(created_at, '%H:%i %d/%m/%Y') as time 
+                       (SELECT 'AR Follow-up' as action, detail, user_name as user, created_at as date_sort, DATE_FORMAT(created_at, '%H:%i %d/%m/%Y') as time
                         FROM `accounting_ar_follow_ups`)
                        ORDER BY date_sort DESC LIMIT 8");
 if ($resAct) {
@@ -251,7 +257,7 @@ $inventory = [
     "counts" => ["total" => 0, "ready" => 0, "damaged" => 0, "low" => 0],
     "lowStock" => []
 ];
-$resInv = safe_query($conn, "SELECT 
+$resInv = safe_query($conn, "SELECT
     COUNT(*) as total,
     SUM(CASE WHEN quantity > 0 THEN 1 ELSE 0 END) as ready,
     SUM(CASE WHEN quantity <= min_qty AND quantity > 0 THEN 1 ELSE 0 END) as low
@@ -262,9 +268,9 @@ if ($resInv && $row = $resInv->fetch_assoc()) {
     $inventory['counts']['low'] = (int) $row['low'];
 }
 
-$resLow = safe_query($conn, "SELECT item_name as name, 'OFFICE' as code, quantity as stock, min_qty as min, 'Office' as warehouse 
-                       FROM `office_inventory` 
-                       WHERE quantity <= min_qty 
+$resLow = safe_query($conn, "SELECT item_name as name, 'OFFICE' as code, quantity as stock, min_qty as min, 'Office' as warehouse
+                       FROM `office_inventory`
+                       WHERE quantity <= min_qty
                        LIMIT 3");
 if ($resLow) {
     while ($row = $resLow->fetch_assoc()) {
@@ -300,6 +306,140 @@ if ($resWO) {
     $workOrders['margin'] = ($workOrders['revenue'] > 0) ? round(($workOrders['gp'] / $workOrders['revenue']) * 100, 1) : 0;
 }
 
+// --- 11. Top Expense Categories (this month) ---
+$topExpenseCategories = [];
+$resExpCat = safe_query($conn, "SELECT category, SUM(amount) as total FROM `accounting_transactions`
+                          WHERE type = 'EXPENSE' AND MONTH(transaction_date) = MONTH(CURRENT_DATE()) AND YEAR(transaction_date) = YEAR(CURRENT_DATE())
+                          GROUP BY category ORDER BY total DESC LIMIT 4");
+if ($resExpCat) {
+    $expCatRows = [];
+    $expCatTotal = 0;
+    while ($row = $resExpCat->fetch_assoc()) {
+        $amt = (float) $row['total'];
+        $expCatTotal += $amt;
+        $expCatRows[] = ["name" => $row['category'] ?: "อื่นๆ", "amount" => $amt];
+    }
+    foreach ($expCatRows as $r) {
+        $r['percent'] = ($expCatTotal > 0) ? round(($r['amount'] / $expCatTotal) * 100) : 0;
+        $topExpenseCategories[] = $r;
+    }
+}
+
+// --- 12. Top GP Jobs (same 0.65 expense estimate convention as work_orders.php) ---
+$topGPJobs = [];
+$resTopGP = safe_query($conn, "SELECT order_id, customer_name, job_name, order_date, total_amount, order_status FROM `orders` ORDER BY total_amount DESC LIMIT 30");
+if ($resTopGP) {
+    $gpCandidates = [];
+    while ($row = $resTopGP->fetch_assoc()) {
+        $revenue = (float) $row['total_amount'];
+        $expense = $revenue * 0.65;
+        $gp = $revenue - $expense;
+        $status = $row['order_status'];
+        $workStatus = "กำลังดำเนินการ";
+        if ($status === 'จัดส่งครบแล้ว' || $status === 'ปิดงาน') {
+            $workStatus = "ปิดงาน";
+        } elseif ($status === 'ยืนยันคำสั่งซื้อ' || $status === 'ตรวจสอบแล้ว') {
+            $workStatus = "ตรวจสอบแล้ว";
+        }
+        $gpCandidates[] = [
+            "id" => "WO-" . date('Y', strtotime($row['order_date'])) . "-" . str_pad($row['order_id'], 3, '0', STR_PAD_LEFT),
+            "project" => $row['job_name'] ?: "โปรเจกต์งาน",
+            "customer" => $row['customer_name'] ?: "ไม่ระบุชื่อลูกค้า",
+            "gp" => $gp,
+            "margin" => $revenue > 0 ? round(($gp / $revenue) * 100, 1) : 0,
+            "status" => $workStatus,
+        ];
+    }
+    usort($gpCandidates, fn($a, $b) => $b['gp'] <=> $a['gp']);
+    $topGPJobs = array_slice($gpCandidates, 0, 5);
+}
+
+// --- 13. AR / AP Summary (total pending, not just top 5) ---
+$arSummary = ["total" => 0, "count" => 0];
+$resARSum = safe_query($conn, "SELECT COUNT(*) as cnt, SUM(remaining_amount) as total FROM `accounting_customer_accounts` WHERE status != 'ชำระเสร็จสิ้น'");
+if ($resARSum && $row = $resARSum->fetch_assoc()) {
+    $arSummary['count'] = (int) $row['cnt'];
+    $arSummary['total'] = (float) $row['total'];
+}
+
+$apSummary = ["total" => 0, "count" => 0];
+$resAPSum = safe_query($conn, "SELECT COUNT(*) as cnt, SUM(amount) as total FROM `accounting_petty_cash` WHERE status IN ('รออนุมัติ', 'รอเบิกจ่าย')");
+if ($resAPSum && $row = $resAPSum->fetch_assoc()) {
+    $apSummary['count'] = (int) $row['cnt'];
+    $apSummary['total'] = (float) $row['total'];
+}
+
+// --- 14. Office Assets Overview ---
+$officeAssets = [
+    "counts" => ["total" => 0, "active" => 0, "available" => 0, "repair" => 0],
+    "byCategory" => [],
+    "totalValue" => 0
+];
+$resOA = safe_query($conn, "SELECT
+    COUNT(*) as total,
+    SUM(CASE WHEN status = 'ใช้งานอยู่' THEN 1 ELSE 0 END) as active,
+    SUM(CASE WHEN status = 'ว่าง' THEN 1 ELSE 0 END) as available,
+    SUM(CASE WHEN status = 'ส่งซ่อม' THEN 1 ELSE 0 END) as repair,
+    SUM(price) as total_value
+    FROM `accounting_office_assets`");
+if ($resOA && $row = $resOA->fetch_assoc()) {
+    $officeAssets['counts']['total'] = (int) $row['total'];
+    $officeAssets['counts']['active'] = (int) $row['active'];
+    $officeAssets['counts']['available'] = (int) $row['available'];
+    $officeAssets['counts']['repair'] = (int) $row['repair'];
+    $officeAssets['totalValue'] = (float) $row['total_value'];
+}
+$resOACat = safe_query($conn, "SELECT category, COUNT(*) as cnt FROM `accounting_office_assets` GROUP BY category ORDER BY cnt DESC");
+if ($resOACat) {
+    $total = $officeAssets['counts']['total'];
+    while ($row = $resOACat->fetch_assoc()) {
+        $cnt = (int) $row['cnt'];
+        $officeAssets['byCategory'][] = [
+            "name" => $row['category'],
+            "count" => $cnt,
+            "percent" => $total > 0 ? round(($cnt / $total) * 100) : 0,
+        ];
+    }
+}
+
+// --- 15. Office Supplies Overview ---
+$officeSupplies = [
+    "counts" => ["total" => 0, "lowStock" => 0],
+    "totalValue" => 0,
+    "monthlyRequisitionValue" => 0,
+    "recentRequisitions" => []
+];
+$resOS = safe_query($conn, "SELECT
+    COUNT(*) as total,
+    SUM(CASE WHEN quantity <= min_stock THEN 1 ELSE 0 END) as low_stock,
+    SUM(quantity * price_per_unit) as total_value
+    FROM `accounting_office_supplies`");
+if ($resOS && $row = $resOS->fetch_assoc()) {
+    $officeSupplies['counts']['total'] = (int) $row['total'];
+    $officeSupplies['counts']['lowStock'] = (int) $row['low_stock'];
+    $officeSupplies['totalValue'] = (float) $row['total_value'];
+}
+$resOSReq = safe_query($conn, "SELECT SUM(r.quantity * s.price_per_unit) as total FROM `accounting_office_requisitions` r
+                          JOIN `accounting_office_supplies` s ON s.id = r.supply_id
+                          WHERE MONTH(r.requisition_date) = MONTH(CURRENT_DATE()) AND YEAR(r.requisition_date) = YEAR(CURRENT_DATE())");
+if ($resOSReq && $row = $resOSReq->fetch_assoc()) {
+    $officeSupplies['monthlyRequisitionValue'] = (float) ($row['total'] ?? 0);
+}
+$resOSRecent = safe_query($conn, "SELECT r.quantity, r.requester, r.requisition_date, s.name as supply_name, s.unit
+                            FROM `accounting_office_requisitions` r
+                            JOIN `accounting_office_supplies` s ON s.id = r.supply_id
+                            ORDER BY r.requisition_date DESC, r.created_at DESC LIMIT 3");
+if ($resOSRecent) {
+    while ($row = $resOSRecent->fetch_assoc()) {
+        $officeSupplies['recentRequisitions'][] = [
+            "item" => $row['supply_name'],
+            "requester" => $row['requester'],
+            "qty" => $row['quantity'] . " " . $row['unit'],
+            "date" => date('d/m', strtotime($row['requisition_date'])),
+        ];
+    }
+}
+
 echo json_encode([
     "status" => "success",
     "data" => [
@@ -314,7 +454,13 @@ echo json_encode([
         "accountsPayable" => $accountsPayable,
         "recentActivities" => $recentActivities,
         "inventory" => $inventory,
-        "workOrders" => $workOrders
+        "workOrders" => $workOrders,
+        "topExpenseCategories" => $topExpenseCategories,
+        "topGPJobs" => $topGPJobs,
+        "arSummary" => $arSummary,
+        "apSummary" => $apSummary,
+        "officeAssets" => $officeAssets,
+        "officeSupplies" => $officeSupplies
     ]
 ]);
 

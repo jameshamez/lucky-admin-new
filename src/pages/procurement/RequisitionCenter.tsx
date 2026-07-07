@@ -18,13 +18,31 @@ import { ShoppingCart, Package, Car, CalendarIcon, Plus, Loader2 } from "lucide-
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
+import { productionService } from "@/services/productionService";
+import { purchaseRequisitionService } from "@/services/purchaseRequisitionService";
 
 const API_BASE = "https://nacres.co.th/api-lucky/admin";
 
 export default function RequisitionCenter() {
+  const { user } = useAuth();
   const [usageDate, setUsageDate] = useState<Date>();
   const [startDateTime, setStartDateTime] = useState<Date>();
   const [endDateTime, setEndDateTime] = useState<Date>();
+
+  // Vehicle Booking Form State
+  const [vehicleType, setVehicleType] = useState("");
+  const [vehiclePurpose, setVehiclePurpose] = useState("");
+  const [passengerCount, setPassengerCount] = useState("");
+  const [isVehicleSubmitting, setIsVehicleSubmitting] = useState(false);
+
+  // Material Purchase Request Form State
+  const [matName, setMatName] = useState("");
+  const [matQty, setMatQty] = useState("");
+  const [matReason, setMatReason] = useState("");
+  const [matBudget, setMatBudget] = useState("");
+  const [matFiles, setMatFiles] = useState<FileList | null>(null);
+  const [isMatSubmitting, setIsMatSubmitting] = useState(false);
 
   // Equipment Form State
   const [equipments, setEquipments] = useState<any[]>([]);
@@ -55,8 +73,48 @@ export default function RequisitionCenter() {
     }
   };
 
-  const handleMaterialRequest = () => {
-    toast.success("ส่งคำขอเบิกซื้อวัสดุอุปกรณ์เรียบร้อย");
+  const handleMaterialRequest = async () => {
+    if (!matName || !matQty) {
+      toast.error("กรุณากรอกชื่ออุปกรณ์/วัสดุ และจำนวนที่ต้องการ");
+      return;
+    }
+    setIsMatSubmitting(true);
+    try {
+      const attachments = matFiles && matFiles.length > 0
+        ? await Promise.all(Array.from(matFiles).map(async (file) => {
+            const up = await purchaseRequisitionService.uploadFile(file);
+            return up.status === "success" && up.url ? { url: up.url, name: up.file?.name || file.name, size: up.file?.size ?? file.size } : null;
+          })).then(list => list.filter(Boolean))
+        : [];
+
+      const today = format(new Date(), "yyyy-MM-dd");
+      const usage = usageDate ? format(usageDate, "yyyy-MM-dd") : today;
+      const res = await purchaseRequisitionService.create({
+        issueDate: today,
+        usageDate: usage,
+        requester: user?.full_name || user?.username || "ไม่ระบุ",
+        purposeType: "new",
+        purposeText: matReason || "เบิกซื้อวัสดุอุปกรณ์ (ผ่านเบิกการใช้งาน)",
+        jobIds: [],
+        channel: "",
+        shipping: 0,
+        includeVat: false,
+        items: [{ description: matName, link: "", qty: Number(matQty), unitPrice: Number(matBudget) || 0, currency: "THB", exchangeRate: 1 }],
+        payments: [],
+        attachments,
+        receiveAttachments: [],
+      });
+      if (res.status === "success") {
+        toast.success(`ส่งคำขอเบิกซื้อวัสดุอุปกรณ์เรียบร้อย (เลขที่ ${res.data.prNumber})`);
+        setMatName(""); setMatQty(""); setMatReason(""); setMatBudget(""); setMatFiles(null); setUsageDate(undefined);
+      } else {
+        toast.error(res.message || "เกิดข้อผิดพลาดในการบันทึก");
+      }
+    } catch {
+      toast.error("เกิดข้อผิดพลาดในการเชื่อมต่อ API");
+    } finally {
+      setIsMatSubmitting(false);
+    }
   };
 
   const handleEquipmentRequest = async () => {
@@ -92,8 +150,34 @@ export default function RequisitionCenter() {
     }
   };
 
-  const handleVehicleBooking = () => {
-    toast.success("ส่งคำขอจองรถส่วนกลางเรียบร้อย");
+  const handleVehicleBooking = async () => {
+    if (!vehicleType || !startDateTime) {
+      toast.error("กรุณาเลือกประเภทรถและวันที่เริ่มใช้");
+      return;
+    }
+    setIsVehicleSubmitting(true);
+    try {
+      const vehicleTypeLabel = vehicleType === "sedan" ? "รถเก๋ง" : vehicleType === "van" ? "รถตู้" : "รถกระบะ";
+      const res = await productionService.saveVehicleReservation({
+        vehicle_type: vehicleTypeLabel,
+        purpose: vehiclePurpose || undefined,
+        start_datetime: startDateTime.toISOString(),
+        end_datetime: (endDateTime || startDateTime).toISOString(),
+        requester: user?.full_name || user?.username || "ไม่ระบุ",
+        notes: passengerCount ? `จำนวนผู้เดินทาง: ${passengerCount} คน` : undefined,
+      });
+      if (res.status === "success") {
+        toast.success("ส่งคำขอจองรถส่วนกลางเรียบร้อย");
+        setVehicleType(""); setVehiclePurpose(""); setPassengerCount("");
+        setStartDateTime(undefined); setEndDateTime(undefined);
+      } else {
+        toast.error(res.message || "เกิดข้อผิดพลาดในการบันทึก");
+      }
+    } catch {
+      toast.error("เกิดข้อผิดพลาดในการเชื่อมต่อ API");
+    } finally {
+      setIsVehicleSubmitting(false);
+    }
   };
 
   return (
@@ -134,23 +218,23 @@ export default function RequisitionCenter() {
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
                   <Label>ชื่ออุปกรณ์/วัสดุ *</Label>
-                  <Input placeholder="ระบุชื่ออุปกรณ์หรือวัสดุ" required />
+                  <Input placeholder="ระบุชื่ออุปกรณ์หรือวัสดุ" required value={matName} onChange={e => setMatName(e.target.value)} />
                 </div>
                 <div>
                   <Label>จำนวนที่ต้องการ *</Label>
-                  <Input type="number" placeholder="ระบุจำนวน" required />
+                  <Input type="number" placeholder="ระบุจำนวน" required value={matQty} onChange={e => setMatQty(e.target.value)} />
                 </div>
               </div>
 
               <div>
                 <Label>เหตุผลในการเบิก</Label>
-                <Textarea placeholder="ระบุเหตุผล..." rows={3} />
+                <Textarea placeholder="ระบุเหตุผล..." rows={3} value={matReason} onChange={e => setMatReason(e.target.value)} />
               </div>
 
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
                   <Label>งบประมาณโดยประมาณ</Label>
-                  <Input type="number" placeholder="0.00" />
+                  <Input type="number" placeholder="0.00" value={matBudget} onChange={e => setMatBudget(e.target.value)} />
                 </div>
                 <div>
                   <Label>วันที่ต้องการใช้งาน</Label>
@@ -182,11 +266,11 @@ export default function RequisitionCenter() {
 
               <div>
                 <Label>ไฟล์แนบ (ใบเสนอราคา/รูปภาพ)</Label>
-                <Input type="file" multiple accept=".pdf,.jpg,.jpeg,.png" />
+                <Input type="file" multiple accept=".pdf,.jpg,.jpeg,.png" onChange={e => setMatFiles(e.target.files)} />
               </div>
 
-              <Button onClick={handleMaterialRequest} className="w-full">
-                ส่งคำขอเบิกซื้อ
+              <Button onClick={handleMaterialRequest} className="w-full" disabled={isMatSubmitting}>
+                {isMatSubmitting ? <><Loader2 className="w-4 h-4 mr-2 animate-spin inline" />กำลังส่ง...</> : "ส่งคำขอเบิกซื้อ"}
               </Button>
             </CardContent>
           </Card>
@@ -272,7 +356,7 @@ export default function RequisitionCenter() {
             <CardContent className="space-y-4">
               <div>
                 <Label>ประเภทรถที่ต้องการ</Label>
-                <Select>
+                <Select value={vehicleType} onValueChange={setVehicleType}>
                   <SelectTrigger>
                     <SelectValue placeholder="เลือกประเภทรถ" />
                   </SelectTrigger>
@@ -286,7 +370,7 @@ export default function RequisitionCenter() {
 
               <div>
                 <Label>วัตถุประสงค์ในการใช้</Label>
-                <Textarea placeholder="ระบุวัตถุประสงค์..." rows={3} />
+                <Textarea placeholder="ระบุวัตถุประสงค์..." rows={3} value={vehiclePurpose} onChange={e => setVehiclePurpose(e.target.value)} />
               </div>
 
               <div className="grid md:grid-cols-2 gap-4">
@@ -346,11 +430,11 @@ export default function RequisitionCenter() {
 
               <div>
                 <Label>จำนวนผู้เดินทาง</Label>
-                <Input type="number" placeholder="ระบุจำนวนคน" min="1" />
+                <Input type="number" placeholder="ระบุจำนวนคน" min="1" value={passengerCount} onChange={e => setPassengerCount(e.target.value)} />
               </div>
 
-              <Button onClick={handleVehicleBooking} className="w-full">
-                ส่งคำขอจองรถ
+              <Button onClick={handleVehicleBooking} className="w-full" disabled={isVehicleSubmitting}>
+                {isVehicleSubmitting ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />กำลังส่ง...</> : "ส่งคำขอจองรถ"}
               </Button>
             </CardContent>
           </Card>

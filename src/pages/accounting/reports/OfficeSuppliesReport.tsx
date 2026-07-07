@@ -1,56 +1,46 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import { FileDown, Search } from "lucide-react";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { FileDown, Search, Loader2 } from "lucide-react";
+import { accountingService } from "@/services/accountingService";
+import { toast } from "sonner";
+import * as XLSX from "xlsx";
 
 export default function OfficeSuppliesReport() {
   const [filterDate, setFilterDate] = useState("");
   const [filterCategory, setFilterCategory] = useState("");
-  const [filterDepartment, setFilterDepartment] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
+  const [loading, setLoading] = useState(true);
 
-  const summaryData = [
-    { title: "มูลค่าวัสดุคงเหลือ", value: "฿180,000", color: "text-blue-600" },
-    { title: "การเบิกเดือนนี้", value: "฿45,000", color: "text-green-600" },
-    { title: "รายการต่ำกว่า Min", value: "12 รายการ", color: "text-yellow-600" },
-    { title: "รายการหมด", value: "3 รายการ", color: "text-red-600" },
-  ];
+  const [summaryData, setSummaryData] = useState<any[]>([]);
+  const [monthlyUsageData, setMonthlyUsageData] = useState<any[]>([]);
+  const [suppliesList, setSuppliesList] = useState<any[]>([]);
+  const [usageHistory, setUsageHistory] = useState<any[]>([]);
 
-  const monthlyUsageData = [
-    { month: "ม.ค.", value: 38000 },
-    { month: "ก.พ.", value: 42000 },
-    { month: "มี.ค.", value: 39000 },
-    { month: "เม.ย.", value: 45000 },
-    { month: "พ.ค.", value: 48000 },
-    { month: "มิ.ย.", value: 43000 },
-    { month: "ก.ค.", value: 46000 },
-    { month: "ส.ค.", value: 44000 },
-    { month: "ก.ย.", value: 47000 },
-    { month: "ต.ค.", value: 49000 },
-    { month: "พ.ย.", value: 45000 },
-    { month: "ธ.ค.", value: 45000 },
-  ];
-
-  const suppliesList = [
-    { code: "OS001", name: "กระดาษ A4", category: "เครื่องเขียน", stock: 85, minStock: 50, value: 8500, status: "พร้อม" },
-    { code: "OS002", name: "ปากกาลูกลื่น", category: "เครื่องเขียน", stock: 120, minStock: 100, value: 2400, status: "พร้อม" },
-    { code: "OS003", name: "น้ำยาทำความสะอาด", category: "ทำความสะอาด", stock: 15, minStock: 20, value: 1500, status: "ต่ำกว่า Min" },
-    { code: "OS004", name: "กระดาษชำระ", category: "สุขภัณฑ์", stock: 0, minStock: 30, value: 0, status: "หมด" },
-    { code: "OS005", name: "แฟ้มเอกสาร", category: "เครื่องเขียน", stock: 45, minStock: 30, value: 2250, status: "พร้อม" },
-  ];
-
-  const usageHistory = [
-    { date: "2025-01-05", employee: "สมชาย ใจดี", department: "ขาย", item: "กระดาษ A4", quantity: 5, value: 500, status: "อนุมัติ" },
-    { date: "2025-01-04", employee: "สมหญิง รักษ์ดี", department: "บัญชี", item: "ปากกา", quantity: 10, value: 200, status: "อนุมัติ" },
-    { date: "2025-01-03", employee: "วิชัย มั่นคง", department: "ผลิต", item: "แฟ้มเอกสาร", quantity: 8, value: 400, status: "อนุมัติ" },
-    { date: "2025-01-02", employee: "สมศรี ดีงาม", department: "ออกแบบ", item: "กระดาษ A4", quantity: 3, value: 300, status: "รออนุมัติ" },
-    { date: "2025-01-01", employee: "ประเสริฐ วงศ์ดี", department: "HR", item: "น้ำยาทำความสะอาด", quantity: 2, value: 200, status: "อนุมัติ" },
-  ];
+  useEffect(() => {
+    const fetchSuppliesData = async () => {
+      setLoading(true);
+      try {
+        const res = await accountingService.getReportsData('office_supplies');
+        if (res.status === 'success') {
+          setSummaryData(res.data.summary);
+          setMonthlyUsageData(res.data.monthlyUsageData);
+          setSuppliesList(res.data.suppliesList);
+          setUsageHistory(res.data.usageHistory);
+        }
+      } catch (error) {
+        toast.error("ไม่สามารถดึงข้อมูลรายงานวัสดุสำนักงานได้");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchSuppliesData();
+  }, []);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -60,28 +50,58 @@ export default function OfficeSuppliesReport() {
         return <Badge className="bg-yellow-500">ต่ำกว่า Min</Badge>;
       case "หมด":
         return <Badge className="bg-red-500">หมด</Badge>;
-      case "อนุมัติ":
-        return <Badge className="bg-green-500">อนุมัติ</Badge>;
-      case "รออนุมัติ":
-        return <Badge className="bg-yellow-500">รออนุมัติ</Badge>;
       default:
         return <Badge>{status}</Badge>;
     }
   };
 
+  const handleExportExcel = () => {
+    if (suppliesList.length === 0 && usageHistory.length === 0) {
+      toast.error("ไม่มีข้อมูลสำหรับส่งออก");
+      return;
+    }
+    const wb = XLSX.utils.book_new();
+
+    if (suppliesList.length > 0) {
+      const rows = [["รหัส", "รายการ", "หมวดหมู่", "คงเหลือ", "Min Stock", "มูลค่า", "สถานะ"], ...suppliesList.map((i: any) => [i.code, i.name, i.category, i.stock, i.minStock, i.value, i.status])];
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws["!cols"] = [{ wch: 14 }, { wch: 24 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 14 }];
+      XLSX.utils.book_append_sheet(wb, ws, "วัสดุคงเหลือ");
+    }
+
+    if (usageHistory.length > 0) {
+      const rows = [["วันที่", "พนักงาน", "รายการ", "จำนวน", "มูลค่า"], ...usageHistory.map((i: any) => [i.date, i.employee, i.item, i.quantity, i.value])];
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws["!cols"] = [{ wch: 14 }, { wch: 20 }, { wch: 20 }, { wch: 12 }, { wch: 14 }];
+      XLSX.utils.book_append_sheet(wb, ws, "ประวัติการเบิกใช้");
+    }
+
+    XLSX.writeFile(wb, `office-supplies-report-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    toast.success("ส่งออกรายงานสำเร็จ");
+  };
+
+  if (loading) {
+    return (
+      <div className="flex h-[400px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="ml-2">กำลังโหลดข้อมูล...</span>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 print-area">
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold">รายงานวัสดุสำนักงาน</h1>
           <p className="text-muted-foreground">ติดตามวัสดุสิ้นเปลืองและการเบิกใช้</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline">
+        <div className="flex gap-2 print-hide">
+          <Button variant="outline" onClick={handleExportExcel}>
             <FileDown className="mr-2 h-4 w-4" />
             Export Excel
           </Button>
-          <Button variant="outline">
+          <Button variant="outline" onClick={() => window.print()}>
             <FileDown className="mr-2 h-4 w-4" />
             Export PDF
           </Button>
@@ -108,26 +128,30 @@ export default function OfficeSuppliesReport() {
           <CardTitle>การเบิกใช้ต่อเดือน</CardTitle>
         </CardHeader>
         <CardContent>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={monthlyUsageData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="month" />
-              <YAxis />
-              <Tooltip formatter={(value) => `฿${Number(value).toLocaleString()}`} />
-              <Legend />
-              <Line type="monotone" dataKey="value" stroke="hsl(var(--primary))" name="มูลค่าการเบิก" strokeWidth={2} />
-            </LineChart>
-          </ResponsiveContainer>
+          {monthlyUsageData.length === 0 ? (
+            <p className="text-center text-muted-foreground py-8">ไม่มีข้อมูล</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={monthlyUsageData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="month" />
+                <YAxis />
+                <Tooltip formatter={(value) => `฿${Number(value).toLocaleString()}`} />
+                <Legend />
+                <Line type="monotone" dataKey="value" stroke="hsl(var(--primary))" name="มูลค่าการเบิก" strokeWidth={2} />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
         </CardContent>
       </Card>
 
       {/* Filters */}
-      <Card>
+      <Card className="print-hide">
         <CardHeader>
           <CardTitle>ตัวกรอง</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 md:grid-cols-5">
+          <div className="grid gap-4 md:grid-cols-4">
             <div>
               <label className="text-sm font-medium mb-2 block">วันที่</label>
               <Input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} />
@@ -143,20 +167,6 @@ export default function OfficeSuppliesReport() {
                   <SelectItem value="stationary">เครื่องเขียน</SelectItem>
                   <SelectItem value="cleaning">ทำความสะอาด</SelectItem>
                   <SelectItem value="sanitary">สุขภัณฑ์</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="text-sm font-medium mb-2 block">แผนก</label>
-              <Select value={filterDepartment} onValueChange={setFilterDepartment}>
-                <SelectTrigger>
-                  <SelectValue placeholder="เลือกแผนก" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">ทั้งหมด</SelectItem>
-                  <SelectItem value="sales">ขาย</SelectItem>
-                  <SelectItem value="accounting">บัญชี</SelectItem>
-                  <SelectItem value="production">ผลิต</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -203,7 +213,9 @@ export default function OfficeSuppliesReport() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {suppliesList.map((item) => (
+              {suppliesList.length === 0 ? (
+                <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">ไม่มีข้อมูลวัสดุ</TableCell></TableRow>
+              ) : suppliesList.map((item) => (
                 <TableRow key={item.code}>
                   <TableCell className="font-medium">{item.code}</TableCell>
                   <TableCell>{item.name}</TableCell>
@@ -223,30 +235,29 @@ export default function OfficeSuppliesReport() {
       <Card>
         <CardHeader>
           <CardTitle>ประวัติการเบิกใช้</CardTitle>
+          <p className="text-xs text-muted-foreground">ระบบเบิกวัสดุสำนักงานตัดสต็อกทันทีเมื่อบันทึก จึงไม่มีสถานะรออนุมัติ/แผนกผู้เบิกแยกต่างหาก</p>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>วันที่</TableHead>
-                <TableHead>พนักงาน</TableHead>
-                <TableHead>แผนก</TableHead>
+                <TableHead>ผู้เบิก</TableHead>
                 <TableHead>รายการ</TableHead>
                 <TableHead className="text-right">จำนวน</TableHead>
                 <TableHead className="text-right">มูลค่า (฿)</TableHead>
-                <TableHead>สถานะ</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {usageHistory.map((item, index) => (
+              {usageHistory.length === 0 ? (
+                <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-8">ไม่มีประวัติการเบิกใช้</TableCell></TableRow>
+              ) : usageHistory.map((item, index) => (
                 <TableRow key={index}>
                   <TableCell>{item.date}</TableCell>
                   <TableCell>{item.employee}</TableCell>
-                  <TableCell>{item.department}</TableCell>
                   <TableCell>{item.item}</TableCell>
                   <TableCell className="text-right">{item.quantity}</TableCell>
                   <TableCell className="text-right">฿{item.value.toLocaleString()}</TableCell>
-                  <TableCell>{getStatusBadge(item.status)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

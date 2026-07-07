@@ -90,7 +90,7 @@ const procurementItems = [
   { title: "แดชบอร์ด", url: "/procurement/dashboard", icon: LayoutDashboard },
   {
     title: "ระบบประเมินราคา",
-    url: "/procurement/estimation",
+    url: "/procurement/estimation/quotation",
     icon: Calculator,
     children: [
       { title: "จัดการคำขอประเมินราคา", url: "/procurement/estimation/quotation", icon: FileText },

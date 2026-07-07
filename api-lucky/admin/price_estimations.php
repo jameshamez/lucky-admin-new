@@ -1,6 +1,7 @@
 <?php
 ini_set('display_errors', 0);
 error_reporting(E_ALL);
+ini_set('memory_limit', '512M');
 
 header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json; charset=UTF-8");
@@ -14,6 +15,19 @@ set_exception_handler(function ($e) {
 });
 set_error_handler(function ($errno, $errstr, $errfile, $errline) {
     throw new \ErrorException($errstr, 0, $errno, $errfile, $errline);
+});
+// Safety net: a true fatal error (e.g. memory exhausted) bypasses the handlers above and
+// would otherwise leave the response as an empty body with whatever status PHP last set.
+// Surface it as JSON instead of a silent blank 500.
+register_shutdown_function(function () {
+    $err = error_get_last();
+    if ($err && in_array($err['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
+        if (!headers_sent()) {
+            http_response_code(500);
+            header("Content-Type: application/json; charset=UTF-8");
+        }
+        echo json_encode(["status" => "error", "message" => $err['message'], "line" => $err['line'], "file" => basename($err['file'])]);
+    }
 });
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -60,13 +74,19 @@ if ($method === 'GET') {
         exit();
     }
 
+    // Unbuffered query: with large `details` blobs (attachments/comparisons) across up to
+    // 200 rows, a normal buffered query() materializes the whole result set in memory
+    // before we even start reading it, which was the actual cause of the memory-exhaustion
+    // fatal here (not the json_decode/encode step below). MYSQLI_USE_RESULT streams rows
+    // one at a time instead.
     $sql = "SELECT * FROM price_estimations_sales ORDER BY id DESC LIMIT 200";
-    $result = $conn->query($sql);
+    $result = $conn->query($sql, MYSQLI_USE_RESULT);
     $data = [];
     while ($row = $result->fetch_assoc()) {
-        if (!empty($row['details'])) {
-            $row['details'] = json_decode($row['details'], true);
-        }
+        // Leave `details` as the raw JSON string here (not json_decode'd) — decoding into
+        // nested PHP arrays for up to 200 rows multiplies memory use several times over vs.
+        // the raw string and was blowing past the host's memory_limit (fatal error, blank
+        // 500 response). The frontend already JSON.parse()s `details` when it's a string.
         $data[] = $row;
     }
 

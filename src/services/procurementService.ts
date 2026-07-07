@@ -48,6 +48,14 @@ export const procurementService = {
         });
         return res.json();
     },
+    updateSetting: async (type: string, id: number, data: any) => {
+        const res = await fetch(`${API_BASE_URL}/procurement/settings.php?type=${type}&id=${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        });
+        return res.json();
+    },
     deleteSetting: async (type: string, id: number) => {
         const res = await fetch(`${API_BASE_URL}/procurement/settings.php?type=${type}&id=${id}`, {
             method: 'DELETE',

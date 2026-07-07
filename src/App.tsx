@@ -28,7 +28,6 @@ import MaterialStock from "./pages/design/MaterialStock";
 import DesignReports from "./pages/design/DesignReports";
 import ProcurementMain from "./pages/procurement/ProcurementMain";
 import ProcurementDashboard from "./pages/procurement/ProcurementDashboard";
-import ProcurementPriceEstimation from "./pages/procurement/PriceEstimation";
 import ProcurementInternalRequisitions from "./pages/procurement/InternalRequisitions";
 import PurchaseOrders from "./pages/procurement/PurchaseOrders";
 
@@ -275,9 +274,7 @@ const App = () => (
             </DashboardLayout>
           } />
           <Route path="/procurement/estimation" element={
-            <DashboardLayout requiredDepartment="procurement">
-              <ProcurementPriceEstimation />
-            </DashboardLayout>
+            <Navigate to="/procurement/estimation/quotation" replace />
           } />
           <Route path="/procurement/estimation/quotation" element={
             <DashboardLayout requiredDepartment="procurement">

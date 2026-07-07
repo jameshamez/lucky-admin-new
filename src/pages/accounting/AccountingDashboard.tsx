@@ -98,7 +98,13 @@ export default function AccountingDashboard() {
     accountsReceivable: apiAR = [],
     inventory: apiInventory = { counts: { total: 0, ready: 0, damaged: 0, low: 0 }, lowStock: [] },
     workOrders: apiWO = { stats: { all: 0, processing: 0, checking: 0, closed: 0, lowStock: 0 }, revenue: 0, expense: 0, gp: 0, margin: 0 },
-    recentActivities: apiActivities = []
+    recentActivities: apiActivities = [],
+    topExpenseCategories = [],
+    topGPJobs = [],
+    arSummary = { total: 0, count: 0 },
+    apSummary = { total: 0, count: 0 },
+    officeAssets = { counts: { total: 0, active: 0, available: 0, repair: 0 }, byCategory: [], totalValue: 0 },
+    officeSupplies = { counts: { total: 0, lowStock: 0 }, totalValue: 0, monthlyRequisitionValue: 0, recentRequisitions: [] }
   } = dashboardData || {};
 
   const currentSalesByPerson = apiSalesByPerson || [];
@@ -186,6 +192,34 @@ export default function AccountingDashboard() {
       const ws = XLSX.utils.aoa_to_sheet(rows);
       ws["!cols"] = [{ wch: 12 }, { wch: 30 }, { wch: 14 }, { wch: 12 }, { wch: 14 }];
       XLSX.utils.book_append_sheet(wb, ws, "งานรอดำเนินการ");
+    }
+
+    if (topExpenseCategories.length > 0) {
+      const rows = [["หมวดหมู่ค่าใช้จ่าย", "ยอดรวม", "สัดส่วน (%)"], ...topExpenseCategories.map((c: any) => [c.name, c.amount, c.percent])];
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws["!cols"] = [{ wch: 24 }, { wch: 14 }, { wch: 14 }];
+      XLSX.utils.book_append_sheet(wb, ws, "หมวดค่าใช้จ่ายสูงสุด");
+    }
+
+    if (topGPJobs.length > 0) {
+      const rows = [["รหัสงาน", "โปรเจกต์", "ลูกค้า", "GP", "Margin (%)", "สถานะ"], ...topGPJobs.map((j: any) => [j.id, j.project, j.customer, j.gp, j.margin, j.status])];
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws["!cols"] = [{ wch: 14 }, { wch: 24 }, { wch: 20 }, { wch: 14 }, { wch: 12 }, { wch: 14 }];
+      XLSX.utils.book_append_sheet(wb, ws, "Top GP Jobs");
+    }
+
+    if (officeAssets.byCategory.length > 0) {
+      const rows = [["ประเภททรัพย์สิน", "จำนวน", "สัดส่วน (%)"], ...officeAssets.byCategory.map((c: any) => [c.name, c.count, c.percent])];
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws["!cols"] = [{ wch: 22 }, { wch: 12 }, { wch: 14 }];
+      XLSX.utils.book_append_sheet(wb, ws, "ทรัพย์สินสำนักงาน");
+    }
+
+    if (officeSupplies.recentRequisitions.length > 0) {
+      const rows = [["รายการ", "ผู้เบิก", "จำนวน", "วันที่"], ...officeSupplies.recentRequisitions.map((r: any) => [r.item, r.requester, r.qty, r.date])];
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws["!cols"] = [{ wch: 20 }, { wch: 20 }, { wch: 14 }, { wch: 12 }];
+      XLSX.utils.book_append_sheet(wb, ws, "เบิกวัสดุสำนักงานล่าสุด");
     }
 
     XLSX.writeFile(wb, `accounting-dashboard-${new Date().toISOString().slice(0, 10)}.xlsx`);
@@ -329,14 +363,11 @@ export default function AccountingDashboard() {
 
           {/* Top Categories */}
           <div>
-            <p className="text-sm font-medium mb-3">หมวดหมู่ค่าใช้จ่ายสูงสุด</p>
+            <p className="text-sm font-medium mb-3">หมวดหมู่ค่าใช้จ่ายสูงสุด (เดือนนี้)</p>
             <div className="space-y-2">
-              {[
-                { name: "ค่าส่งสินค้า", amount: 4500, percent: 37 },
-                { name: "ค่าน้ำมัน", amount: 3200, percent: 26 },
-                { name: "ค่าของใช้", amount: 2800, percent: 23 },
-                { name: "ค่าทางด่วน", amount: 1800, percent: 14 },
-              ].map((cat) => (
+              {topExpenseCategories.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-2">ไม่มีข้อมูลค่าใช้จ่ายเดือนนี้</p>
+              ) : topExpenseCategories.map((cat: any) => (
                 <div key={cat.name} className="flex items-center gap-3">
                   <span className="text-sm w-28 shrink-0">{cat.name}</span>
                   <Progress value={cat.percent} className="flex-1" />
@@ -713,11 +744,6 @@ export default function AccountingDashboard() {
               ))}
             </div>
           </div>
-
-          <div className="flex items-center justify-between pt-2 border-t">
-            <span className="text-sm text-muted-foreground">มูลค่าสต็อกรวมประมาณ</span>
-            <span className="text-lg font-bold">฿3,850,000</span>
-          </div>
         </CardContent>
       </Card>
 
@@ -787,15 +813,11 @@ export default function AccountingDashboard() {
 
           {/* Top GP Jobs */}
           <div>
-            <p className="text-sm font-medium mb-3">งานที่มีกำไรสูงสุด (Top GP)</p>
+            <p className="text-sm font-medium mb-3">งานที่มีกำไรสูงสุด (Top GP, ประมาณการต้นทุน 65% ของยอดขาย)</p>
             <div className="space-y-2">
-              {[
-                { id: "WO-2026-009", project: "เหรียญที่ระลึก 100 ปี", customer: "สำนักงานตำรวจแห่งชาติ", gp: 175000, margin: 50.0, status: "ปิดงาน" },
-                { id: "WO-2026-004", project: "สายคล้องคอ งาน Expo 2026", customer: "บริษัท สยามพรีเมียม จำกัด", gp: 112000, margin: 35.0, status: "ตรวจสอบแล้ว" },
-                { id: "WO-2026-001", project: "โปรเจคสายคล้องคอพรีเมียม", customer: "บริษัท ABC จำกัด", gp: 87500, margin: 35.0, status: "ตรวจสอบแล้ว" },
-                { id: "WO-2026-011", project: "แก้วน้ำเซรามิค ของที่ระลึก", customer: "การไฟฟ้าส่วนภูมิภาค", gp: 81000, margin: 45.0, status: "กำลังดำเนินการ" },
-                { id: "WO-2026-013", project: "กระเป๋าผ้า Canvas พิมพ์ลาย", customer: "บริษัท ออล อินสไปร์ จำกัด", gp: 81000, margin: 30.0, status: "กำลังดำเนินการ" },
-              ].map((job, i) => (
+              {topGPJobs.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">ไม่มีข้อมูลออเดอร์</p>
+              ) : topGPJobs.map((job: any, i: number) => (
                 <div key={job.id} className="flex items-center justify-between p-3 border rounded-lg">
                   <div className="flex items-center gap-3">
                     <div className="flex items-center justify-center w-8 h-8 rounded-full bg-[#ef4042]/10 text-[#ef4042] font-bold text-sm">
@@ -833,16 +855,16 @@ export default function AccountingDashboard() {
                 <AlertTriangle className="h-4 w-4 text-amber-600" />
                 ยอดค้างชำระจากลูกค้า
               </p>
-              <p className="text-xl font-bold text-amber-700">฿175,000</p>
-              <p className="text-xs text-muted-foreground mt-1">จาก 6 ใบสั่งงาน</p>
+              <p className="text-xl font-bold text-amber-700">฿{arSummary.total.toLocaleString()}</p>
+              <p className="text-xs text-muted-foreground mt-1">จาก {arSummary.count} รายการ</p>
             </div>
             <div className="p-3 border rounded-lg border-orange-200 bg-orange-50/50">
               <p className="text-sm font-medium flex items-center gap-2 mb-2">
                 <Receipt className="h-4 w-4 text-orange-600" />
-                ค่าใช้จ่ายยังไม่ตั้งเบิก
+                เงินสดย่อยรอเบิกจ่าย
               </p>
-              <p className="text-xl font-bold text-orange-700">฿89,500</p>
-              <p className="text-xs text-muted-foreground mt-1">จาก 5 ใบสั่งงาน</p>
+              <p className="text-xl font-bold text-orange-700">฿{apSummary.total.toLocaleString()}</p>
+              <p className="text-xs text-muted-foreground mt-1">จาก {apSummary.count} รายการ</p>
             </div>
           </div>
         </CardContent>
@@ -891,31 +913,28 @@ export default function AccountingDashboard() {
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <div className="text-center p-3 rounded-lg bg-muted/50">
-                <p className="text-2xl font-bold">42</p>
+                <p className="text-2xl font-bold">{officeAssets.counts.total}</p>
                 <p className="text-xs text-muted-foreground">ทรัพย์สินทั้งหมด</p>
               </div>
               <div className="text-center p-3 rounded-lg bg-muted/50">
-                <p className="text-2xl font-bold text-green-600">35</p>
+                <p className="text-2xl font-bold text-green-600">{officeAssets.counts.active}</p>
                 <p className="text-xs text-muted-foreground">ใช้งานอยู่</p>
               </div>
               <div className="text-center p-3 rounded-lg bg-muted/50">
-                <p className="text-2xl font-bold text-blue-500">4</p>
+                <p className="text-2xl font-bold text-blue-500">{officeAssets.counts.available}</p>
                 <p className="text-xs text-muted-foreground">อุปกรณ์ว่าง</p>
               </div>
               <div className="text-center p-3 rounded-lg bg-muted/50">
-                <p className="text-2xl font-bold text-orange-500">3</p>
+                <p className="text-2xl font-bold text-orange-500">{officeAssets.counts.repair}</p>
                 <p className="text-xs text-muted-foreground">ส่งซ่อม</p>
               </div>
             </div>
             <div>
               <p className="text-sm font-medium mb-2">แยกตามประเภท</p>
               <div className="space-y-2">
-                {[
-                  { name: "คอมพิวเตอร์ตั้งโต๊ะ", count: 15, percent: 36 },
-                  { name: "โน้ตบุ๊ก", count: 12, percent: 29 },
-                  { name: "โทรศัพท์มือถือ", count: 8, percent: 19 },
-                  { name: "อุปกรณ์เสริม", count: 7, percent: 16 },
-                ].map((item) => (
+                {officeAssets.byCategory.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-2">ไม่มีข้อมูลทรัพย์สิน</p>
+                ) : officeAssets.byCategory.map((item: any) => (
                   <div key={item.name} className="flex items-center gap-3">
                     <span className="text-sm w-32 shrink-0">{item.name}</span>
                     <Progress value={item.percent} className="flex-1" />
@@ -926,7 +945,7 @@ export default function AccountingDashboard() {
             </div>
             <div className="flex items-center justify-between pt-2 border-t">
               <span className="text-sm text-muted-foreground">มูลค่ารวมทรัพย์สิน</span>
-              <span className="text-lg font-bold">฿1,285,000</span>
+              <span className="text-lg font-bold">฿{officeAssets.totalValue.toLocaleString()}</span>
             </div>
           </CardContent>
         </Card>
@@ -945,21 +964,21 @@ export default function AccountingDashboard() {
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <div className="text-center p-3 rounded-lg bg-muted/50">
-                <p className="text-2xl font-bold">7</p>
+                <p className="text-2xl font-bold">{officeSupplies.counts.total}</p>
                 <p className="text-xs text-muted-foreground">รายการวัสดุทั้งหมด</p>
               </div>
               <div className="text-center p-3 rounded-lg bg-muted/50">
-                <p className="text-2xl font-bold text-[#D6275A]">2</p>
+                <p className="text-2xl font-bold text-[#D6275A]">{officeSupplies.counts.lowStock}</p>
                 <p className="text-xs text-muted-foreground flex items-center justify-center gap-1">
                   <AlertTriangle className="h-3 w-3" /> ใกล้หมด
                 </p>
               </div>
               <div className="text-center p-3 rounded-lg bg-muted/50">
-                <p className="text-2xl font-bold text-green-600">฿42,175</p>
+                <p className="text-2xl font-bold text-green-600">฿{officeSupplies.totalValue.toLocaleString()}</p>
                 <p className="text-xs text-muted-foreground">มูลค่าสต็อกรวม</p>
               </div>
               <div className="text-center p-3 rounded-lg bg-muted/50">
-                <p className="text-2xl font-bold text-orange-500">฿1,770</p>
+                <p className="text-2xl font-bold text-orange-500">฿{officeSupplies.monthlyRequisitionValue.toLocaleString()}</p>
                 <p className="text-xs text-muted-foreground flex items-center justify-center gap-1">
                   <PackageMinus className="h-3 w-3" /> ยอดเบิกจ่ายรวม
                 </p>
@@ -968,11 +987,9 @@ export default function AccountingDashboard() {
             <div>
               <p className="text-sm font-medium mb-2">การเบิกจ่ายล่าสุด</p>
               <div className="space-y-2">
-                {[
-                  { item: "ปากกาลูกลื่น", requester: "นายสมชาย ใจดี", qty: "2 โหล", date: "10 ก.พ." },
-                  { item: "กระดาษ A4", requester: "นางสาวสมหญิง รักงาน", qty: "5 รีม", date: "12 ก.พ." },
-                  { item: "หมึกพิมพ์ HP", requester: "นายทดสอบ ระบบดี", qty: "1 กล่อง", date: "14 ก.พ." },
-                ].map((req, i) => (
+                {officeSupplies.recentRequisitions.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-2">ไม่มีรายการเบิกล่าสุด</p>
+                ) : officeSupplies.recentRequisitions.map((req: any, i: number) => (
                   <div key={i} className="flex items-center justify-between p-2 border rounded-lg text-sm">
                     <div>
                       <p className="font-medium">{req.item}</p>
@@ -985,7 +1002,7 @@ export default function AccountingDashboard() {
             </div>
             <div className="flex items-center justify-between pt-2 border-t">
               <span className="text-sm text-muted-foreground">ยอดเบิกจ่ายเดือนนี้</span>
-              <span className="text-lg font-bold text-orange-500">฿1,770</span>
+              <span className="text-lg font-bold text-orange-500">฿{officeSupplies.monthlyRequisitionValue.toLocaleString()}</span>
             </div>
           </CardContent>
         </Card>

@@ -287,6 +287,98 @@ if ($type === 'summary') {
             "list" => $list
         ]
     ]);
+} else if ($type === 'office_supplies') {
+    // Office Supplies Report — same table as type=inventory (accounting_office_supplies)
+    // but with its own status labels + usage-history/monthly-trend data.
+    $res = $conn->query("SELECT
+        COUNT(*) as total_items,
+        SUM(CASE WHEN quantity <= min_stock AND quantity > 0 THEN 1 ELSE 0 END) as low,
+        SUM(CASE WHEN quantity = 0 THEN 1 ELSE 0 END) as out_of_stock,
+        SUM(quantity * price_per_unit) as total_value
+        FROM `accounting_office_supplies`");
+    $stats = $res->fetch_assoc();
+    $totalVal = (float) ($stats['total_value'] ?? 0);
+
+    $resUsage = $conn->query("SELECT SUM(r.quantity * s.price_per_unit) as total FROM `accounting_office_requisitions` r
+                        JOIN `accounting_office_supplies` s ON s.id = r.supply_id
+                        WHERE MONTH(r.requisition_date) = MONTH(CURRENT_DATE()) AND YEAR(r.requisition_date) = YEAR(CURRENT_DATE())");
+    $monthlyUsageValue = (float) (($resUsage->fetch_assoc())['total'] ?? 0);
+
+    $list = [];
+    $res = $conn->query("SELECT id, code, name, category, quantity, min_stock, price_per_unit FROM `accounting_office_supplies`");
+    if ($res) {
+        while ($row = $res->fetch_assoc()) {
+            $qty = (int) $row['quantity'];
+            $min = (int) $row['min_stock'];
+            $status = "พร้อม";
+            if ($qty == 0) $status = "หมด";
+            else if ($qty <= $min) $status = "ต่ำกว่า Min";
+
+            $list[] = [
+                "code" => $row['code'],
+                "name" => $row['name'],
+                "category" => $row['category'],
+                "stock" => $qty,
+                "minStock" => $min,
+                "value" => $qty * (float) $row['price_per_unit'],
+                "status" => $status
+            ];
+        }
+    }
+
+    $thMonths = ["Jan" => "ม.ค.", "Feb" => "ก.พ.", "Mar" => "มี.ค.", "Apr" => "เม.ย.", "May" => "พ.ค.", "Jun" => "มิ.ย.", "Jul" => "ก.ค.", "Aug" => "ส.ค.", "Sep" => "ก.ย.", "Oct" => "ต.ค.", "Nov" => "พ.ย.", "Dec" => "ธ.ค."];
+    $monthlyBuckets = [];
+    for ($i = 11; $i >= 0; $i--) {
+        $ym = date('Y-m', strtotime("-$i months"));
+        $monthlyBuckets[$ym] = 0.0;
+    }
+    $resTrend = $conn->query("SELECT DATE_FORMAT(r.requisition_date, '%Y-%m') as ym, SUM(r.quantity * s.price_per_unit) as total
+                        FROM `accounting_office_requisitions` r
+                        JOIN `accounting_office_supplies` s ON s.id = r.supply_id
+                        WHERE r.requisition_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 11 MONTH)
+                        GROUP BY ym");
+    if ($resTrend) {
+        while ($row = $resTrend->fetch_assoc()) {
+            if (isset($monthlyBuckets[$row['ym']])) $monthlyBuckets[$row['ym']] = (float) $row['total'];
+        }
+    }
+    $monthlyUsageData = [];
+    foreach ($monthlyBuckets as $ym => $value) {
+        $label = $thMonths[date('M', strtotime($ym . '-01'))] ?? $ym;
+        $monthlyUsageData[] = ["month" => $label, "value" => $value];
+    }
+
+    $usageHistory = [];
+    $resHist = $conn->query("SELECT r.requisition_date, r.requester, r.quantity, s.name as supply_name, s.price_per_unit
+                        FROM `accounting_office_requisitions` r
+                        JOIN `accounting_office_supplies` s ON s.id = r.supply_id
+                        ORDER BY r.requisition_date DESC, r.id DESC LIMIT 50");
+    if ($resHist) {
+        while ($row = $resHist->fetch_assoc()) {
+            $usageHistory[] = [
+                "date" => $row['requisition_date'],
+                "employee" => $row['requester'],
+                "item" => $row['supply_name'],
+                "quantity" => (int) $row['quantity'],
+                "value" => (int) $row['quantity'] * (float) $row['price_per_unit'],
+            ];
+        }
+    }
+
+    echo json_encode([
+        "status" => "success",
+        "data" => [
+            "summary" => [
+                ["title" => "มูลค่าวัสดุคงเหลือ", "value" => "฿" . number_format($totalVal), "color" => "text-blue-600"],
+                ["title" => "การเบิกเดือนนี้", "value" => "฿" . number_format($monthlyUsageValue), "color" => "text-green-600"],
+                ["title" => "รายการต่ำกว่า Min", "value" => (int) ($stats['low'] ?? 0) . " รายการ", "color" => "text-yellow-600"],
+                ["title" => "รายการหมด", "value" => (int) ($stats['out_of_stock'] ?? 0) . " รายการ", "color" => "text-red-600"],
+            ],
+            "suppliesList" => $list,
+            "monthlyUsageData" => $monthlyUsageData,
+            "usageHistory" => $usageHistory
+        ]
+    ]);
 }
 
 $conn->close();
